@@ -9,7 +9,6 @@ package writer
 import (
 	"bufio"
 	"code.cloudfoundry.org/go-diodes"
-	"fmt"
 	"github.com/lamxy/fiberhouse/frame/appconfig"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"sync"
@@ -47,7 +46,7 @@ func NewAsyncDiodeWriter(cfg appconfig.IAppConfig, filename string) *AsyncDiodeW
 
 	dd := diodes.NewManyToOne(diodeSize, diodes.AlertFunc(func(missed int) {
 		// TODO 指标记录drop计数
-		fmt.Printf("AsyncDiodeWriter: %d messages dropped due to full diode buffer\n", missed)
+		//fmt.Printf("AsyncDiodeWriter: %d messages dropped due to full diode buffer\n", missed)
 	}))
 
 	aw := &AsyncDiodeWriter{

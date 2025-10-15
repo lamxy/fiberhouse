@@ -8,6 +8,7 @@
 package recover
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/lamxy/fiberhouse/frame"
 	"github.com/lamxy/fiberhouse/frame/bootstrap"
@@ -91,6 +92,11 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 		}
 	}
 
+	var (
+		linesJson []byte
+		logEvent  = logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId)
+	)
+
 	switch err := e.(type) {
 	case *exception.ValidateException:
 		dw := jsonconvert.NewDataWrap(err.Data)
@@ -98,6 +104,7 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 		if debugMode || enablePrintStack || (enableDebugFlag && debugFlagFromHeader == debugFlagValue) {
 			// 输出堆栈信息
 			msg := ErrorStack()
+
 			// 记录reqParams、reqQueries、reqBody
 			var (
 				reqParamsJson           = r.getParamsJson(c, logger, jsonEnCoder, traceId)
@@ -108,23 +115,44 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 			if dw.CanJSONSerializable() {
 				data, errJson := dw.GetJson(jsonEnCoder)
 				if errJson != nil {
-					logger.Debug(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", "").Str("DataWrap-GetJson-error", errJson.Error()).RawJSON("reqParams", reqParamsJson).RawJSON("reqQueries", reqQueriesJson).RawJSON("reqBody", reqBodyJson).Str("reqBodyStr", reqBodyStr).Str("PrintStack", "true").Msg(msg)
+					logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", "").Str("DataWrap-GetJson-error", errJson.Error()).Str("PrintStack", "true")
 				} else {
-					logger.Debug(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).RawJSON("Data", data).RawJSON("reqParams", reqParamsJson).RawJSON("reqQueries", reqQueriesJson).RawJSON("reqBody", reqBodyJson).Str("reqBodyStr", reqBodyStr).Str("PrintStack", "true").Msg(msg)
+					logEvent.Int("Code", err.Code).Str("Msg", err.Msg).RawJSON("Data", data).Str("PrintStack", "true")
 				}
 			} else {
-				logger.Debug(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).RawJSON("reqParams", reqParamsJson).RawJSON("reqQueries", reqQueriesJson).RawJSON("reqBody", reqBodyJson).Str("reqBodyStr", reqBodyStr).Str("PrintStack", "true").Msg(msg)
+				logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).Str("PrintStack", "true")
 			}
+
+			if len(reqParamsJson) > 0 {
+				logEvent.RawJSON("reqParams", reqParamsJson)
+			}
+			if len(reqQueriesJson) > 0 {
+				logEvent.RawJSON("reqQueries", reqQueriesJson)
+			}
+			if len(reqBodyJson) > 0 {
+				logEvent.RawJSON("reqBody", reqBodyJson)
+			} else if len(reqBodyStr) > 0 {
+				logEvent.Str("reqBodyStr", reqBodyStr)
+			}
+
+			// debug模式，增加DebugStackLines字段输出格式化的堆栈信息，方便开发环境下直接阅读
+			if debugMode {
+				linesJson = r.getJsonIndent(msg, logger, jsonEnCoder, traceId)
+				if linesJson != nil {
+					logEvent.RawJSON("DebugStackLines", linesJson)
+				}
+			}
+			logEvent.Msg(msg)
 		} else {
 			if dw.CanJSONSerializable() {
 				data, errJson := dw.GetJson(jsonEnCoder)
 				if errJson != nil {
-					logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", "").Str("DataWrap-GetJson-error", errJson.Error()).Msg(err.Error())
+					logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", "").Str("DataWrap-GetJson-error", errJson.Error()).Msg(err.Error())
 				} else {
-					logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).RawJSON("Data", data).Msg(err.Error())
+					logEvent.Int("Code", err.Code).Str("Msg", err.Msg).RawJSON("Data", data).Msg(err.Error())
 				}
 			} else {
-				logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).Msg(err.Error())
+				logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).Msg(err.Error())
 			}
 		}
 		dw.Release()
@@ -134,32 +162,54 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 		if debugMode || enablePrintStack || (enableDebugFlag && debugFlagFromHeader == debugFlagValue) {
 			// 输出堆栈信息
 			msg := ErrorStack()
+
 			// 记录reqParams、reqQueries、reqBody
 			var (
 				reqParamsJson           = r.getParamsJson(c, logger, jsonEnCoder, traceId)
 				reqQueriesJson          = r.getQueriesJson(c, logger, jsonEnCoder, traceId)
 				reqBodyJson, reqBodyStr = r.getBodyJson(c)
 			)
+
 			if dw.CanJSONSerializable() {
 				data, errJson := dw.GetJson(jsonEnCoder)
 				if errJson != nil {
-					logger.Debug(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", "").Str("DataWrap-GetJson-error", errJson.Error()).RawJSON("reqParams", reqParamsJson).RawJSON("reqQueries", reqQueriesJson).RawJSON("reqBody", reqBodyJson).Str("reqBodyStr", reqBodyStr).Str("PrintStack", "true").Msg(msg)
+					logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", "").Str("DataWrap-GetJson-error", errJson.Error()).Str("PrintStack", "true")
 				} else {
-					logger.Debug(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).RawJSON("Data", data).RawJSON("reqParams", reqParamsJson).RawJSON("reqQueries", reqQueriesJson).RawJSON("reqBody", reqBodyJson).Str("reqBodyStr", reqBodyStr).Str("PrintStack", "true").Msg(msg)
+					logEvent.Int("Code", err.Code).Str("Msg", err.Msg).RawJSON("Data", data).Str("PrintStack", "true")
 				}
 			} else {
-				logger.Debug(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).RawJSON("reqParams", reqParamsJson).RawJSON("reqQueries", reqQueriesJson).RawJSON("reqBody", reqBodyJson).Str("reqBodyStr", reqBodyStr).Str("PrintStack", "true").Msg(msg)
+				logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).Str("PrintStack", "true")
 			}
+
+			if len(reqParamsJson) > 0 {
+				logEvent.RawJSON("reqParams", reqParamsJson)
+			}
+			if len(reqQueriesJson) > 0 {
+				logEvent.RawJSON("reqQueries", reqQueriesJson)
+			}
+			if len(reqBodyJson) > 0 {
+				logEvent.RawJSON("reqBody", reqBodyJson)
+			} else if len(reqBodyStr) > 0 {
+				logEvent.Str("reqBodyStr", reqBodyStr)
+			}
+
+			if debugMode {
+				linesJson = r.getJsonIndent(msg, logger, jsonEnCoder, traceId)
+				if linesJson != nil {
+					logEvent.RawJSON("DebugStackLines", linesJson)
+				}
+			}
+			logEvent.Msg(msg)
 		} else {
 			if dw.CanJSONSerializable() {
 				data, errJson := dw.GetJson(jsonEnCoder)
 				if errJson != nil {
-					logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", "").Str("DataWrap-GetJson-error", errJson.Error()).Msg(err.Error())
+					logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", "").Str("DataWrap-GetJson-error", errJson.Error()).Msg(err.Error())
 				} else {
-					logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).RawJSON("Data", data).Msg(err.Error())
+					logEvent.Int("Code", err.Code).Str("Msg", err.Msg).RawJSON("Data", data).Msg(err.Error())
 				}
 			} else {
-				logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).Msg(err.Error())
+				logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).Msg(err.Error())
 			}
 		}
 		dw.Release()
@@ -175,9 +225,30 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 				reqBodyJson, reqBodyStr = r.getBodyJson(c)
 			)
 			msg := ErrorStack()
-			logger.Debug(r.GetContext().GetConfig().LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Str("Msg", err.Error()).RawJSON("reqParams", reqParamsJson).RawJSON("reqQueries", reqQueriesJson).RawJSON("reqBody", reqBodyJson).Str("reqBodyStr", reqBodyStr).Str("PrintStack", "true").Msg(msg)
+
+			logEvent.Int("Code", err.Code).Str("Msg", err.Error()).Str("PrintStack", "true")
+
+			if len(reqParamsJson) > 0 {
+				logEvent.RawJSON("reqParams", reqParamsJson)
+			}
+			if len(reqQueriesJson) > 0 {
+				logEvent.RawJSON("reqQueries", reqQueriesJson)
+			}
+			if len(reqBodyJson) > 0 {
+				logEvent.RawJSON("reqBody", reqBodyJson)
+			} else if len(reqBodyStr) > 0 {
+				logEvent.Str("reqBodyStr", reqBodyStr)
+			}
+
+			if debugMode {
+				linesJson = r.getJsonIndent(msg, logger, jsonEnCoder, traceId)
+				if linesJson != nil {
+					logEvent.RawJSON("DebugStackLines", linesJson)
+				}
+			}
+			logEvent.Msg(msg)
 		} else {
-			logger.Error(r.GetContext().GetConfig().LogOriginRecover()).Str(requestID, traceId).Int("Code", err.Code).Msg(err.Error())
+			logEvent.Int("Code", err.Code).Msg(err.Error())
 		}
 	case error:
 		if debugMode || enablePrintStack || (enableDebugFlag && debugFlagFromHeader == debugFlagValue) { // 输出堆栈信息
@@ -187,9 +258,30 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 				reqBodyJson, reqBodyStr = r.getBodyJson(c)
 			)
 			msg := ErrorStack()
-			logger.Debug(r.GetContext().GetConfig().LogOriginRecover()).Str(requestID, traceId).Str("Msg", err.Error()).RawJSON("reqParams", reqParamsJson).RawJSON("reqQueries", reqQueriesJson).RawJSON("reqBody", reqBodyJson).Str("reqBodyStr", reqBodyStr).Str("PrintStack", "true").Msg(msg)
+
+			logEvent.Str("Msg", err.Error()).Str("PrintStack", "true")
+
+			if len(reqParamsJson) > 0 {
+				logEvent.RawJSON("reqParams", reqParamsJson)
+			}
+			if len(reqQueriesJson) > 0 {
+				logEvent.RawJSON("reqQueries", reqQueriesJson)
+			}
+			if len(reqBodyJson) > 0 {
+				logEvent.RawJSON("reqBody", reqBodyJson)
+			} else if len(reqBodyStr) > 0 {
+				logEvent.Str("reqBodyStr", reqBodyStr)
+			}
+
+			if debugMode {
+				linesJson = r.getJsonIndent(msg, logger, jsonEnCoder, traceId)
+				if linesJson != nil {
+					logEvent.RawJSON("DebugStackLines", linesJson)
+				}
+			}
+			logEvent.Msg(msg)
 		} else {
-			logger.Error(r.GetContext().GetConfig().LogOriginRecover()).Str(requestID, traceId).Msg(err.Error())
+			logEvent.Msg(err.Error())
 		}
 	}
 }
@@ -198,8 +290,6 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 func (r *RecoverCatch) ErrorHandler(c *fiber.Ctx, err error) error {
 	// 记录日志 & 堆栈
 	r.DefaultStackTraceHandler(c, err)
-
-	//c.Set(fiber.HeaderContentType, fiber.MIMETextPlainCharsetUTF8)
 
 	// ValidateException
 	var (
@@ -210,7 +300,6 @@ func (r *RecoverCatch) ErrorHandler(c *fiber.Ctx, err error) error {
 	if okVe {
 		// 验证器错误，响应完整错误信息到客户端
 		return eve.RespError().JsonWithCtx(c, fiber.StatusBadRequest)
-		//return c.Status(fiber.StatusBadRequest).JSON(eve.RespError())
 	}
 	// Exception
 	var ee *exception.Exception
@@ -258,8 +347,27 @@ func (r *RecoverCatch) getQueriesJson(c *fiber.Ctx, log bootstrap.LoggerWrapper,
 	return j
 }
 
+func (r *RecoverCatch) getJsonIndent(s string, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+	if len(s) == 0 {
+		return nil
+	}
+	lines := debugStackLines(s)
+	if len(lines) == 0 {
+		return nil
+	}
+	j, err := json.MarshalIndent(lines, "", "  ")
+	if err != nil {
+		log.Warn(r.GetContext().GetConfig().LogOriginRecover()).Str(requestID, traceId).Err(err).Msg("getJson from stack lines error")
+		return nil
+	}
+	return j
+}
+
 func (r *RecoverCatch) getBodyJson(c *fiber.Ctx) ([]byte, string) {
 	body := c.Body()
+	if len(body) == 0 {
+		return nil, ""
+	}
 	//buffer := make([]byte, len(body))
 	//copy(buffer, body)
 	if frameUtils.JsonValidBytes(body) {
@@ -268,19 +376,20 @@ func (r *RecoverCatch) getBodyJson(c *fiber.Ctx) ([]byte, string) {
 	return nil, fiberUtils.UnsafeString(body)
 }
 
-// StackMsg 旧堆栈
+// StackMsg 获取当前 goroutine 的完整调用栈信息，需将字节切片转为字符串
 func StackMsg() string {
 	return fiberUtils.UnsafeString(debug.Stack())
 }
 
-// ErrorStack 新堆栈
 func ErrorStack(debugStack ...bool) string {
-	if len(debugStack) > 0 && debugStack[0] {
-		return StackMsg()
-	}
+	//if len(debugStack) > 0 && debugStack[0] {
+	//	return StackMsg()
+	//}
 	return CaptureStack()
 }
 
+// CaptureStack 捕获当前 goroutine 的调用栈信息，跳过前3层调用栈
+// 固定 64 个 uintptr 数组，栈上分配
 func CaptureStack() string {
 	const size = 64
 	var pcs [size]uintptr
@@ -304,6 +413,14 @@ func CaptureStack() string {
 		}
 	}
 	return strBuilder.String()
+}
+
+// debugStackLines 获取当前 goroutine 的调用栈信息行切片
+func debugStackLines(stacks string) []string {
+	if len(stacks) == 0 || !strings.Contains(stacks, "\n") {
+		return nil
+	}
+	return strings.Split(strings.ReplaceAll(stacks, "\t", "    "), "\n")
 }
 
 // New creates a new middleware Exception handler [for unexpected panic]

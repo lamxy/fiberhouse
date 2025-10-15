@@ -21,7 +21,7 @@ application:
   appLog:
     filename: "app.log"                      # 日志文件名
     enableConsole: true                      # 增加控制台输出
-    consoleJSON: true                        # 控制台输出json格式
+    consoleJSON: false                       # 控制台输出json格式
     enableFile: true                         # 增加输出到日志文件
     enableMetrics: false                     # TODO 指标开关
     enableAlertHook: false                   # TODO 告警钩子设置
@@ -54,7 +54,7 @@ application:
       mongodb: Mongodb
       mysql: Mysql
       test: Test
-  recover:
+  recover:                                   # 全局异常捕获配置
     debugFlag: X-your-custom-debug-flag
     debugFlagValue: f0dc4970-ed31-4598-acd8-b5c5fd66c12e
     enableDebugFlag: false                   # true，表示请求头部字段debugFlag配置生效，当其值等于debugFlagValue时，不论环境及enablePrintStack影响，都在服务端打印日志栈信息
