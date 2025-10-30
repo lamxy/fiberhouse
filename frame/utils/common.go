@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"unicode"
+	"unsafe"
 )
 
 // GetExecPath 获取当前可执行文件执行时目录
@@ -87,4 +88,18 @@ func FileExists(filename string) bool {
 		return false
 	}
 	return err == nil
+}
+
+// UnsafeString returns a string pointer without allocation
+//
+// copy from goFiber/fiber utils
+func UnsafeString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
+// UnsafeBytes returns a byte pointer without allocation.
+//
+// copy from goFiber/fiber utils
+func UnsafeBytes(s string) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }

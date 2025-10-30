@@ -10,10 +10,10 @@ import (
 	"context"
 	"errors"
 	"github.com/dgraph-io/ristretto/v2"
-	fiberUtils "github.com/gofiber/fiber/v2/utils"
 	"github.com/lamxy/fiberhouse/frame"
 	"github.com/lamxy/fiberhouse/frame/cache"
 	"github.com/lamxy/fiberhouse/frame/constant"
+	frameUtils "github.com/lamxy/fiberhouse/frame/utils"
 	"sync/atomic"
 )
 
@@ -73,7 +73,7 @@ func (lc *LocalCache) Get(ctx context.Context, key string, co *cache.CacheOption
 	}
 
 	//return string(value), nil
-	return fiberUtils.UnsafeString(value), nil
+	return frameUtils.UnsafeString(value), nil
 }
 
 // Set 设置缓存值
@@ -88,7 +88,7 @@ func (lc *LocalCache) Set(ctx context.Context, key string, value interface{}, co
 
 	switch v := value.(type) {
 	case string:
-		serializedValue = fiberUtils.UnsafeBytes(v)
+		serializedValue = frameUtils.UnsafeBytes(v)
 	case []byte:
 		serializedValue = v
 	default:

@@ -9,10 +9,10 @@ package cacheremote
 import (
 	"context"
 	"errors"
-	fiberUtils "github.com/gofiber/fiber/v2/utils"
 	"github.com/lamxy/fiberhouse/frame"
 	"github.com/lamxy/fiberhouse/frame/cache"
 	"github.com/lamxy/fiberhouse/frame/constant"
+	frameUtils "github.com/lamxy/fiberhouse/frame/utils"
 	"github.com/redis/go-redis/v9"
 	"github.com/sony/gobreaker/v2"
 	"golang.org/x/sync/singleflight"
@@ -141,7 +141,7 @@ func (rd *RedisDb) Get(ctx context.Context, key string, co *cache.CacheOption) (
 
 	// 布隆过滤器预检查
 	if co.GetBloomFilterState() && rd.bloomFilter != nil {
-		if !rd.bloomFilter.Test(fiberUtils.UnsafeBytes(key)) {
+		if !rd.bloomFilter.Test(frameUtils.UnsafeBytes(key)) {
 			// 新key值被拦截, 尝试获取一次，在成功时添加key+检查标识到布隆过滤器
 			if co.GetSingleFlightState() && rd.sf != nil {
 				// 开启单飞保护，避免并发穿透
@@ -167,7 +167,7 @@ func (rd *RedisDb) Get(ctx context.Context, key string, co *cache.CacheOption) (
 		}
 		// 成功获取后添加到布隆过滤器
 		if co.GetBloomFilterState() && rd.bloomFilter != nil {
-			rd.bloomFilter.Add(fiberUtils.UnsafeBytes(key))
+			rd.bloomFilter.Add(frameUtils.UnsafeBytes(key))
 		}
 		return value.(string), nil
 	}
@@ -175,7 +175,7 @@ func (rd *RedisDb) Get(ctx context.Context, key string, co *cache.CacheOption) (
 	// 直接获取
 	res, err := rd.getInternal(ctx, key, co)
 	if err == nil && co.GetBloomFilterState() && rd.bloomFilter != nil {
-		rd.bloomFilter.Add(fiberUtils.UnsafeBytes(key))
+		rd.bloomFilter.Add(frameUtils.UnsafeBytes(key))
 	}
 	return res, err
 }
@@ -184,7 +184,7 @@ func (rd *RedisDb) Get(ctx context.Context, key string, co *cache.CacheOption) (
 func (rd *RedisDb) getWithBloomUpdate(ctx context.Context, key string, co *cache.CacheOption) (string, error) {
 	res, err := rd.getInternal(ctx, key, co)
 	if err == nil {
-		rd.bloomFilter.Add(fiberUtils.UnsafeBytes(key))
+		rd.bloomFilter.Add(frameUtils.UnsafeBytes(key))
 		return res, nil
 	}
 
@@ -241,7 +241,7 @@ func (rd *RedisDb) Set(ctx context.Context, key string, value interface{}, co *c
 
 	// 成功设置后才添加到布隆过滤器
 	if co.GetBloomFilterState() && rd.bloomFilter != nil {
-		rd.bloomFilter.Add(fiberUtils.UnsafeBytes(key))
+		rd.bloomFilter.Add(frameUtils.UnsafeBytes(key))
 	}
 	return nil
 }
@@ -252,13 +252,13 @@ func (rd *RedisDb) serializeValue(value interface{}, co *cache.CacheOption) (str
 	case string:
 		return v, nil
 	case []byte:
-		return fiberUtils.UnsafeString(v), nil
+		return frameUtils.UnsafeString(v), nil
 	default:
 		data, err := co.GetJsonWrapper().Marshal(value)
 		if err != nil {
 			return "", cache.NewCacheError("serialize", "", err)
 		}
-		return fiberUtils.UnsafeString(data), nil
+		return frameUtils.UnsafeString(data), nil
 	}
 }
 

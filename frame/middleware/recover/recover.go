@@ -24,7 +24,6 @@ import (
 	frameUtils "github.com/lamxy/fiberhouse/frame/utils"
 
 	"github.com/gofiber/fiber/v2"
-	fiberUtils "github.com/gofiber/fiber/v2/utils"
 )
 
 var (
@@ -373,12 +372,12 @@ func (r *RecoverCatch) getBodyJson(c *fiber.Ctx) ([]byte, string) {
 	if frameUtils.JsonValidBytes(body) {
 		return body, ""
 	}
-	return nil, fiberUtils.UnsafeString(body)
+	return nil, frameUtils.UnsafeString(body)
 }
 
 // StackMsg 获取当前 goroutine 的完整调用栈信息，需将字节切片转为字符串
 func StackMsg() string {
-	return fiberUtils.UnsafeString(debug.Stack())
+	return frameUtils.UnsafeString(debug.Stack())
 }
 
 func ErrorStack(debugStack ...bool) string {
@@ -495,7 +494,7 @@ func New(config ...Config) fiber.Handler {
 							if jsonRet == nil {
 								out = ""
 							} else {
-								out = fiberUtils.UnsafeString(jsonRet)
+								out = frameUtils.UnsafeString(jsonRet)
 							}
 							err = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, out).JsonWithCtx(c, fiber.StatusInternalServerError)
 							return

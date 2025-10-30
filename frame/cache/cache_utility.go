@@ -10,8 +10,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	fiberUtils "github.com/gofiber/fiber/v2/utils"
 	"github.com/lamxy/fiberhouse/frame"
+	frameUtils "github.com/lamxy/fiberhouse/frame/utils"
 )
 
 // GetCached 通用缓存获取函数
@@ -80,7 +80,7 @@ func GetCached[R any](
 		if err != nil {
 			return zero, err
 		}
-		jsonData = fiberUtils.UnsafeString(jsonBytes)
+		jsonData = frameUtils.UnsafeString(jsonBytes)
 
 		// 写入缓存
 		err = cacheInstance.Set(cacheOption.GetContextCtx(), cacheOption.GetCacheKey(), jsonData, cacheOption)
@@ -96,7 +96,7 @@ func GetCached[R any](
 	}
 
 	// 反序列化缓存数据
-	err = cacheOption.GetJsonWrapper().Unmarshal(fiberUtils.UnsafeBytes(jsonData), &data)
+	err = cacheOption.GetJsonWrapper().Unmarshal(frameUtils.UnsafeBytes(jsonData), &data)
 	if err != nil {
 		return zero, err
 	}

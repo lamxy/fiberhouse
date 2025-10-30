@@ -42,6 +42,7 @@ func main() {
 	taskRegister := module.NewTaskAsync(appContext)
 
 	// 实例化应用启动器
+	// TODO With... 选项模式注入注册器实例
 	starterApp := applicationstarter.NewFrameApplication(appContext, appRegister, moduleRegister, taskRegister)
 
 	// 运行应用启动器

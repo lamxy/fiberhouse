@@ -50,6 +50,8 @@ type FrameApplication struct {
 }
 
 // NewFrameApplication 创建一个应用启动器对象
+//
+// TODO With... 选项模式注入注册器实例
 func NewFrameApplication(ctx frame.ContextFramer, registers ...frame.IRegister) frame.ApplicationStarter {
 	fApp := &FrameApplication{
 		Ctx: ctx,
