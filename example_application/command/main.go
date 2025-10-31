@@ -5,6 +5,7 @@ import (
 	"github.com/lamxy/fiberhouse/frame"
 	"github.com/lamxy/fiberhouse/frame/bootstrap"
 	"github.com/lamxy/fiberhouse/frame/commandstarter"
+	"github.com/lamxy/fiberhouse/frame/option"
 )
 
 func main() {
@@ -21,7 +22,7 @@ func main() {
 	appRegister := application.NewApplication(ctx)
 
 	// 初始化命令启动器对象
-	cmdStarter := commandstarter.NewCmdApplication(ctx, appRegister)
+	cmdStarter := commandstarter.NewCmdApplication(ctx, option.WithCmdRegister(appRegister))
 
 	// 运行命令启动器
 	commandstarter.RunCommandStarter(cmdStarter)

@@ -9,7 +9,6 @@ package commandstarter
 
 import (
 	"errors"
-	"fmt"
 	"github.com/lamxy/fiberhouse/frame"
 	"github.com/urfave/cli/v2"
 	"os"
@@ -36,24 +35,19 @@ func RunCommandStarter(cmdStarter frame.CommandStarter, core ...interface{}) {
 }
 
 // NewCmdApplication 创建一个命令启动器对象，实现CommandStarter接口
-func NewCmdApplication(ctx frame.ContextCommander, registers ...frame.IRegister) frame.CommandStarter {
+func NewCmdApplication(ctx frame.ContextCommander, opts ...frame.CommandStarterOption) frame.CommandStarter {
 	cApp := &CmdApplication{
 		Ctx: ctx,
 	}
-	if len(registers) > 0 {
-		for _, r := range registers {
-			switch r.GetName() {
-			case "application":
-				if ar, ok := r.(frame.ApplicationCmdRegister); ok {
-					cApp.RegisterApplication(ar)
-				} else {
-					panic(fmt.Errorf("IRegister name: %s is not an ApplicationCmdRegister", r.GetName()))
-				}
-			default:
-				ctx.GetLogger().Warn(ctx.GetConfig().LogOriginFrame()).Msg("No registrar available for injection into the command starter")
-			}
-		}
+
+	if len(opts) == 0 {
+		ctx.GetLogger().FatalWith(ctx.GetConfig().LogOriginFrame()).Msg("No registrar option available for injection into the command starter")
 	}
+
+	for _, opt := range opts {
+		opt(cApp)
+	}
+
 	return cApp
 }
 

@@ -9,7 +9,6 @@ package applicationstarter
 
 import (
 	"errors"
-	"fmt"
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse/frame"
@@ -50,38 +49,18 @@ type FrameApplication struct {
 }
 
 // NewFrameApplication 创建一个应用启动器对象
-//
-// TODO With... 选项模式注入注册器实例
-func NewFrameApplication(ctx frame.ContextFramer, registers ...frame.IRegister) frame.ApplicationStarter {
+func NewFrameApplication(ctx frame.ContextFramer, opts ...frame.ApplicationStarterOption) frame.ApplicationStarter {
 	fApp := &FrameApplication{
 		Ctx: ctx,
 	}
-	if len(registers) > 0 {
-		for _, r := range registers {
-			switch r.GetName() {
-			case "application":
-				if ar, ok := r.(frame.ApplicationRegister); ok {
-					fApp.RegisterApplication(ar)
-				} else {
-					panic(fmt.Errorf("IRegister name: %s is not an ApplicationRegister", r.GetName()))
-				}
-			case "module":
-				if mr, ok := r.(frame.ModuleRegister); ok {
-					fApp.RegisterModule(mr)
-				} else {
-					panic(fmt.Errorf("IRegister name: %s is not a ModuleRegister", r.GetName()))
-				}
-			case "task":
-				if tr, ok := r.(frame.TaskRegister); ok {
-					fApp.RegisterTask(tr)
-				} else {
-					panic(fmt.Errorf("IRegister name: %s is not a TaskRegister", r.GetName()))
-				}
-			default:
-				ctx.GetLogger().WarnWith(ctx.GetConfig().LogOriginFrame()).Msg("No registrar available for injection into the application starter via NewFrameApplication")
-			}
-		}
+	if len(opts) == 0 {
+		ctx.GetLogger().FatalWith(ctx.GetConfig().LogOriginFrame()).Msg("no registrar option available for injection into the application starter via NewFrameApplication")
 	}
+
+	for _, opt := range opts {
+		opt(fApp)
+	}
+
 	return fApp
 }
 

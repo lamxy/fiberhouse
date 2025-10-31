@@ -7,6 +7,7 @@ import (
 	"github.com/lamxy/fiberhouse/frame"
 	"github.com/lamxy/fiberhouse/frame/applicationstarter"
 	"github.com/lamxy/fiberhouse/frame/bootstrap"
+	"github.com/lamxy/fiberhouse/frame/option"
 )
 
 // Version 版本信息，通过编译时 ldflags 注入
@@ -42,8 +43,11 @@ func main() {
 	taskRegister := module.NewTaskAsync(appContext)
 
 	// 实例化应用启动器
-	// TODO With... 选项模式注入注册器实例
-	starterApp := applicationstarter.NewFrameApplication(appContext, appRegister, moduleRegister, taskRegister)
+	starterApp := applicationstarter.NewFrameApplication(appContext,
+		option.WithAppRegister(appRegister),
+		option.WithModuleRegister(moduleRegister),
+		option.WithTaskRegister(taskRegister),
+	)
 
 	// 运行应用启动器
 	applicationstarter.RunApplicationStarter(starterApp)
