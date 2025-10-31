@@ -211,8 +211,12 @@ func main() {
 	taskRegister := module.NewTaskAsync(appContext)  // 需实现任务注册器接口，见样例任务module/task.go的实现
 
 	// 实例化框架应用启动器
-	starterApp := applicationstarter.NewFrameApplication(appContext, appRegister, moduleRegister, taskRegister)
-
+	starterApp := applicationstarter.NewFrameApplication(appContext,
+            option.WithAppRegister(appRegister),
+            option.WithModuleRegister(moduleRegister),
+            option.WithTaskRegister(taskRegister), 
+	)
+	
 	// 运行框架应用启动器
 	applicationstarter.RunApplicationStarter(starterApp)
 }
@@ -1017,7 +1021,7 @@ func main() {
 	appRegister := application.NewApplication(ctx) // 需实现框架关于命令行应用的 frame.ApplicationCmdRegister接口
 
 	// 初始化命令行启动器对象
-	cmdStarter := commandstarter.NewCmdApplication(ctx, appRegister)
+        cmdStarter := commandstarter.NewCmdApplication(ctx, option.WithCmdRegister(appRegister))
 
 	// 运行命令行启动器
 	commandstarter.RunCommandStarter(cmdStarter)

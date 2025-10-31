@@ -210,8 +210,12 @@ func main() {
 	taskRegister := module.NewTaskAsync(appContext)  // Need to implement task registerer interface, see example task module/task.go implementation
 
 	// Instantiate framework application starter
-	starterApp := applicationstarter.NewFrameApplication(appContext, appRegister, moduleRegister, taskRegister)
-
+	starterApp := applicationstarter.NewFrameApplication(appContext,
+            option.WithAppRegister(appRegister),
+            option.WithModuleRegister(moduleRegister),
+            option.WithTaskRegister(taskRegister),
+        )
+  
 	// Run framework application starter
 	applicationstarter.RunApplicationStarter(starterApp)
 }
@@ -1015,8 +1019,8 @@ func main() {
 	appRegister := application.NewApplication(ctx) // Need to implement framework's command line application frame.ApplicationCmdRegister interface
 
 	// Initialize command line starter object
-	cmdStarter := commandstarter.NewCmdApplication(ctx, appRegister)
-
+        cmdStarter := commandstarter.NewCmdApplication(ctx, option.WithCmdRegister(appRegister))
+	
 	// Run command line starter
 	commandstarter.RunCommandStarter(cmdStarter)
 }
