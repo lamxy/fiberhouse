@@ -23,7 +23,7 @@ type IStarter interface {
 	GetApplication() IApplication
 }
 
-// FrameStarter 框架应用启动器接口
+// FrameStarter 应用框架启动器接口
 type FrameStarter interface {
 	IStarter
 	// GetContext 获取应用上下文
@@ -72,13 +72,13 @@ type FrameStarter interface {
 	// 根据配置启动异步任务服务器，注册任务处理器，运行后台任务worker服务并开始监听任务队列
 	RegisterTaskServer()
 
-	// GetStarterApp 获取框架启动器实例
+	// GetFrameApp 获取框架启动器实例
 	GetFrameApp() FrameStarter
 }
 
-// CoreStarter 核心应用启动器接口
+// CoreStarter 应用核心启动器接口
 type CoreStarter interface {
-	// GetContext 获取应用上下文
+	// GetAppContext 获取应用上下文
 	// 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
 	GetAppContext() ContextFramer
 
