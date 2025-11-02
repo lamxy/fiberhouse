@@ -25,8 +25,8 @@ type CmdApplication struct {
 }
 
 // RunCommandStarter 运行命令启动器
-func RunCommandStarter(cmdStarter frame.CommandStarter, core ...interface{}) {
-	cmdStarter.InitCoreApp(core...)
+func RunCommandStarter(cmdStarter frame.CommandStarter) {
+	cmdStarter.InitCoreApp()
 	cmdStarter.RegisterGlobalErrHandler()
 	cmdStarter.RegisterCommands()
 	cmdStarter.RegisterCoreGlobalOptional()
@@ -57,17 +57,10 @@ func (cApp *CmdApplication) GetContext() frame.ContextCommander {
 }
 
 // InitCoreApp 初始化包装的底层核心应用
-func (cApp *CmdApplication) InitCoreApp(core ...interface{}) {
+func (cApp *CmdApplication) InitCoreApp() {
 	cfg := cApp.GetContext().GetConfig()
 
-	var coreInterface interface{}
-	if len(core) > 0 {
-		coreInterface = core[0]
-	}
-
-	if coreApp, ok := coreInterface.(*cli.App); ok && coreApp != nil {
-		cApp.coreApp = coreApp
-	} else {
+	if cApp.coreApp == nil {
 		// 初始化核心应用
 		cApp.coreApp = &cli.App{
 			// 应用基本配置
@@ -93,6 +86,15 @@ func (cApp *CmdApplication) InitCoreApp(core ...interface{}) {
 	}
 	if cfg.Bool("command.sortCommandsByName") {
 		sort.Sort(cli.CommandsByName(cApp.coreApp.Commands))
+	}
+}
+
+// RegisterCoreApp 注册底层核心应用对象
+func (cApp *CmdApplication) RegisterCoreApp(core interface{}) {
+	if coreApp, ok := core.(*cli.App); ok {
+		cApp.coreApp = coreApp
+	} else {
+		cApp.GetContext().GetLogger().WarnWith(cApp.GetContext().GetConfig().LogOriginCMD()).Msg("RegisterCoreApp received invalid core application type, expected *cli.App")
 	}
 }
 

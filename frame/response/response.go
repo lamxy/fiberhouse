@@ -100,6 +100,7 @@ func ErrorWithoutPool(code int, msg string) *RespInfo {
 	return NewRespInfoWithoutPool(code, msg, nil)
 }
 
+// JsonWithCtx 使用 Fiber 上下文返回 JSON 响应，并释放对象回池
 func (r *RespInfo) JsonWithCtx(c *fiber.Ctx, status ...int) error {
 	defer r.Release()
 	if len(status) > 0 {

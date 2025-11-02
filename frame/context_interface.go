@@ -36,8 +36,6 @@ type IContext interface {
 // ContextFramer 框架Web应用上下文接口
 type ContextFramer interface {
 	IContext
-	// RegisterCoreApp 挂载框架核心app
-	RegisterCoreApp(core interface{})
 	// RegisterStarterApp 挂载框架启动器app
 	RegisterStarterApp(sApp ApplicationStarter)
 	// GetStarterApp 获取框架启动器实例(FrameApplication)
@@ -49,8 +47,6 @@ type ContextCommander interface {
 	IContext
 	// GetDigContainer 获取依赖注入容器
 	GetDigContainer() *component.DigContainer
-	// RegisterCoreApp 挂载框架核心app
-	RegisterCoreApp(core interface{})
 	// RegisterStarterApp 挂载框架启动器app
 	RegisterStarterApp(app CommandStarter)
 	// GetStarterApp 获取框架启动器实例(CommandStarter)

@@ -1,7 +1,14 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package option
 
 import (
 	"fmt"
+	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse/frame"
 )
 
@@ -35,5 +42,12 @@ func WithTaskRegister(r frame.IRegister) frame.ApplicationStarterOption {
 		} else {
 			panic(fmt.Errorf("IRegister name: '%s' is not a TaskRegister", r.GetName()))
 		}
+	}
+}
+
+// WithCoreCfg 返回核心应用配置注入选项函数
+func WithCoreCfg(cfg *fiber.Config) frame.ApplicationStarterOption {
+	return func(s frame.ApplicationStarter) {
+		s.RegisterCoreCfg(cfg)
 	}
 }

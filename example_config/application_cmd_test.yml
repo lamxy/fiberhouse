@@ -27,7 +27,7 @@ application:
     enableAlertHook: false                   # TODO 告警钩子设置
     level: debug                             # 日志级别: trace、debug、info、warn、error、fatal、panic
     asyncConf:                               # 异步日志相关配置
-      enable: true                           # 是否启用异步日志
+      enable: false                           # 是否启用异步日志
       type: "diode"                          # 异步日志类型，支持chan、diode
       chanConf:                              # 通道相关配置
         chanSize: 8                          # 通道数

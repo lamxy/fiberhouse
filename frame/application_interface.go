@@ -51,10 +51,12 @@ type ApplicationStarter interface {
 	// 返回已注册的任务注册器实例
 	GetTask() TaskRegister
 
+	// RegisterCoreCfg 注册核心应用配置
+	RegisterCoreCfg(interface{})
+
 	// InitCoreApp 初始化核心应用
-	// 创建并配置底层HTTP服务实例（如Fiber应用），可传入自定义配置参数
-	// coreConfig: 可选的核心应用配置参数
-	InitCoreApp(coreConfig ...interface{})
+	// 创建并配置底层HTTP服务实例（如Fiber应用）
+	InitCoreApp()
 
 	// RegisterApplicationGlobals 注册应用全局对象和初始化
 	// 注册全局对象初始化器、初始化必要的全局实例、配置验证器等

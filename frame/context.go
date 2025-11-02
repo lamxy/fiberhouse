@@ -8,7 +8,6 @@ package frame
 
 import (
 	"fmt"
-	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse/frame/appconfig"
 	"github.com/lamxy/fiberhouse/frame/bootstrap"
 	"github.com/lamxy/fiberhouse/frame/component"
@@ -16,7 +15,6 @@ import (
 	"github.com/lamxy/fiberhouse/frame/constant"
 	"github.com/lamxy/fiberhouse/frame/globalmanager"
 	"github.com/rs/zerolog"
-	"github.com/urfave/cli/v2"
 	"sync"
 )
 
@@ -35,7 +33,6 @@ type AppContext struct {
 	Cfg        appconfig.IAppConfig
 	logger     bootstrap.LoggerWrapper
 	container  *globalmanager.GlobalManager
-	CoreApp    *fiber.App
 	starterApp ApplicationStarter
 	vw         *validate.Wrap
 	storage    map[string]interface{}
@@ -115,11 +112,6 @@ func (c *AppContext) GetValidateWrap() validate.ValidateWrapper {
 	return c.vw
 }
 
-// RegisterCoreApp 挂载框架核心app
-func (c *AppContext) RegisterCoreApp(core interface{}) {
-	c.CoreApp = core.(*fiber.App)
-}
-
 // RegisterStarterApp 挂载框架启动器app
 func (c *AppContext) RegisterStarterApp(sApp ApplicationStarter) {
 	c.starterApp = sApp
@@ -178,7 +170,6 @@ type CmdContext struct {
 	Cfg          appconfig.IAppConfig
 	logger       bootstrap.LoggerWrapper
 	container    *globalmanager.GlobalManager // 全局管理器
-	CoreApp      *cli.App
 	starterApp   CommandStarter
 	digContainer *component.DigContainer // uber dig 依赖注入器
 }
@@ -242,11 +233,6 @@ func (c *CmdContext) GetContainer() *globalmanager.GlobalManager {
 // GetDigContainer 获取依赖注入容器
 func (c *CmdContext) GetDigContainer() *component.DigContainer {
 	return c.digContainer
-}
-
-// RegisterCoreApp 挂载框架核心app
-func (c *CmdContext) RegisterCoreApp(core interface{}) {
-	c.CoreApp = core.(*cli.App)
 }
 
 // RegisterStarterApp 挂载框架启动器app

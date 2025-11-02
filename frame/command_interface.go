@@ -10,7 +10,9 @@ package frame
 type CommandStarter interface {
 	IStarter
 	// InitCoreApp 初始化核心命令行应用
-	InitCoreApp(...interface{})
+	InitCoreApp()
+	// RegisterCoreApp 注册底层核心命令行应用实例
+	RegisterCoreApp(interface{})
 	// RegisterGlobalErrHandler 注册全局错误处理器
 	RegisterGlobalErrHandler()
 	// RegisterCommands 收集命令列表并注册到核心应用
