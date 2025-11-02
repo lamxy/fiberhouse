@@ -13,8 +13,8 @@ import (
 )
 
 // WithAppRegister 返回应用注册器注入选项函数
-func WithAppRegister(r frame.IRegister) frame.ApplicationStarterOption {
-	return func(s frame.ApplicationStarter) {
+func WithAppRegister(r frame.IRegister) frame.FrameStarterOption {
+	return func(s frame.FrameStarter) {
 		if ar, ok := r.(frame.ApplicationRegister); ok {
 			s.RegisterApplication(ar)
 		} else {
@@ -24,8 +24,8 @@ func WithAppRegister(r frame.IRegister) frame.ApplicationStarterOption {
 }
 
 // WithModuleRegister 返回模块/子系统注册器注入选项函数
-func WithModuleRegister(r frame.IRegister) frame.ApplicationStarterOption {
-	return func(s frame.ApplicationStarter) {
+func WithModuleRegister(r frame.IRegister) frame.FrameStarterOption {
+	return func(s frame.FrameStarter) {
 		if mr, ok := r.(frame.ModuleRegister); ok {
 			s.RegisterModule(mr)
 		} else {
@@ -35,8 +35,8 @@ func WithModuleRegister(r frame.IRegister) frame.ApplicationStarterOption {
 }
 
 // WithTaskRegister 返回任务注册器注入选项函数
-func WithTaskRegister(r frame.IRegister) frame.ApplicationStarterOption {
-	return func(s frame.ApplicationStarter) {
+func WithTaskRegister(r frame.IRegister) frame.FrameStarterOption {
+	return func(s frame.FrameStarter) {
 		if tr, ok := r.(frame.TaskRegister); ok {
 			s.RegisterTask(tr)
 		} else {
@@ -46,8 +46,8 @@ func WithTaskRegister(r frame.IRegister) frame.ApplicationStarterOption {
 }
 
 // WithCoreCfg 返回核心应用配置注入选项函数
-func WithCoreCfg(cfg *fiber.Config) frame.ApplicationStarterOption {
-	return func(s frame.ApplicationStarter) {
+func WithCoreCfg(cfg *fiber.Config) frame.CoreStarterOption {
+	return func(s frame.CoreStarter) {
 		s.RegisterCoreCfg(cfg)
 	}
 }

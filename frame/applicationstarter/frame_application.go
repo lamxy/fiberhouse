@@ -26,16 +26,21 @@ import (
 // coreCfg 应用启动器包装的底层http服务对象初始化配置，可选参数
 func RunApplicationStarter(starter frame.ApplicationStarter) {
 	// 应用启动流程，保持执行顺序
-	starter.RegisterToCtx()
+	starter.RegisterToCtx(starter)
 	starter.RegisterApplicationGlobals()
-	starter.InitCoreApp()
-	starter.RegisterAppHooks()
-	starter.RegisterAppMiddleware()
-	starter.RegisterModuleInitialize()
-	starter.RegisterModuleSwagger()
+	starter.InitCoreApp(starter.GetFrameApp())
+	starter.RegisterAppHooks(starter.GetFrameApp())
+	starter.RegisterAppMiddleware(starter.GetFrameApp())
+	starter.RegisterModuleInitialize(starter.GetFrameApp())
+	starter.RegisterModuleSwagger(starter.GetFrameApp())
 	starter.RegisterTaskServer()
 	starter.RegisterGlobalsKeepalive()
 	starter.AppCoreRun()
+}
+
+type WebApplication struct {
+	frame.FrameStarter
+	frame.CoreStarter
 }
 
 // FrameApplication 框架应用启动器实现，实现了 frame.ApplicationStarter 接口
@@ -50,7 +55,7 @@ type FrameApplication struct {
 }
 
 // NewFrameApplication 创建一个应用启动器对象
-func NewFrameApplication(ctx frame.ContextFramer, opts ...frame.ApplicationStarterOption) frame.ApplicationStarter {
+func NewFrameApplication(ctx frame.ContextFramer, opts ...frame.FrameStarterOption) frame.FrameStarter {
 	fApp := &FrameApplication{
 		Ctx: ctx,
 	}
@@ -65,9 +70,39 @@ func NewFrameApplication(ctx frame.ContextFramer, opts ...frame.ApplicationStart
 	return fApp
 }
 
+type CoreFiber struct {
+	ctx     frame.ContextFramer
+	coreCfg *fiber.Config
+	coreApp *fiber.App
+}
+
+func NewCoreFiber(ctx frame.ContextFramer, opts ...frame.CoreStarterOption) frame.CoreStarter {
+	core := &CoreFiber{
+		ctx: ctx,
+	}
+
+	if len(opts) > 0 {
+		for _, opt := range opts {
+			opt(core)
+		}
+	}
+
+	return core
+}
+
 // GetContext 获取应用上下文
 func (fa *FrameApplication) GetContext() frame.ContextFramer {
 	return fa.Ctx
+}
+
+// GetFrameApp 获取框架启动器实例
+func (fa *FrameApplication) GetFrameApp() frame.FrameStarter {
+	return fa
+}
+
+// GetAppContext 获取应用上下文
+func (cf *CoreFiber) GetAppContext() frame.ContextFramer {
+	return cf.ctx
 }
 
 // RegisterApplication 注入应用注册器实例到应用启动器的application属性
@@ -100,26 +135,31 @@ func (fa *FrameApplication) GetTask() frame.TaskRegister {
 	return fa.task
 }
 
+// GetCoreApp 获取应用核心启动器实例
+func (cf *CoreFiber) GetCoreApp() frame.CoreStarter {
+	return cf
+}
+
 // InitCoreApp 初始化应用核心（框架应用基于 fiber.App）
-func (fa *FrameApplication) InitCoreApp() {
-	if fa.GetAppState() {
+func (cf *CoreFiber) InitCoreApp(fs frame.FrameStarter) {
+	if cf.GetAppContext().GetAppState() {
 		return
 	}
-	fa.GetContext().GetLogger().InfoWith(fa.GetContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("InitCoreApp starting...")
+	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("InitCoreApp starting...")
 
 	// 自定义核心配置
-	if fa.coreCfg != nil {
-		fa.coreApp = fiber.New(*fa.coreCfg)
+	if cf.coreCfg != nil {
+		cf.coreApp = fiber.New(*cf.coreCfg)
 		return
 	}
 
-	cfg := fa.GetContext().GetConfig()
+	cfg := cf.GetAppContext().GetConfig()
 	// frame.JsonWrapper序列化反序列化接口，默认编解码器实例
-	json := frame.GetMustInstance[frame.JsonWrapper](fa.GetApplication().GetDefaultJsonCodecKey())
+	json := frame.GetMustInstance[frame.JsonWrapper](fs.GetApplication().GetDefaultJsonCodecKey())
 	// IRecover接口实例
-	rc := frameRecover.NewRecoverCatch(fa.GetContext())
+	rc := frameRecover.NewRecoverCatch(cf.GetAppContext())
 	// 默认核心配置
-	fa.coreApp = fiber.New(fiber.Config{
+	cf.coreApp = fiber.New(fiber.Config{
 		// 设置应用名称
 		AppName:       cfg.String("application.appName"),
 		CaseSensitive: cfg.Bool("application.server.caseSensitive"),
@@ -163,20 +203,20 @@ func (fa *FrameApplication) InitCoreApp() {
 }
 
 // RegisterCoreCfg 注册应用核心配置对象到应用启动器
-func (fa *FrameApplication) RegisterCoreCfg(coreCfg interface{}) {
+func (cf *CoreFiber) RegisterCoreCfg(coreCfg interface{}) {
 	if cfg, ok := coreCfg.(*fiber.Config); ok {
-		fa.coreCfg = cfg
+		cf.coreCfg = cfg
 	} else {
-		fa.GetContext().GetLogger().WarnWith(fa.GetContext().GetConfig().LogOriginFrame()).Msg("RegisterCoreCfg coreCfg isn't a fiber.Config")
+		cf.GetAppContext().GetLogger().WarnWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Msg("RegisterCoreCfg coreCfg isn't a fiber.Config")
 	}
 }
 
 // RegisterToCtx 注册应用启动器对象到应用上下文
-func (fa *FrameApplication) RegisterToCtx() {
-	if fa.GetAppState() {
+func (fa *FrameApplication) RegisterToCtx(as frame.ApplicationStarter) {
+	if fa.GetContext().GetAppState() {
 		return
 	}
-	fa.GetContext().RegisterStarterApp(fa)
+	fa.GetContext().RegisterStarterApp(as)
 }
 
 // RegisterApplicationGlobals 注册应用全局初始化逻辑
@@ -186,7 +226,7 @@ func (fa *FrameApplication) RegisterToCtx() {
 // 注册自定义新增语言的验证器实例到验证其包装器中
 // 注册自定义验证器tag和tag的语言翻译
 func (fa *FrameApplication) RegisterApplicationGlobals() {
-	if fa.GetAppState() {
+	if fa.GetContext().GetAppState() {
 		return
 	}
 	fa.GetContext().GetLogger().InfoWith(fa.GetContext().GetConfig().LogOriginFrame()).
@@ -210,7 +250,7 @@ func (fa *FrameApplication) RegisterApplicationGlobals() {
 
 // RegisterGlobalInitializers 注册全局对象初始化器
 func (fa *FrameApplication) RegisterGlobalInitializers() {
-	if fa.GetAppState() {
+	if fa.GetContext().GetAppState() {
 		return
 	}
 
@@ -224,7 +264,7 @@ func (fa *FrameApplication) RegisterGlobalInitializers() {
 
 // InitializeGlobalRequired 初始化应用启动时必要的全局对象
 func (fa *FrameApplication) InitializeGlobalRequired() {
-	if fa.GetAppState() {
+	if fa.GetContext().GetAppState() {
 		return
 	}
 	if fa.GetApplication() != nil {
@@ -242,7 +282,7 @@ func (fa *FrameApplication) InitializeGlobalRequired() {
 
 // InitializeCustomValidateInitializers 初始化自定义新增语言的验证器到验证包装器
 func (fa *FrameApplication) InitializeCustomValidateInitializers() {
-	if fa.GetAppState() {
+	if fa.GetContext().GetAppState() {
 		return
 	}
 	if fa.GetApplication() != nil {
@@ -259,7 +299,7 @@ func (fa *FrameApplication) InitializeCustomValidateInitializers() {
 
 // RegisterValidatorCustomTags 注册验证器自定义的tag及翻译，详细使用见 https://github.com/go-playground/validator README & _examples
 func (fa *FrameApplication) RegisterValidatorCustomTags() {
-	if fa.GetAppState() {
+	if fa.GetContext().GetAppState() {
 		return
 	}
 	if fa.GetApplication() != nil {
@@ -286,7 +326,7 @@ func (fa *FrameApplication) RegisterValidatorCustomTags() {
 //
 // 方便直接使用已附加来源标记的子日志器记录日志
 func (fa *FrameApplication) RegisterLoggerWithOriginToContainer() {
-	if fa.GetAppState() {
+	if fa.GetContext().GetAppState() {
 		return
 	}
 	logOriginMap := fa.GetContext().GetConfig().GetLogOriginMap()
@@ -303,7 +343,7 @@ func (fa *FrameApplication) RegisterLoggerWithOriginToContainer() {
 
 // RegisterGlobalsKeepalive 注册需要保活的全局对象后台健康检测
 func (fa *FrameApplication) RegisterGlobalsKeepalive() {
-	if fa.GetAppState() {
+	if fa.GetContext().GetAppState() {
 		return
 	}
 	// 全局对象健康检测和保活
@@ -352,78 +392,78 @@ func (fa *FrameApplication) startHealthCheck(interval time.Duration) {
 }
 
 // RegisterAppMiddleware 注册应用级的中间件
-func (fa *FrameApplication) RegisterAppMiddleware() {
-	if fa.GetAppState() {
+func (cf *CoreFiber) RegisterAppMiddleware(fs frame.FrameStarter) {
+	if cf.GetAppContext().GetAppState() {
 		return
 	}
-	fa.GetContext().GetLogger().Info(fa.GetContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware")
-	debugMode := fa.GetContext().GetConfig().GetRecover().DebugMode
+	cf.GetAppContext().GetLogger().Info(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware")
+	debugMode := cf.GetAppContext().GetConfig().GetRecover().DebugMode
 	// IRecover接口实例
-	rc := frameRecover.NewRecoverCatch(fa.GetContext())
+	rc := frameRecover.NewRecoverCatch(cf.GetAppContext())
 
 	// 注册核心应用(coreApp/fiber App)全局错误捕获中间件
-	fa.coreApp.Use(frameRecover.New(frameRecover.Config{
+	cf.coreApp.Use(frameRecover.New(frameRecover.Config{
 		EnableStackTrace:  true,
 		StackTraceHandler: rc.DefaultStackTraceHandler,
-		Logger:            fa.GetContext().GetLogger(),
-		AppContext:        fa.GetContext(),
+		Logger:            cf.GetAppContext().GetLogger(),
+		AppContext:        cf.GetAppContext(),
 		Stdout:            false,
 		DebugMode:         debugMode, // true开启调试模式，将详细错误信息显示给客户端，否则隐藏细节，只能通过日志文件查看。生产环境关闭该调式模式。
 	}))
 
 	// 注册核心应用(coreApp/fiber App)http请求日志中间件
-	fa.coreApp.Use(fiberzerolog.New(fiberzerolog.Config{
+	cf.coreApp.Use(fiberzerolog.New(fiberzerolog.Config{
 		Logger: func() *zerolog.Logger {
-			log, err := fa.GetContext().GetContainer().Get(fa.GetContext().GetConfig().LogOriginCoreHttp().InstanceKey())
+			log, err := cf.GetAppContext().GetContainer().Get(cf.GetAppContext().GetConfig().LogOriginCoreHttp().InstanceKey())
 			if err != nil {
 				// 获取http类子日志器错误
-				fa.GetContext().GetLogger().Error(fa.GetContext().GetConfig().LogOriginFrame()).Err(err).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware register fiberzerolog middleware to get http logger error")
+				cf.GetAppContext().GetLogger().Error(cf.GetAppContext().GetConfig().LogOriginFrame()).Err(err).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware register fiberzerolog middleware to get http logger error")
 				return nil // 使用默认日志器
 			}
 			return log.(*zerolog.Logger)
 		}(),
 		Next: func(c *fiber.Ctx) bool {
-			ms := fa.GetContext().GetConfig().GetMiddlewareSwitch("coreHttp")
+			ms := cf.GetAppContext().GetConfig().GetMiddlewareSwitch("coreHttp")
 			return !ms
 		},
 	}))
 
-	if fa.GetApplication() != nil {
+	if fs.GetApplication() != nil {
 		// 注册项目应用注册器全局中间件
-		fa.GetApplication().(frame.ApplicationRegister).RegisterAppMiddleware(fa.coreApp)
+		fs.GetApplication().(frame.ApplicationRegister).RegisterAppMiddleware(cf.coreApp)
 	}
 }
 
 // RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器、swagger、etc...
-func (fa *FrameApplication) RegisterModuleInitialize() {
-	if fa.GetAppState() {
+func (cf *CoreFiber) RegisterModuleInitialize(fs frame.FrameStarter) {
+	if cf.GetAppContext().GetAppState() {
 		return
 	}
-	if fa.GetModule() != nil {
+	if fs.GetModule() != nil {
 		// 注册模块/子系统中间件
-		fa.GetModule().RegisterModuleMiddleware(fa.coreApp)
+		fs.GetModule().RegisterModuleMiddleware(cf.coreApp)
 		// 注册模块/子系统路由处理器
-		fa.GetModule().RegisterModuleRouteHandlers(fa.coreApp)
+		fs.GetModule().RegisterModuleRouteHandlers(cf.coreApp)
 	}
 }
 
 // RegisterModuleSwagger 注册模块/子系统级的swagger
-func (fa *FrameApplication) RegisterModuleSwagger() {
-	if fa.GetAppState() {
+func (cf *CoreFiber) RegisterModuleSwagger(fs frame.FrameStarter) {
+	if cf.GetAppContext().GetAppState() {
 		return
 	}
-	registerOrNot := fa.GetContext().GetConfig().Bool("application.swagger.enable")
+	registerOrNot := cf.GetAppContext().GetConfig().Bool("application.swagger.enable")
 	if registerOrNot {
-		if fa.GetModule() != nil {
+		if fs.GetModule() != nil {
 			// 注册模块系统的swagger
-			fa.GetModule().RegisterSwagger(fa.coreApp)
+			fs.GetModule().RegisterSwagger(cf.coreApp)
 		}
 	}
 }
 
 // RegisterTaskServer 注册启动异步任务服务器后台工作器服务
 func (fa *FrameApplication) RegisterTaskServer() {
-	if fa.GetAppState() {
+	if fa.GetContext().GetAppState() {
 		return
 	}
 	enable := fa.GetContext().GetConfig().Bool("application.task.enableServer")
@@ -444,17 +484,17 @@ func (fa *FrameApplication) RegisterTaskServer() {
 }
 
 // RegisterAppHooks 注册核心应用的生命周期钩子函数（如果存在）
-func (fa *FrameApplication) RegisterAppHooks() {
-	if fa.GetAppState() {
+func (cf *CoreFiber) RegisterAppHooks(fs frame.FrameStarter) {
+	if cf.GetAppContext().GetAppState() {
 		return
 	}
 
 	// 注册应用注册器的钩子函数
-	if fa.GetApplication() != nil {
-		fa.GetApplication().(frame.ApplicationRegister).RegisterCoreHook(fa.coreApp)
+	if fs.GetApplication() != nil {
+		fs.GetApplication().(frame.ApplicationRegister).RegisterCoreHook(cf.coreApp)
 	}
 
-	fa.coreApp.Hooks().OnListen(func(listenData fiber.ListenData) error {
+	cf.coreApp.Hooks().OnListen(func(listenData fiber.ListenData) error {
 		if fiber.IsChild() {
 			return nil
 		}
@@ -462,50 +502,40 @@ func (fa *FrameApplication) RegisterAppHooks() {
 		if listenData.TLS {
 			scheme = "https"
 		}
-		fa.GetContext().GetLogger().InfoWith(fa.GetContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appListen", listenData.Host+":"+listenData.Port).Msg(scheme + "://" + listenData.Host + ":" + listenData.Port)
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appListen", listenData.Host+":"+listenData.Port).Msg(scheme + "://" + listenData.Host + ":" + listenData.Port)
 		return nil
 	})
 
-	fa.coreApp.Hooks().OnShutdown(func() error {
+	cf.coreApp.Hooks().OnShutdown(func() error {
 		// 应用Shutdown时回调，回收/关闭相关资源，如后台程序(等待关闭信号)、异步任务(等待关闭信号)、连接池（关闭连接池）、中间件（封装实现Closable接口）等
-		fa.GetContext().GetLogger().InfoWith(fa.GetContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appShutdown", "ok").Msg("")
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appShutdown", "ok").Msg("")
 
 		//fa.GetContext().GetContainer().ReleaseAll(true) // 释放资源
-		fa.GetContext().GetContainer().ClearAll(true) // 将全局容器初始化，清空全局对象
-		_ = fa.GetContext().GetLogger().Close()       // 日志器Close
+		cf.GetAppContext().GetContainer().ClearAll(true) // 将全局容器初始化，清空全局对象
+		_ = cf.GetAppContext().GetLogger().Close()       // 日志器Close
 		return nil
 	})
-}
-
-// setAppState 设置应用启动状态
-func (fa *FrameApplication) setAppState(state bool) {
-	fa.appStarted = state
-}
-
-// GetAppState 获取应用状态
-func (fa *FrameApplication) GetAppState() bool {
-	return fa.appStarted
 }
 
 // AppCoreRun 监听核心应用套接字
-func (fa *FrameApplication) AppCoreRun() {
+func (cf *CoreFiber) AppCoreRun() {
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM) // 监听信号
 
-	go func(app *FrameApplication) {
-		app.GetContext().GetLogger().InfoWith(fa.GetContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listening...")
-		host, port := app.GetContext().GetConfig().String("application.server.host"), app.Ctx.GetConfig().String("application.server.port")
+	go func(app *CoreFiber) {
+		app.GetAppContext().GetLogger().InfoWith(app.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listening...")
+		host, port := app.GetAppContext().GetConfig().String("application.server.host"), app.GetAppContext().GetConfig().String("application.server.port")
 		if err := app.coreApp.Listen(host + ":" + port); err != nil {
-			app.GetContext().GetLogger().FatalWith(fa.GetContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listen failed")
+			app.GetAppContext().GetLogger().FatalWith(app.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listen failed")
 		}
-		fa.setAppState(true)
-	}(fa)
+		app.GetAppContext().SetAppState(true)
+	}(cf)
 
 	<-stopCh
 
-	fa.GetContext().GetLogger().InfoWith(fa.GetContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("Fiber app Shutting down...")
-	err := fa.coreApp.Shutdown()
+	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("Fiber app Shutting down...")
+	err := cf.coreApp.Shutdown()
 	if err != nil {
-		fa.GetContext().GetLogger().FatalWith(fa.GetContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Err(err).Msg("Fiber app Shutdown failed.")
+		cf.GetAppContext().GetLogger().FatalWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Err(err).Msg("Fiber app Shutdown failed.")
 	}
 }
