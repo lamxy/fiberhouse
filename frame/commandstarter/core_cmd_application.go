@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package commandstarter
 
 import (
@@ -9,11 +14,13 @@ import (
 	"time"
 )
 
+// CoreCmdCli 核心命令行应用cli启动器
 type CoreCmdCli struct {
 	Ctx     frame.ContextCommander
 	coreApp *cli.App
 }
 
+// NewCoreCmdCli 实例化核心命令行应用cli启动器
 func NewCoreCmdCli(ctx frame.ContextCommander, opts ...frame.CoreCmdStarterOption) frame.CoreCmdStarter {
 	cca := &CoreCmdCli{
 		Ctx: ctx,
