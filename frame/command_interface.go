@@ -6,27 +6,43 @@
 
 package frame
 
-// CommandStarter 命令行脚本启动器接口，定义命令行程序启动流程
-type CommandStarter interface {
+type FrameCmdStarter interface {
 	IStarter
-	// InitCoreApp 初始化核心命令行应用
-	InitCoreApp()
-	// RegisterCoreApp 注册底层核心命令行应用实例
-	RegisterCoreApp(interface{})
-	// RegisterGlobalErrHandler 注册全局错误处理器
-	RegisterGlobalErrHandler()
-	// RegisterCommands 收集命令列表并注册到核心应用
-	RegisterCommands()
-	// RegisterCoreGlobalOptional 注册应用核心的全局初始化，如果有必要
-	RegisterCoreGlobalOptional()
+	// GetContext 获取应用上下文
+	GetContext() ContextCommander
 	// RegisterApplicationGlobals 注册应用预定义的全局对象实例到全局管理器容器中
 	RegisterApplicationGlobals()
 	// RegisterLoggerWithOriginToContainer 将预定义带日志源日志器注册到全局管理器容器中
 	RegisterLoggerWithOriginToContainer()
 	// RegisterApplication 注册应用注册器对象到启动器的Application属性
 	RegisterApplication(application ApplicationCmdRegister)
+	// GetFrameCmdApp 获取框架命令行应用启动器实例
+	GetFrameCmdApp() FrameCmdStarter
+}
+
+type CoreCmdStarter interface {
+	// GetAppContext 获取应用上下文
+	GetAppContext() ContextCommander
+	// InitCoreApp 初始化核心命令行应用
+	InitCoreApp()
+	// RegisterCoreApp 注册底层核心命令行应用实例
+	RegisterCoreApp(interface{})
+	// RegisterGlobalErrHandler 注册全局错误处理器
+	RegisterGlobalErrHandler(fca FrameCmdStarter)
+	// RegisterCommands 收集命令列表并注册到核心应用
+	RegisterCommands(fca FrameCmdStarter)
+	// RegisterCoreGlobalOptional 注册应用核心的全局初始化，如果有必要
+	RegisterCoreGlobalOptional(fca FrameCmdStarter)
 	// AppCoreRun 运行核心命令行应用
 	AppCoreRun() error
+	// GetCoreCmdApp 获取核心命令行应用实例
+	GetCoreCmdApp() CoreCmdStarter
+}
+
+// CommandStarter 命令行脚本启动器接口，定义命令行程序启动流程
+type CommandStarter interface {
+	FrameCmdStarter
+	CoreCmdStarter
 }
 
 // ApplicationCmdRegister 命令行应用注册器

@@ -30,23 +30,27 @@ var (
 
 // AppContext Web应用上下文实现
 type AppContext struct {
-	Cfg        appconfig.IAppConfig
-	logger     bootstrap.LoggerWrapper
-	container  *globalmanager.GlobalManager
-	starterApp ApplicationStarter
-	vw         *validate.Wrap
-	storage    map[string]interface{}
-	lock       sync.RWMutex
+	Cfg          appconfig.IAppConfig
+	logger       bootstrap.LoggerWrapper
+	container    *globalmanager.GlobalManager
+	starterApp   ApplicationStarter
+	appState     bool
+	appStateOnce sync.Once
+	vw           *validate.Wrap
+	storage      map[string]interface{}
+	lock         sync.RWMutex
 }
 
 // NewAppContext 获取新的全局上下文对象
 func NewAppContext(cfg *appconfig.AppConfig, logger bootstrap.LoggerWrapper) ContextFramer {
 	return &AppContext{
-		Cfg:       cfg,
-		logger:    logger,
-		container: globalmanager.NewGlobalManagerOnce(),
-		vw:        validate.NewWrap(cfg),
-		storage:   make(map[string]interface{}),
+		Cfg:          cfg,
+		logger:       logger,
+		container:    globalmanager.NewGlobalManagerOnce(),
+		appState:     false,
+		appStateOnce: sync.Once{},
+		vw:           validate.NewWrap(cfg),
+		storage:      make(map[string]interface{}),
 	}
 }
 
@@ -62,6 +66,18 @@ func NewAppContextOnce(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper)
 		}
 	})
 	return applicationContext
+}
+
+// setAppState 设置应用启动状态
+func (c *AppContext) SetAppState(state bool) {
+	c.appStateOnce.Do(func() {
+		c.appState = state
+	})
+}
+
+// GetAppState 获取应用状态
+func (c *AppContext) GetAppState() bool {
+	return c.appState
 }
 
 // GetConfig 获取全局配置

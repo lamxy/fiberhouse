@@ -50,9 +50,9 @@ frame/                              # FiberHouse 框架核心
 │   └── model_interface.go          # 数据模型接口定义
 ├── 应用启动层
 │   ├── applicationstarter/         # Web 应用启动器实现
-│   │   └── frame_application.go    # 基于 Fiber 的应用启动器
+│   │   └── web_starter.go          # 基于 Fiber 的应用启动器
 │   ├── commandstarter/             # 命令行应用启动器实现
-│   │   └── cmd_application.go      # 命令行应用启动器
+│   │   └── cmdline_starter.go      # 命令行应用启动器
 │   └── bootstrap/                  # 应用引导程序
 │       └── bootstrap.go            # 统一引导入口
 ├── 配置管理层
@@ -210,15 +210,20 @@ func main() {
 	moduleRegister := module.NewModule(appContext)  // 需实现模块注册器接口，见样例模块module/module.go的实现
 	taskRegister := module.NewTaskAsync(appContext)  // 需实现任务注册器接口，见样例任务module/task.go的实现
 
-	// 实例化框架应用启动器
-	starterApp := applicationstarter.NewFrameApplication(appContext,
-            option.WithAppRegister(appRegister),
-            option.WithModuleRegister(moduleRegister),
-            option.WithTaskRegister(taskRegister), 
-	)
+        // 实例化 Web 应用启动器
+        webStarter := &applicationstarter.WebApplication{
+            // 实例化框架启动器
+            FrameStarter: applicationstarter.NewFrameApplication(appContext,
+              option.WithAppRegister(appRegister),
+              option.WithModuleRegister(moduleRegister),
+              option.WithTaskRegister(taskRegister),
+            ),
+            // 实例化核心应用启动器
+            CoreStarter: applicationstarter.NewCoreFiber(appContext),
+        }
 	
 	// 运行框架应用启动器
-	applicationstarter.RunApplicationStarter(starterApp)
+	applicationstarter.RunApplicationStarter(webStarter)
 }
 ```
 
@@ -1020,11 +1025,15 @@ func main() {
 	// 初始化应用注册器对象，注入应用启动器
 	appRegister := application.NewApplication(ctx) // 需实现框架关于命令行应用的 frame.ApplicationCmdRegister接口
 
-	// 初始化命令行启动器对象
-        cmdStarter := commandstarter.NewCmdApplication(ctx, option.WithCmdRegister(appRegister))
-
+        // 实例化命令行应用启动器
+        cmdlineStarter := &commandstarter.CMDLineApplication{
+            // 实例化框架命令启动器对象
+            FrameCmdStarter: commandstarter.NewFrameCmdApplication(ctx, option.WithCmdRegister(appRegister)),
+            // 实例化核心命令启动器对象
+            CoreCmdStarter: commandstarter.NewCoreCmdCli(ctx),
+        }
 	// 运行命令行启动器
-	commandstarter.RunCommandStarter(cmdStarter)
+	commandstarter.RunCommandStarter(cmdlineStarter)
 }
 ```
 - 编写一个命令脚本: 见 [example_application/command/application/commands/test_orm_command.go](./example_application/command/application/commands/test_orm_command.go)

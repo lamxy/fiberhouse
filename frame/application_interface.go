@@ -23,10 +23,9 @@ type IStarter interface {
 	GetApplication() IApplication
 }
 
-// ApplicationStarter 定义框架应用启动器的接口(定义启动方法和启动流程)
-type ApplicationStarter interface {
+// FrameStarter 应用框架启动器接口
+type FrameStarter interface {
 	IStarter
-
 	// GetContext 获取应用上下文
 	// 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
 	GetContext() ContextFramer
@@ -51,12 +50,9 @@ type ApplicationStarter interface {
 	// 返回已注册的任务注册器实例
 	GetTask() TaskRegister
 
-	// RegisterCoreCfg 注册核心应用配置
-	RegisterCoreCfg(interface{})
-
-	// InitCoreApp 初始化核心应用
-	// 创建并配置底层HTTP服务实例（如Fiber应用）
-	InitCoreApp()
+	// RegisterToCtx 注册启动器到上下文
+	// 将启动器实例注册到应用上下文中，便于其他组件访问
+	RegisterToCtx(starter ApplicationStarter)
 
 	// RegisterApplicationGlobals 注册应用全局对象和初始化
 	// 注册全局对象初始化器、初始化必要的全局实例、配置验证器等
@@ -72,33 +68,55 @@ type ApplicationStarter interface {
 	// 启动后台健康检测服务，定期检查全局对象状态并自动重建不健康的实例
 	RegisterGlobalsKeepalive()
 
-	// RegisterAppMiddleware 注册应用级中间件
-	// 注册应用级别的中间件，如错误恢复、请求日志、CORS等全局中间件
-	RegisterAppMiddleware()
-
-	// RegisterModuleInitialize 注册模块初始化
-	// 执行模块级别的初始化，包括模块中间件和路由处理器的注册
-	RegisterModuleInitialize()
-
-	// RegisterModuleSwagger 注册模块Swagger文档
-	// 根据配置决定是否注册Swagger API文档路由
-	RegisterModuleSwagger()
-
 	// RegisterTaskServer 注册异步任务服务器
 	// 根据配置启动异步任务服务器，注册任务处理器，运行后台任务worker服务并开始监听任务队列
 	RegisterTaskServer()
 
+	// GetFrameApp 获取框架启动器实例
+	GetFrameApp() FrameStarter
+}
+
+// CoreStarter 应用核心启动器接口
+type CoreStarter interface {
+	// GetAppContext 获取应用上下文
+	// 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
+	GetAppContext() ContextFramer
+
+	// RegisterCoreCfg 注册核心应用配置
+	RegisterCoreCfg(interface{})
+
+	// InitCoreApp 初始化核心应用
+	// 创建并配置底层HTTP服务实例（如Fiber应用）
+	InitCoreApp(fs FrameStarter)
+
+	// RegisterAppMiddleware 注册应用级中间件
+	// 注册应用级别的中间件，如错误恢复、请求日志、CORS等全局中间件
+	RegisterAppMiddleware(fs FrameStarter)
+
+	// RegisterModuleSwagger 注册模块Swagger文档
+	// 根据配置决定是否注册Swagger API文档路由
+	RegisterModuleSwagger(fs FrameStarter)
+
 	// RegisterAppHooks 注册应用钩子函数
 	// 注册应用生命周期钩子函数，如启动、关闭时的回调处理
-	RegisterAppHooks()
+	RegisterAppHooks(fs FrameStarter)
 
-	// RegisterToCtx 注册启动器到上下文
-	// 将启动器实例注册到应用上下文中，便于其他组件访问
-	RegisterToCtx()
+	// RegisterModuleInitialize 注册模块初始化
+	// 执行模块级别的初始化，包括模块中间件和路由处理器的注册
+	RegisterModuleInitialize(fs FrameStarter)
 
 	// AppCoreRun 启动应用核心运行
 	// 启动HTTP服务监听，处理优雅关闭信号
 	AppCoreRun()
+
+	// GetCoreApp 获取核心启动器实例
+	GetCoreApp() CoreStarter
+}
+
+// ApplicationStarter 定义框架应用启动器的接口(定义启动方法和启动流程)
+type ApplicationStarter interface {
+	FrameStarter
+	CoreStarter
 }
 
 // IRegister 注册器接口

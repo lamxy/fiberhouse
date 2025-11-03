@@ -37,18 +37,23 @@ func main() {
 	// 设置版本信息
 	appContext.GetConfig().SetVersion(Version)
 
-	// 初始化应用注册器、模块/子系统注册器和任务注册器对象，注入到应用启动器
+	// 初始化应用注册器、模块/子系统注册器和任务注册器对象，注入到框架启动器
 	appRegister := example_application.NewApplication(appContext)
 	moduleRegister := module.NewModule(appContext)
 	taskRegister := module.NewTaskAsync(appContext)
 
-	// 实例化应用启动器
-	starterApp := applicationstarter.NewFrameApplication(appContext,
-		option.WithAppRegister(appRegister),
-		option.WithModuleRegister(moduleRegister),
-		option.WithTaskRegister(taskRegister),
-	)
+	// 实例化 Web 应用启动器
+	webStarter := &applicationstarter.WebApplication{
+		// 实例化框架启动器
+		FrameStarter: applicationstarter.NewFrameApplication(appContext,
+			option.WithAppRegister(appRegister),
+			option.WithModuleRegister(moduleRegister),
+			option.WithTaskRegister(taskRegister),
+		),
+		// 实例化核心应用启动器
+		CoreStarter: applicationstarter.NewCoreFiber(appContext),
+	}
 
 	// 运行应用启动器
-	applicationstarter.RunApplicationStarter(starterApp)
+	applicationstarter.RunApplicationStarter(webStarter)
 }

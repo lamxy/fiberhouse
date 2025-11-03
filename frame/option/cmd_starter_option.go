@@ -13,8 +13,8 @@ import (
 )
 
 // WithCmdRegister 返回命令行应用注册器注入选项函数
-func WithCmdRegister(r frame.ApplicationCmdRegister) frame.CommandStarterOption {
-	return func(s frame.CommandStarter) {
+func WithCmdRegister(r frame.ApplicationCmdRegister) frame.FrameCmdStarterOption {
+	return func(s frame.FrameCmdStarter) {
 		if cr, ok := r.(frame.ApplicationCmdRegister); ok {
 			s.RegisterApplication(cr)
 		} else {
@@ -24,8 +24,8 @@ func WithCmdRegister(r frame.ApplicationCmdRegister) frame.CommandStarterOption 
 }
 
 // WithCoreApp 返回核心命令行应用注入选项函数
-func WithCoreApp(core *cli.App) frame.CommandStarterOption {
-	return func(s frame.CommandStarter) {
+func WithCoreApp(core *cli.App) frame.CoreCmdStarterOption {
+	return func(s frame.CoreCmdStarter) {
 		s.RegisterCoreApp(core)
 	}
 }

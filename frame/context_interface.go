@@ -40,6 +40,10 @@ type ContextFramer interface {
 	RegisterStarterApp(sApp ApplicationStarter)
 	// GetStarterApp 获取框架启动器实例(FrameApplication)
 	GetStarterApp() ApplicationStarter
+	// SetAppState 设置应用启动状态
+	SetAppState(bool)
+	// GetAppState 获取应用启动状态
+	GetAppState() bool
 }
 
 // ContextCommander 框架命令行应用上下文接口
