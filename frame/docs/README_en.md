@@ -48,9 +48,9 @@ frame/                              # FiberHouse Framework Core
 │   └── model_interface.go          # Data model interface definition
 ├── Application Startup Layer
 │   ├── applicationstarter/         # Web application starter implementation
-│   │   └── frame_application.go    # Fiber-based application starter
+│   │   └── web_starter.go          # Fiber-based application starter
 │   ├── commandstarter/             # Command line application starter implementation
-│   │   └── cmd_application.go      # Command line application starter
+│   │   └── cmdline_starter.go      # Command line application starter
 │   └── bootstrap/                  # Application bootstrap
 │       └── bootstrap.go            # Unified bootstrap entry
 ├── Configuration Management Layer
@@ -209,15 +209,20 @@ func main() {
 	moduleRegister := module.NewModule(appContext)  // Need to implement module registerer interface, see example module module/module.go implementation
 	taskRegister := module.NewTaskAsync(appContext)  // Need to implement task registerer interface, see example task module/task.go implementation
 
-	// Instantiate framework application starter
-	starterApp := applicationstarter.NewFrameApplication(appContext,
-            option.WithAppRegister(appRegister),
-            option.WithModuleRegister(moduleRegister),
-            option.WithTaskRegister(taskRegister),
-        )
+	// Instantiate web application starter
+        webStarter := &applicationstarter.WebApplication{
+            // Instantiating the framework starter
+            FrameStarter: applicationstarter.NewFrameApplication(appContext,
+              option.WithAppRegister(appRegister),
+              option.WithModuleRegister(moduleRegister),
+              option.WithTaskRegister(taskRegister),
+            ),
+            // Instantiate the core application launcher
+            CoreStarter: applicationstarter.NewCoreFiber(appContext),
+        }
   
 	// Run framework application starter
-	applicationstarter.RunApplicationStarter(starterApp)
+	applicationstarter.RunApplicationStarter(webStarter)
 }
 ```
 
@@ -1019,10 +1024,14 @@ func main() {
 	appRegister := application.NewApplication(ctx) // Need to implement framework's command line application frame.ApplicationCmdRegister interface
 
 	// Initialize command line starter object
-        cmdStarter := commandstarter.NewCmdApplication(ctx, option.WithCmdRegister(appRegister))
-	
+        cmdlineStarter := &commandstarter.CMDLineApplication{
+            // 实例化框架命令启动器对象
+            FrameCmdStarter: commandstarter.NewFrameCmdApplication(ctx, option.WithCmdRegister(appRegister)),
+            // 实例化核心命令启动器对象
+            CoreCmdStarter: commandstarter.NewCoreCmdCli(ctx),
+        }	
 	// Run command line starter
-	commandstarter.RunCommandStarter(cmdStarter)
+        commandstarter.RunCommandStarter(cmdlineStarter)
 }
 ```
 

@@ -21,9 +21,14 @@ func main() {
 	// 初始化应用注册器对象，注入应用启动器
 	appRegister := application.NewApplication(ctx)
 
-	// 初始化命令启动器对象
-	cmdStarter := commandstarter.NewCmdApplication(ctx, option.WithCmdRegister(appRegister))
+	// 实例化命令行应用启动器
+	cmdlineStarter := &commandstarter.CMDLineApplication{
+		// 实例化框架命令启动器对象
+		FrameCmdStarter: commandstarter.NewFrameCmdApplication(ctx, option.WithCmdRegister(appRegister)),
+		// 实例化核心命令启动器对象
+		CoreCmdStarter: commandstarter.NewCoreCmdCli(ctx),
+	}
 
 	// 运行命令启动器
-	commandstarter.RunCommandStarter(cmdStarter)
+	commandstarter.RunCommandStarter(cmdlineStarter)
 }

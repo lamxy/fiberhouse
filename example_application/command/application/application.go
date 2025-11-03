@@ -140,6 +140,7 @@ func (app *Application) RegisterApplicationGlobals() {
 		},
 	}
 	app.GetContext().GetContainer().Registers(initializers)
+
 	// 预先初始化部分必要的全局对象实例
 	requiredInitializers := []globalmanager.KeyName{
 		example_application.KEY_MONGODB,
