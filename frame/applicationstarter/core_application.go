@@ -1,3 +1,4 @@
+// Copyright (c) 2025 lamxy and Contributors
 // SPDX-License-Identifier: MIT
 //
 // Author: lamxy <pytho5170@hotmail.com>
