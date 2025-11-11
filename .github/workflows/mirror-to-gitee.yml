@@ -1,0 +1,77 @@
+name: Mirror to Gitee
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "**"
+  workflow_dispatch:
+  schedule:
+    # 每天 03:30 UTC 兜底同步一次
+    - cron: "30 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-to-gitee
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    env:
+      # 从 Variables 读取 Gitee 目标命名空间与仓库名
+      GITEE_OWNER: ${{ vars.GITEE_OWNER }}
+      GITEE_REPO:  ${{ vars.GITEE_REPO }}
+      # 从 Secrets 读取用户名与 PAT
+      GITEE_USER:  ${{ secrets.GITEE_USER }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      # 如需同步 LFS，把它改为 true（前提：Gitee 仓库支持 LFS）
+      PUSH_LFS: "false"
+    steps:
+      - name: Validate config
+        run: |
+          set -e
+          if [ -z "$GITEE_OWNER" ] || [ -z "$GITEE_REPO" ]; then
+            echo "Missing variables: GITEE_OWNER or GITEE_REPO (set them in Settings -> Secrets and variables -> Actions -> Variables)" >&2
+            exit 1
+          fi
+          if [ -z "$GITEE_USER" ] || [ -z "$GITEE_TOKEN" ]; then
+            echo "Missing secrets: GITEE_USER or GITEE_TOKEN (set them in Settings -> Secrets and variables -> Actions -> Secrets)" >&2
+            exit 1
+          fi
+
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Add Gitee remote (HTTPS + Token)
+        run: |
+          set -e
+          # 注意：GitHub 会自动遮罩 Secret，不会把 Token 打到日志里
+          git remote add gitee "https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git"
+          git remote -v
+
+      - name: Fetch all refs
+        run: |
+          git fetch --all --tags
+
+      - name: Mirror all refs (branches + tags)
+        run: |
+          # --mirror 会保持与 GitHub 完全一致（包括删除远端多余的引用）
+          git push --mirror gitee
+
+      - name: (Optional) Push Git LFS objects
+        if: env.PUSH_LFS == 'true'
+        run: |
+          set -e
+          git lfs install
+          # 把所有 LFS 对象推到 Gitee
+          git lfs fetch --all
+          git lfs push gitee --all
