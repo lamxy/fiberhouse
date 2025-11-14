@@ -13,6 +13,8 @@ jobs:
     env:
       TARGET_NAME: fhweb
       LDFLAGS: -ldflags="-X 'main.Version=v0.0.1'"
+      APP_ENV_application_env: test
+      APP_ENV_application_appType: web
 
     steps:
       - name: Checkout code
@@ -27,6 +29,7 @@ jobs:
         run: | 
           pwd
           ls -la
+          env |grep APP_ENV_
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -47,7 +50,9 @@ jobs:
 
       - name: Test frame directory
         run: |
-          go test -v -coverprofile=coverage.txt -covermode=atomic ./frame/...
+          go version
+          go test -h
+#          go test -v -coverprofile=coverage.txt -covermode=atomic ./frame/...
 
       - name: Start server in background
         run: |

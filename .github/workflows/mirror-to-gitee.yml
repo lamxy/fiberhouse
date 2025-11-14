@@ -7,9 +7,9 @@ on:
     tags:
       - "**"
   workflow_dispatch:
-  schedule:
+  #schedule:
     # 每天 03:30 UTC 兜底同步一次
-    - cron: "30 3 * * *"
+    # - cron: "30 3 * * *"
 
 permissions:
   contents: read
@@ -54,7 +54,7 @@ jobs:
       - name: Add Gitee remote (HTTPS + Token)
         run: |
           set -e
-          # 注意：GitHub 会自动遮罩 Secret，不会把 Token 打到日志里
+          # GitHub 会自动遮罩 Secret，不会把 Token 打到日志里
           git remote add gitee "https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git"
           git remote -v
 
