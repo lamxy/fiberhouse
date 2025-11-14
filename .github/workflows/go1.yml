@@ -51,8 +51,7 @@ jobs:
       - name: Test frame directory
         run: |
           go version
-          go test -h
-#          go test -v -coverprofile=coverage.txt -covermode=atomic ./frame/...
+          # go test -v -coverprofile=coverage.txt -covermode=atomic ./frame/...
 
       - name: Start server in background
         run: |
