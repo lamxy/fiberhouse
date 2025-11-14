@@ -74,5 +74,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.TARGET_NAME }}-${{ github.sha }}
-          path: ${{ env.TARGET_NAME }}
+          path: ./example_main/target/${{ env.TARGET_NAME }}
           retention-days: 7
