@@ -1,0 +1,74 @@
+name: build & test
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_NAME: fhweb
+      LDFLAGS: -ldflags="-X 'main.Version=v0.0.1'"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+
+      - name: PWD & ls
+        run: | 
+          pwd
+          ls -la
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build
+        run: |
+          go build ${{ env.LDFLAGS }} -o ./example_main/target/${{ env.TARGET_NAME }} ./example_main/main.go
+
+      - name: Test frame directory
+        run: |
+          go test -v -coverprofile=coverage.txt -covermode=atomic ./frame/...
+
+      - name: Start server in background
+        run: |
+          ./example_main/target/${{ env.TARGET_NAME }} &
+          echo $! > server.pid
+          sleep 3
+
+      - name: Health check with curl
+        run: |
+          curl --fail http://127.0.0.1:8080/example/hello/world || exit 1
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TARGET_NAME }}-${{ github.sha }}
+          path: ${{ env.TARGET_NAME }}
+          retention-days: 7
