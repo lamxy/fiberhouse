@@ -15,7 +15,39 @@ jobs:
       LDFLAGS: -ldflags="-X 'main.Version=v0.0.1'"
       APP_ENV_application_env: test
       APP_ENV_application_appType: web
-
+    services:
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27037:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: admin
+          MONGO_INITDB_ROOT_PASSWORD: admin
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })' --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mysql:
+        image: mysql:latest
+        ports:
+          - 3306:3306
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -23,7 +55,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.x'
+          go-version: '1.25.x'
 
       - name: PWD & ls
         run: | 
@@ -51,6 +83,7 @@ jobs:
       - name: Test frame directory
         run: |
           go version
+          echo "Fake temporary test"
           # go test -v -coverprofile=coverage.txt -covermode=atomic ./frame/...
 
       - name: Start server in background
@@ -71,8 +104,10 @@ jobs:
           fi
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.TARGET_NAME }}-${{ github.sha }}
-          path: ./example_main/target/${{ env.TARGET_NAME }}
-          retention-days: 7
+        run: |
+          echo "Fake upload artifact step"
+        #uses: actions/upload-artifact@v4
+        #with:
+          #name: ${{ env.TARGET_NAME }}-${{ github.sha }}
+          #path: ./example_main/target/${{ env.TARGET_NAME }}
+          #retention-days: 7

@@ -134,7 +134,7 @@ cache:
         nonblocking: false                 # 允许阻塞
 database:
   mongodb:
-    applyURI: mongodb://admin:admin@localhost:27037/?authSource=admin
+    applyURI: mongodb://admin:admin@127.0.0.1:27037/?authSource=admin
     maxPoolSize: 100                         # 设置连接池最大连接数
     minPoolSize: 10                          # 设置连接池最小连接数
     maxConnIdleTime: 600                     # 设置最大空闲连接时间
