@@ -110,7 +110,7 @@ type CoreStarter interface {
 	AppCoreRun()
 
 	// GetCoreApp 获取核心启动器实例
-	GetCoreApp() CoreStarter
+	GetCoreApp() interface{}
 }
 
 // ApplicationStarter 定义框架应用启动器的接口(定义启动方法和启动流程)
