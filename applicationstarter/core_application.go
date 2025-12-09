@@ -40,6 +40,11 @@ func NewCoreFiber(ctx fiberhouse.ContextFramer, opts ...fiberhouse.CoreStarterOp
 	return core
 }
 
+// GetCoreApp 获取应用核心实例
+func (cf *CoreFiber) GetCoreApp() interface{} {
+	return cf.coreApp
+}
+
 // InitCoreApp 初始化应用核心（框架应用基于 fiber.App）
 func (cf *CoreFiber) InitCoreApp(fs fiberhouse.FrameStarter) {
 	if cf.GetAppContext().GetAppState() {
@@ -150,7 +155,7 @@ func (cf *CoreFiber) RegisterAppMiddleware(fs fiberhouse.FrameStarter) {
 
 	if fs.GetApplication() != nil {
 		// 注册项目应用注册器全局中间件
-		fs.GetApplication().(fiberhouse.ApplicationRegister).RegisterAppMiddleware(cf.coreApp)
+		fs.GetApplication().(fiberhouse.ApplicationRegister).RegisterAppMiddleware(cf)
 	}
 }
 
@@ -161,9 +166,9 @@ func (cf *CoreFiber) RegisterModuleInitialize(fs fiberhouse.FrameStarter) {
 	}
 	if fs.GetModule() != nil {
 		// 注册模块/子系统中间件
-		fs.GetModule().RegisterModuleMiddleware(cf.coreApp)
+		fs.GetModule().RegisterModuleMiddleware(cf)
 		// 注册模块/子系统路由处理器
-		fs.GetModule().RegisterModuleRouteHandlers(cf.coreApp)
+		fs.GetModule().RegisterModuleRouteHandlers(cf)
 	}
 }
 
@@ -176,7 +181,7 @@ func (cf *CoreFiber) RegisterModuleSwagger(fs fiberhouse.FrameStarter) {
 	if registerOrNot {
 		if fs.GetModule() != nil {
 			// 注册模块系统的swagger
-			fs.GetModule().RegisterSwagger(cf.coreApp)
+			fs.GetModule().RegisterSwagger(cf)
 		}
 	}
 }
@@ -189,7 +194,7 @@ func (cf *CoreFiber) RegisterAppHooks(fs fiberhouse.FrameStarter) {
 
 	// 注册应用注册器的钩子函数
 	if fs.GetApplication() != nil {
-		fs.GetApplication().(fiberhouse.ApplicationRegister).RegisterCoreHook(cf.coreApp)
+		fs.GetApplication().(fiberhouse.ApplicationRegister).RegisterCoreHook(cf)
 	}
 
 	cf.coreApp.Hooks().OnListen(func(listenData fiber.ListenData) error {

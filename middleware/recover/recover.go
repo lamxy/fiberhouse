@@ -104,11 +104,12 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 			// 输出堆栈信息
 			msg := ErrorStack()
 
-			// 记录reqParams、reqQueries、reqBody
+			// 记录reqParams、reqQueries、reqBody、reqHeaders
 			var (
 				reqParamsJson           = r.getParamsJson(c, logger, jsonEnCoder, traceId)
 				reqQueriesJson          = r.getQueriesJson(c, logger, jsonEnCoder, traceId)
 				reqBodyJson, reqBodyStr = r.getBodyJson(c)
+				reqHeadersJson          = r.getHeadersJson(c, logger, jsonEnCoder, traceId)
 			)
 
 			if dw.CanJSONSerializable() {
@@ -132,6 +133,9 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 				logEvent.RawJSON("reqBody", reqBodyJson)
 			} else if len(reqBodyStr) > 0 {
 				logEvent.Str("reqBodyStr", reqBodyStr)
+			}
+			if len(reqHeadersJson) > 0 {
+				logEvent.RawJSON("reqHeaders", reqHeadersJson)
 			}
 
 			// debug模式，增加DebugStackLines字段输出格式化的堆栈信息，方便开发环境下直接阅读
@@ -162,11 +166,12 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 			// 输出堆栈信息
 			msg := ErrorStack()
 
-			// 记录reqParams、reqQueries、reqBody
+			// 记录reqParams、reqQueries、reqBody、reqHeaders
 			var (
 				reqParamsJson           = r.getParamsJson(c, logger, jsonEnCoder, traceId)
 				reqQueriesJson          = r.getQueriesJson(c, logger, jsonEnCoder, traceId)
 				reqBodyJson, reqBodyStr = r.getBodyJson(c)
+				reqHeadersJson          = r.getHeadersJson(c, logger, jsonEnCoder, traceId)
 			)
 
 			if dw.CanJSONSerializable() {
@@ -190,6 +195,9 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 				logEvent.RawJSON("reqBody", reqBodyJson)
 			} else if len(reqBodyStr) > 0 {
 				logEvent.Str("reqBodyStr", reqBodyStr)
+			}
+			if len(reqHeadersJson) > 0 {
+				logEvent.RawJSON("reqHeaders", reqHeadersJson)
 			}
 
 			if debugMode {
@@ -222,6 +230,7 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 				reqParamsJson           = r.getParamsJson(c, logger, jsonEnCoder, traceId)
 				reqQueriesJson          = r.getQueriesJson(c, logger, jsonEnCoder, traceId)
 				reqBodyJson, reqBodyStr = r.getBodyJson(c)
+				reqHeadersJson          = r.getHeadersJson(c, logger, jsonEnCoder, traceId)
 			)
 			msg := ErrorStack()
 
@@ -237,6 +246,9 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 				logEvent.RawJSON("reqBody", reqBodyJson)
 			} else if len(reqBodyStr) > 0 {
 				logEvent.Str("reqBodyStr", reqBodyStr)
+			}
+			if len(reqHeadersJson) > 0 {
+				logEvent.RawJSON("reqHeaders", reqHeadersJson)
 			}
 
 			if debugMode {
@@ -255,6 +267,7 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 				reqParamsJson           = r.getParamsJson(c, logger, jsonEnCoder, traceId)
 				reqQueriesJson          = r.getQueriesJson(c, logger, jsonEnCoder, traceId)
 				reqBodyJson, reqBodyStr = r.getBodyJson(c)
+				reqHeadersJson          = r.getHeadersJson(c, logger, jsonEnCoder, traceId)
 			)
 			msg := ErrorStack()
 
@@ -270,6 +283,9 @@ func (r *RecoverCatch) DefaultStackTraceHandler(c *fiber.Ctx, e interface{}) {
 				logEvent.RawJSON("reqBody", reqBodyJson)
 			} else if len(reqBodyStr) > 0 {
 				logEvent.Str("reqBodyStr", reqBodyStr)
+			}
+			if len(reqHeadersJson) > 0 {
+				logEvent.RawJSON("reqHeaders", reqHeadersJson)
 			}
 
 			if debugMode {
@@ -326,6 +342,7 @@ func (r *RecoverCatch) ErrorHandler(c *fiber.Ctx, err error) error {
 	return exception.GetUnknownError().JsonWithCtx(c, fiber.StatusInternalServerError)
 }
 
+// getParamsJson 获取请求参数的 JSON 编码字节切片
 func (r *RecoverCatch) getParamsJson(c *fiber.Ctx, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
 	params := c.AllParams()
 	j, err := jsonEnCoder(params)
@@ -336,6 +353,7 @@ func (r *RecoverCatch) getParamsJson(c *fiber.Ctx, log bootstrap.LoggerWrapper, 
 	return j
 }
 
+// getQueriesJson 获取查询参数的 JSON 编码字节切片
 func (r *RecoverCatch) getQueriesJson(c *fiber.Ctx, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
 	queries := c.Queries()
 	j, err := jsonEnCoder(queries)
@@ -346,6 +364,53 @@ func (r *RecoverCatch) getQueriesJson(c *fiber.Ctx, log bootstrap.LoggerWrapper,
 	return j
 }
 
+// getHeadersJson 获取请求头部的 JSON 编码字节切片，对敏感信息进行脱敏处理
+func (r *RecoverCatch) getHeadersJson(c *fiber.Ctx, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+	// 获取所有请求头
+	headers := c.GetReqHeaders()
+
+	// 对敏感头部信息进行脱敏处理
+	sanitizedHeaders := make(map[string][]string, len(headers))
+	for key, values := range headers {
+		lowerKey := strings.ToLower(key)
+		// 脱敏处理：Authorization、Cookie、Proxy-Authorization、X-Auth-Token 等认证相关头部
+		if lowerKey == "authorization" ||
+			lowerKey == "cookie" ||
+			lowerKey == "proxy-authorization" ||
+			lowerKey == "x-auth-token" ||
+			lowerKey == "x-api-key" ||
+			strings.Contains(lowerKey, "token") ||
+			strings.Contains(lowerKey, "secret") ||
+			strings.Contains(lowerKey, "password") {
+			// 保留前缀，隐藏敏感部分
+			maskedValues := make([]string, len(values))
+			for i, v := range values {
+				l := len(v)
+				if l > 0 {
+					if l <= 8 {
+						maskedValues[i] = "***"
+					} else {
+						maskedValues[i] = v[:4] + "..." + "***"
+					}
+				} else {
+					maskedValues[i] = ""
+				}
+			}
+			sanitizedHeaders[key] = maskedValues
+		} else {
+			sanitizedHeaders[key] = values
+		}
+	}
+
+	j, err := jsonEnCoder(sanitizedHeaders)
+	if err != nil {
+		log.Warn(r.GetContext().GetConfig().LogOriginRecover()).Str(requestID, traceId).Str("reqHeadersErr", err.Error()).Msg("getHeadersJson error")
+		return nil
+	}
+	return j
+}
+
+// getJsonIndent 将堆栈字符串格式化为 JSON 字符串，保留缩进
 func (r *RecoverCatch) getJsonIndent(s string, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
 	if len(s) == 0 {
 		return nil
@@ -362,6 +427,7 @@ func (r *RecoverCatch) getJsonIndent(s string, log bootstrap.LoggerWrapper, json
 	return j
 }
 
+// getBodyJson 获取请求体的 JSON 编码字节切片，非 JSON 格式返回空字节切片和字符串形式的请求体
 func (r *RecoverCatch) getBodyJson(c *fiber.Ctx) ([]byte, string) {
 	body := c.Body()
 	if len(body) == 0 {

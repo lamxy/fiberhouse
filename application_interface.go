@@ -109,7 +109,7 @@ type CoreStarter interface {
 	// 启动HTTP服务监听，处理优雅关闭信号
 	AppCoreRun()
 
-	// GetCoreApp 获取核心启动器实例
+	// GetCoreApp 获取核心实例
 	GetCoreApp() interface{}
 }
 
@@ -203,10 +203,10 @@ type ApplicationRegister interface {
 	ConfigValidatorCustomTags() []validate.RegisterValidatorTagFunc
 
 	// RegisterAppMiddleware 注册应用级别中间件
-	RegisterAppMiddleware(core interface{})
+	RegisterAppMiddleware(cs CoreStarter)
 
 	// RegisterCoreHook 注册核心应用(coreApp)的生命周期钩子
-	RegisterCoreHook(core interface{})
+	RegisterCoreHook(cs CoreStarter)
 }
 
 // ModuleRegister 模块注册器
@@ -219,11 +219,11 @@ type ModuleRegister interface {
 	GetContext() ContextFramer
 
 	// RegisterModuleMiddleware 注册模块级别/子系统中间件
-	RegisterModuleMiddleware(core interface{})
+	RegisterModuleMiddleware(cs CoreStarter)
 	// RegisterModuleRouteHandlers 注册模块级别/子系统路由处理器
-	RegisterModuleRouteHandlers(core interface{})
+	RegisterModuleRouteHandlers(cs CoreStarter)
 	// RegisterSwagger 注册swagger
-	RegisterSwagger(core interface{})
+	RegisterSwagger(cs CoreStarter)
 }
 
 // TaskRegister 任务注册器（基于 asynq）

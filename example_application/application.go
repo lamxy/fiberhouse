@@ -111,8 +111,8 @@ func (app *Application) ConfigValidatorCustomTags() []validate.RegisterValidator
 }
 
 // RegisterAppMiddleware 注册应用中间件
-func (app *Application) RegisterAppMiddleware(core interface{}) {
-	middleware.RegisterMiddleware(app.Ctx, core.(*fiber.App))
+func (app *Application) RegisterAppMiddleware(cs fiberhouse.CoreStarter) {
+	middleware.RegisterMiddleware(app.Ctx, cs.GetCoreApp().(*fiber.App))
 }
 
 // 统一定义"获取部分必要对象在全局管理容器中的实例Key"
@@ -170,8 +170,8 @@ func (app *Application) GetCustomKey() globalmanager.KeyName {
 }
 
 // RegisterCoreHook 注册核心应用的生命周期钩子函数
-func (app *Application) RegisterCoreHook(core interface{}) {
-	coreApp := core.(*fiber.App)
+func (app *Application) RegisterCoreHook(cs fiberhouse.CoreStarter) {
+	coreApp := cs.GetCoreApp().(*fiber.App)
 	coreApp.Hooks().OnGroup(func(group fiber.Group) error {
 		app.GetContext().GetLogger().InfoWith(app.GetContext().GetConfig().LogOriginFrame()).Str("ApplicationRegister", "Application").Msg("ApplicationRegister OnGroup...")
 		return nil

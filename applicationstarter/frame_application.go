@@ -99,11 +99,6 @@ func (fa *FrameApplication) GetTask() fiberhouse.TaskRegister {
 	return fa.task
 }
 
-// GetCoreApp 获取应用核心启动器实例
-func (cf *CoreFiber) GetCoreApp() fiberhouse.CoreStarter {
-	return cf
-}
-
 // RegisterToCtx 注册应用启动器对象到应用上下文
 func (fa *FrameApplication) RegisterToCtx(as fiberhouse.ApplicationStarter) {
 	if fa.GetContext().GetAppState() {
