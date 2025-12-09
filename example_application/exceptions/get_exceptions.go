@@ -1,9 +1,9 @@
 package exceptions
 
 import (
+	"github.com/lamxy/fiberhouse/constant"
 	example_module "github.com/lamxy/fiberhouse/example_application/exceptions/example-module"
-	"github.com/lamxy/fiberhouse/frame/constant"
-	"github.com/lamxy/fiberhouse/frame/exception"
+	"github.com/lamxy/fiberhouse/exception"
 )
 
 var (

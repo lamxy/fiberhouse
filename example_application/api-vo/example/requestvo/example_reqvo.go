@@ -1,7 +1,7 @@
 package requestvo
 
 import (
-	"github.com/lamxy/fiberhouse/frame/component/validate"
+	"github.com/lamxy/fiberhouse/component/validate"
 )
 
 // ExampleReqVo 示例请求对象

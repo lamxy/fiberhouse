@@ -4,40 +4,40 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/component"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/model"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/component"
 	"gorm.io/gorm"
 	"time"
 )
 
 type ExampleMysqlService struct {
-	frame.ServiceLocator
+	fiberhouse.ServiceLocator
 	Model *model.ExampleMysqlModel
 }
 
-func NewExampleMysqlService(ctx frame.ContextCommander, m *model.ExampleMysqlModel) *ExampleMysqlService {
+func NewExampleMysqlService(ctx fiberhouse.ContextCommander, m *model.ExampleMysqlModel) *ExampleMysqlService {
 	return &ExampleMysqlService{
-		ServiceLocator: frame.NewService(ctx).SetName(GetKeyExampleMysqlService()),
+		ServiceLocator: fiberhouse.NewService(ctx).SetName(GetKeyExampleMysqlService()),
 		Model:          m,
 	}
 }
 
 // GetKeyExampleMysqlService 定义和获取 ExampleMysqlService 注册到全局管理器的实例key
 func GetKeyExampleMysqlService(ns ...string) string {
-	return frame.RegisterKeyName("ExampleMysqlService", frame.GetNamespace([]string{"command-module"}, ns...)...)
+	return fiberhouse.RegisterKeyName("ExampleMysqlService", fiberhouse.GetNamespace([]string{"command-module"}, ns...)...)
 }
 
 // RegisterKeyExampleMysqlService 注册 ExampleMysqlService 到全局管理器，并返回注册实例key
-func RegisterKeyExampleMysqlService(ctx frame.ContextCommander, ns ...string) string {
-	return frame.RegisterKeyInitializerFunc(GetKeyExampleMysqlService(ns...), func() (interface{}, error) {
+func RegisterKeyExampleMysqlService(ctx fiberhouse.ContextCommander, ns ...string) string {
+	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleMysqlService(ns...), func() (interface{}, error) {
 		// 示例: 推荐命令应用中使用依赖注入的方式初始化服务对象
 		var (
 			zero *ExampleMysqlService
 			wrap = component.NewWrap[*ExampleMysqlService]()
 		)
-		dc := ctx.GetDigContainer().Provide(func() frame.ContextCommander { return ctx }).
+		dc := ctx.GetDigContainer().Provide(func() fiberhouse.ContextCommander { return ctx }).
 			Provide(model.NewExampleMysqlModel).
 			Provide(NewExampleMysqlService)
 		// 检查依赖注入是否成功
@@ -56,7 +56,7 @@ func (s *ExampleMysqlService) AutoMigrate() error {
 }
 
 // TestOrm 测试ORM
-func (s *ExampleMysqlService) TestOrm(ctx frame.ContextCommander, op string, id uint) error {
+func (s *ExampleMysqlService) TestOrm(ctx fiberhouse.ContextCommander, op string, id uint) error {
 	// op: c-创建用户，r-查询用户，u-更新用户，d-删除用户
 
 	ctxWithTimeout := context.WithValue(context.Background(), "test", "orm")

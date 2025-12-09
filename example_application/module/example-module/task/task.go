@@ -2,7 +2,7 @@ package task
 
 import (
 	"github.com/hibiken/asynq"
-	"github.com/lamxy/fiberhouse/frame"
+	"github.com/lamxy/fiberhouse"
 	"time"
 )
 
@@ -12,7 +12,7 @@ Task payload list 任务负载列表
 
 // PayloadExampleCreate 样例创建负载的数据
 type PayloadExampleCreate struct {
-	frame.PayloadBase // 继承基础负载结构体，自动具备获取json编解码器的方法
+	fiberhouse.PayloadBase // 继承基础负载结构体，自动具备获取json编解码器的方法
 	/**
 	负载的数据
 	*/
@@ -20,7 +20,7 @@ type PayloadExampleCreate struct {
 }
 
 // NewExampleCreateTask 生成一个 ExampleCreate 任务，从调用处获取相关参数，并返回任务
-func NewExampleCreateTask(ctx frame.IContext, age int8) (*asynq.Task, error) {
+func NewExampleCreateTask(ctx fiberhouse.IContext, age int8) (*asynq.Task, error) {
 	vo := PayloadExampleCreate{
 		Age: age,
 	}

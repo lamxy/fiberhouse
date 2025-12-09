@@ -1,26 +1,26 @@
 package service
 
 import (
+	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
-	"github.com/lamxy/fiberhouse/frame"
 )
 
 type HealthService struct {
-	frame.ServiceLocator
+	fiberhouse.ServiceLocator
 	Resp *repository.HealthRepository
 }
 
-func NewHealthService(ctx frame.ContextFramer, resp *repository.HealthRepository) *HealthService {
+func NewHealthService(ctx fiberhouse.ContextFramer, resp *repository.HealthRepository) *HealthService {
 	name := GetKeyHealthService()
 	return &HealthService{
-		ServiceLocator: frame.NewService(ctx).SetName(name),
+		ServiceLocator: fiberhouse.NewService(ctx).SetName(name),
 		Resp:           resp,
 	}
 }
 
 func GetKeyHealthService(ns ...string) string {
-	return frame.RegisterKeyName("HealthService", frame.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("HealthService", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
 func (s *HealthService) GetHealth() string {

@@ -2,12 +2,12 @@ package model
 
 import (
 	"context"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/database/dbmongo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/utils"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/database/dbmongo"
-	"github.com/lamxy/fiberhouse/frame/exception"
+	"github.com/lamxy/fiberhouse/exception"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -19,7 +19,7 @@ type ExampleModel struct {
 	ctx context.Context // 可选属性
 }
 
-func NewExampleModel(ctx frame.ContextFramer) *ExampleModel {
+func NewExampleModel(ctx fiberhouse.ContextFramer) *ExampleModel {
 	return &ExampleModel{
 		MongoLocator: dbmongo.NewMongoModel(ctx, constant.MongoInstanceKey).SetDbName(constant.DbNameMongo).SetTable(constant.CollExample).
 			SetName(GetKeyExampleModel()).(dbmongo.MongoLocator), // 设置当前模型的配置项名(mongodb)和库名(test)
@@ -29,12 +29,12 @@ func NewExampleModel(ctx frame.ContextFramer) *ExampleModel {
 
 // GetKeyExampleModel 获取模型注册key
 func GetKeyExampleModel(ns ...string) string {
-	return frame.RegisterKeyName("ExampleModel", frame.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("ExampleModel", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
 // RegisterKeyExampleModel 注册模型到容器（延迟初始化）并返回注册key
-func RegisterKeyExampleModel(ctx frame.ContextFramer, ns ...string) string {
-	return frame.RegisterKeyInitializerFunc(GetKeyExampleModel(ns...), func() (interface{}, error) {
+func RegisterKeyExampleModel(ctx fiberhouse.ContextFramer, ns ...string) string {
+	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleModel(ns...), func() (interface{}, error) {
 		return NewExampleModel(ctx), nil
 	})
 }

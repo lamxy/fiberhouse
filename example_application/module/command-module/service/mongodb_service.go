@@ -2,18 +2,18 @@ package service
 
 import (
 	"fmt"
+	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/model"
-	"github.com/lamxy/fiberhouse/frame"
 )
 
 type MongodbService struct {
-	*frame.Service
+	*fiberhouse.Service
 	MongoModel *model.MongodbModel
 }
 
-func NewMongodbService(ctx frame.ContextCommander, mongodbModel *model.MongodbModel) *MongodbService {
+func NewMongodbService(ctx fiberhouse.ContextCommander, mongodbModel *model.MongodbModel) *MongodbService {
 	return &MongodbService{
-		Service:    frame.NewService(ctx).SetName("MongodbService").(*frame.Service),
+		Service:    fiberhouse.NewService(ctx).SetName("MongodbService").(*fiberhouse.Service),
 		MongoModel: mongodbModel,
 	}
 }

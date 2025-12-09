@@ -6,7 +6,7 @@
 <img src="https://img.shields.io/github/issues/lamxy/fiberhouse.svg" alt="GitHub Issues"></img>
 
 
-📖 [中文](README.md) | [English](./frame/docs/README_en.md)
+📖 [中文](README.md) | [English](./docs/README_en.md)
 
 ## 🏠 关于 FiberHouse
 
@@ -40,7 +40,7 @@ FiberHouse 是基于 Fiber 的高性能、可装配的 Go Web 框架，内置全
 ## 🏗️ 架构说明
 
 ```
-frame/                              # FiberHouse 框架核心
+fiberhouse/                              # FiberHouse 框架核心
 ├── 接口定义层
 │   ├── application_interface.go    # 应用启动器接口定义
 │   ├── command_interface.go        # 命令行应用接口定义  
@@ -154,12 +154,12 @@ frame/                              # FiberHouse 框架核心
 
 ### docker 启动数据库、缓存容器用于框架调式
 
-- docker compose文件，见： [docker-compose.yml](./frame/docs/docker_compose_db_redis_yaml/docker-compose.yml)
+- docker compose文件，见： [docker-compose.yml](docs/docker_compose_db_redis_yaml/docker-compose.yml)
 - 启动命令: `docker compose up -d`
 
 ```bash
 
-cd  frame/docs/docker_compose_db_redis_yaml/
+cd  docs/docker_compose_db_redis_yaml/
 docker compose up -d
 ```
 
@@ -188,9 +188,9 @@ package main
 import (
 	"github.com/lamxy/fiberhouse/example_application"
 	"github.com/lamxy/fiberhouse/example_application/module"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/applicationstarter"
-	"github.com/lamxy/fiberhouse/frame/bootstrap"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/applicationstarter"
+	"github.com/lamxy/fiberhouse/bootstrap"
 )
 
 func main() {
@@ -203,10 +203,10 @@ func main() {
 	logger := bootstrap.NewLoggerOnce(cfg, "./example_main/logs")
 
 	// 初始化全局应用上下文
-	appContext := frame.NewAppContextOnce(cfg, logger)
+	appContext := fiberhouse.NewAppContextOnce(cfg, logger)
 
 	// 初始化应用注册器、模块/子系统注册器和任务注册器对象，注入到应用启动器
-	appRegister := example_application.NewApplication(appContext)  // 需实现应用注册器接口，见frame.ApplicationRegisterer接口定义，参考example_application/application.go样例实现
+	appRegister := example_application.NewApplication(appContext)  // 需实现应用注册器接口，见fiberhouse.ApplicationRegisterer接口定义，参考example_application/application.go样例实现
 	moduleRegister := module.NewModule(appContext)  // 需实现模块注册器接口，见样例模块module/module.go的实现
 	taskRegister := module.NewTaskAsync(appContext)  // 需实现任务注册器接口，见样例任务module/task.go的实现
 
@@ -470,14 +470,14 @@ example_application/                    # 样例应用根目录
   - [example_application/module/example-module/api/api_provider.go](./example_application/module/example-module/api/api_provider.go)
   - [example_application/module/example-module/api/README_wire_gen.md](./example_application/module/example-module/api/README_wire_gen.md)
 - uber dig使用说明和示例，参考:
-  - [frame/component/dig_container.go](./frame/component/dig_container.go)
+  - [component/dig_container.go](component/dig_container.go)
 
 ### 通过框架的全局管理器实现无需依赖注入工具来解决依赖关系
 
 - 见注册路由示例： [example_application/module/example-module/api/register_api_router.go](./example_application/module/example-module/api/register_api_router.go)
 
 ```go
-func RegisterRouteHandlers(ctx frame.ContextFramer, app fiber.Router) {
+func RegisterRouteHandlers(ctx fiberhouse.ContextFramer, app fiber.Router) {
     // 获取exampleApi处理器
     exampleApi, _ := InjectExampleApi(ctx) // 由wire编译依赖注入生成注入函数获取ExampleApi
     
@@ -499,17 +499,17 @@ func RegisterRouteHandlers(ctx frame.ContextFramer, app fiber.Router) {
 - 见CommonHandler通过全局管理器实现无需事先依赖注入服务组件: [example_application/module/example-module/api/common_api.go](./example_application/module/example-module/api/common_api.go)
 
 ```go
-// CommonHandler 示例公共处理器，继承自 frame.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
+// CommonHandler 示例公共处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
 type CommonHandler struct {
-	frame.ApiLocator
-	KeyTestService string // 定义依赖组件的全局管理器的实例key。通过key即可由 h.GetInstance(key) 方法获取实例，或由 frame.GetMustInstance[T](key) 泛型方法获取实例，
+	fiberhouse.ApiLocator
+	KeyTestService string // 定义依赖组件的全局管理器的实例key。通过key即可由 h.GetInstance(key) 方法获取实例，或由 fiberhouse.GetMustInstance[T](key) 泛型方法获取实例，
 	                      // 无需wire或其他依赖注入工具
 }
 
 // NewCommonHandler 直接New，无需依赖注入(Wire) TestService对象，内部走全局管理器获取依赖组件
-func NewCommonHandler(ctx frame.ContextFramer) *CommonHandler {
+func NewCommonHandler(ctx fiberhouse.ContextFramer) *CommonHandler {
 	return &CommonHandler{
-		ApiLocator:     frame.NewApi(ctx).SetName(GetKeyCommonHandler()),
+		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyCommonHandler()),
 		
         // 注册依赖的TestService实例初始化器并返回注册实例key，通过 h.GetInstance(key) 方法获取TestService实例
 		KeyTestService: service.RegisterKeyTestService(ctx), 
@@ -553,7 +553,7 @@ type Example struct {
 - 路由注册：见 [example_application/module/example-module/api/register_api_router.go](./example_application/module/example-module/api/register_api_router.go)
 
 ```go
-func RegisterRouteHandlers(ctx frame.ContextFramer, app fiber.Router) {
+func RegisterRouteHandlers(ctx fiberhouse.ContextFramer, app fiber.Router) {
     // 获取exampleApi处理器
     exampleApi, _ := InjectExampleApi(ctx) // 由wire编译依赖注入获取
 	
@@ -575,16 +575,16 @@ func RegisterRouteHandlers(ctx frame.ContextFramer, app fiber.Router) {
 - 定义样例Api处理器: 见 [example_application/module/example-module/api/example_api.go](./example_application/module/example-module/api/example_api.go)
 
 ```go
-// ExampleHandler 示例处理器，继承自 frame.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
+// ExampleHandler 示例处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
 type ExampleHandler struct {
-	frame.ApiLocator
+	fiberhouse.ApiLocator
 	Service        *service.ExampleService 
 	KeyTestService string                  
 }
 
-func NewExampleHandler(ctx frame.ContextFramer, es *service.ExampleService) *ExampleHandler {
+func NewExampleHandler(ctx fiberhouse.ContextFramer, es *service.ExampleService) *ExampleHandler {
 	return &ExampleHandler{
-		ApiLocator:     frame.NewApi(ctx).SetName(GetKeyExampleHandler()),
+		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyExampleHandler()),
 		Service:        es,
 		KeyTestService: service.RegisterKeyTestService(ctx),
 	}
@@ -592,7 +592,7 @@ func NewExampleHandler(ctx frame.ContextFramer, es *service.ExampleService) *Exa
 
 // GetKeyExampleHandler 定义和获取 ExampleHandler 注册到全局管理器的实例key
 func GetKeyExampleHandler(ns ...string) string {
-	return frame.RegisterKeyName("ExampleHandler", frame.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("ExampleHandler", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
 // GetExample 获取样例数据
@@ -631,23 +631,23 @@ func (h *ExampleHandler) GetExample(c *fiber.Ctx) error {
 - 定义样例服务: 见 [example_application/module/example-module/service/example_service.go](./example_application/module/example-module/service/example_service.go)
 
 ```go
-// ExampleService 样例服务，继承 frame.ServiceLocator 服务定位器接口，具备获取上下文、配置、日志、注册实例等功能
+// ExampleService 样例服务，继承 fiberhouse.ServiceLocator 服务定位器接口，具备获取上下文、配置、日志、注册实例等功能
 type ExampleService struct {
-	frame.ServiceLocator                               // 继承服务定位器接口
+	fiberhouse.ServiceLocator                               // 继承服务定位器接口
 	Repo                 *repository.ExampleRepository // 依赖的组件: 样例仓库，构造参数注入。由wire工具依赖注入
 }
 
-func NewExampleService(ctx frame.ContextFramer, repo *repository.ExampleRepository) *ExampleService {
+func NewExampleService(ctx fiberhouse.ContextFramer, repo *repository.ExampleRepository) *ExampleService {
 	name := GetKeyExampleService()
 	return &ExampleService{
-		ServiceLocator: frame.NewService(ctx).SetName(name),
+		ServiceLocator: fiberhouse.NewService(ctx).SetName(name),
 		Repo:           repo,
 	}
 }
 
 // GetKeyExampleService 获取 ExampleService 注册键名
 func GetKeyExampleService(ns ...string) string {
-	return frame.RegisterKeyName("ExampleService", frame.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("ExampleService", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
 // GetExample 根据ID获取样例数据
@@ -673,27 +673,27 @@ func (s *ExampleService) GetExample(id string) (*responsevo.ExampleRespVo, error
 - 定义样例仓储: 见 [example_application/module/example-module/repository/example_repository.go](./example_application/module/example-module/repository/example_repository.go)
 
 ```go
-// ExampleRepository Example仓库，负责Example业务的数据持久化操作，继承frame.RepositoryLocator仓库定位器接口，具备获取上下文、配置、日志、注册实例等功能
+// ExampleRepository Example仓库，负责Example业务的数据持久化操作，继承fiberhouse.RepositoryLocator仓库定位器接口，具备获取上下文、配置、日志、注册实例等功能
 type ExampleRepository struct {
-	frame.RepositoryLocator
+	fiberhouse.RepositoryLocator
 	Model *model.ExampleModel
 }
 
-func NewExampleRepository(ctx frame.ContextFramer, m *model.ExampleModel) *ExampleRepository {
+func NewExampleRepository(ctx fiberhouse.ContextFramer, m *model.ExampleModel) *ExampleRepository {
 	return &ExampleRepository{
-		RepositoryLocator: frame.NewRepository(ctx).SetName(GetKeyExampleRepository()),
+		RepositoryLocator: fiberhouse.NewRepository(ctx).SetName(GetKeyExampleRepository()),
 		Model:             m,
 	}
 }
 
 // GetKeyExampleRepository 获取 ExampleRepository 注册键名
 func GetKeyExampleRepository(ns ...string) string {
-	return frame.RegisterKeyName("ExampleRepository", frame.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("ExampleRepository", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
 // RegisterKeyExampleRepository 注册 ExampleRepository 到容器（延迟初始化）并返回注册key
-func RegisterKeyExampleRepository(ctx frame.ContextFramer, ns ...string) string {
-	return frame.RegisterKeyInitializerFunc(GetKeyExampleRepository(ns...), func() (interface{}, error) {
+func RegisterKeyExampleRepository(ctx fiberhouse.ContextFramer, ns ...string) string {
+	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleRepository(ns...), func() (interface{}, error) {
 		m := model.NewExampleModel(ctx)
 		return NewExampleRepository(ctx, m), nil
 	})
@@ -723,7 +723,7 @@ type ExampleModel struct {
 	ctx context.Context // 可选属性
 }
 
-func NewExampleModel(ctx frame.ContextFramer) *ExampleModel {
+func NewExampleModel(ctx fiberhouse.ContextFramer) *ExampleModel {
 	return &ExampleModel{
 		MongoLocator: dbmongo.NewMongoModel(ctx, constant.MongoInstanceKey).SetDbName(constant.DbNameMongo).SetTable(constant.CollExample).
 			SetName(GetKeyExampleModel()).(dbmongo.MongoLocator), // 设置当前模型的配置项名(mongodb)和库名(test)
@@ -733,12 +733,12 @@ func NewExampleModel(ctx frame.ContextFramer) *ExampleModel {
 
 // GetKeyExampleModel 获取模型注册key
 func GetKeyExampleModel(ns ...string) string {
-	return frame.RegisterKeyName("ExampleModel", frame.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("ExampleModel", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
 // RegisterKeyExampleModel 注册模型到容器（延迟初始化）并返回注册key
-func RegisterKeyExampleModel(ctx frame.ContextFramer, ns ...string) string {
-	return frame.RegisterKeyInitializerFunc(GetKeyExampleModel(ns...), func() (interface{}, error) {
+func RegisterKeyExampleModel(ctx fiberhouse.ContextFramer, ns ...string) string {
+	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleModel(ns...), func() (interface{}, error) {
 		return NewExampleModel(ctx), nil
 	})
 }
@@ -828,7 +828,7 @@ Task payload list 任务负载列表
 
 // PayloadExampleCreate 样例创建负载的数据
 type PayloadExampleCreate struct {
-	frame.PayloadBase // 继承基础负载结构体，自动具备获取json编解码器的方法
+	fiberhouse.PayloadBase // 继承基础负载结构体，自动具备获取json编解码器的方法
 	/**
 	负载的数据
 	*/
@@ -836,7 +836,7 @@ type PayloadExampleCreate struct {
 }
 
 // NewExampleCreateTask 生成一个 ExampleCreate 任务，从调用处获取相关参数，并返回任务
-func NewExampleCreateTask(ctx frame.IContext, age int8) (*asynq.Task, error) {
+func NewExampleCreateTask(ctx fiberhouse.IContext, age int8) (*asynq.Task, error) {
 	vo := PayloadExampleCreate{
 		Age: age,
 	}
@@ -855,7 +855,7 @@ func NewExampleCreateTask(ctx frame.IContext, age int8) (*asynq.Task, error) {
 // HandleExampleCreateTask 样例任务创建的处理器
 func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {
 	// 从 context 中获取 appCtx 全局应用上下文，获取包括配置、日志、注册实例等组件
-	appCtx, _ := ctx.Value(frame.ContextKeyAppCtx).(frame.ContextFramer)
+	appCtx, _ := ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.ContextFramer)
 
 	// 声明任务负载对象
 	var p task.PayloadExampleCreate
@@ -868,7 +868,7 @@ func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {
 
 	// 获取处理任务的实例，注意service.TestService需在任务挂载阶段注册到全局管理器
     // 见 task/handler/mount.go: service.RegisterKeyTestService(ctx)
-	instance, err := frame.GetInstance[*service.TestService](service.GetKeyTestService())
+	instance, err := fiberhouse.GetInstance[*service.TestService](service.GetKeyTestService())
 	if err != nil {
 		return err
 	}
@@ -894,11 +894,11 @@ package handler
 import (
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/task"
-	"github.com/lamxy/fiberhouse/frame"
+	"github.com/lamxy/fiberhouse"
 )
 
 // RegisterTaskHandlers 统一注册任务处理函数和依赖的组件实例初始化器
-func RegisterTaskHandlers(tk frame.TaskRegister) {
+func RegisterTaskHandlers(tk fiberhouse.TaskRegister) {
 	// append task handler to global taskHandlerMap
 	// 通过RegisterKeyXXX注册任务处理的实例初始化器，并获取注册实例的keyName
 
@@ -926,7 +926,7 @@ func (s *ExampleService) GetExampleWithTaskDispatcher(id string) (*responsevo.Ex
 	log := s.GetContext().GetMustLoggerWithOrigin(s.GetContext().GetConfig().LogOriginTask())
 
 	// 获取样例数据成功，推送延迟任务异步执行
-	dispatcher, err := s.GetContext().(frame.ContextFramer).GetStarterApp().GetTask().GetTaskDispatcher()
+	dispatcher, err := s.GetContext().(fiberhouse.ContextFramer).GetStarterApp().GetTask().GetTaskDispatcher()
 	if err != nil {
 		log.Warn().Err(err).Str("Category", "asynq").Msg("GetExampleWithTaskDispatcher GetTaskDispatcher failed")
 	}
@@ -1007,9 +1007,9 @@ package main
 
 import (
 	"github.com/lamxy/fiberhouse/example_application/command/application"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/bootstrap"
-	"github.com/lamxy/fiberhouse/frame/commandstarter"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/bootstrap"
+	"github.com/lamxy/fiberhouse/commandstarter"
 )
 
 func main() {
@@ -1020,10 +1020,10 @@ func main() {
 	logger := bootstrap.NewLoggerOnce(cfg, "./logs")
 
 	// 初始化命令全局上下文
-	ctx := frame.NewCmdContextOnce(cfg, logger)
+	ctx := fiberhouse.NewCmdContextOnce(cfg, logger)
 
 	// 初始化应用注册器对象，注入应用启动器
-	appRegister := application.NewApplication(ctx) // 需实现框架关于命令行应用的 frame.ApplicationCmdRegister接口
+	appRegister := application.NewApplication(ctx) // 需实现框架关于命令行应用的 fiberhouse.ApplicationCmdRegister接口
 
         // 实例化命令行应用启动器
         cmdlineStarter := &commandstarter.CMDLineApplication{
@@ -1039,18 +1039,18 @@ func main() {
 - 编写一个命令脚本: 见 [example_application/command/application/commands/test_orm_command.go](./example_application/command/application/commands/test_orm_command.go)
 
 ```go
-// TestOrmCMD 测试go-orm库的CURD操作命令，需实现 frame.CommandGetter 接口，通过 GetCommand 方法返回命令行命令对象
+// TestOrmCMD 测试go-orm库的CURD操作命令，需实现 fiberhouse.CommandGetter 接口，通过 GetCommand 方法返回命令行命令对象
 type TestOrmCMD struct {
-	Ctx frame.ContextCommander
+	Ctx fiberhouse.ContextCommander
 }
 
-func NewTestOrmCMD(ctx frame.ContextCommander) frame.CommandGetter {
+func NewTestOrmCMD(ctx fiberhouse.ContextCommander) fiberhouse.CommandGetter {
 	return &TestOrmCMD{
 		Ctx: ctx,
 	}
 }
 
-// GetCommand 获取命令行命令对象，实现 frame.CommandGetter 接口的 GetCommand方法
+// GetCommand 获取命令行命令对象，实现 fiberhouse.CommandGetter 接口的 GetCommand方法
 func (m *TestOrmCMD) GetCommand() interface{} {
 	return &cli.Command{
 		Name:    "test-orm",
@@ -1084,7 +1084,7 @@ func (m *TestOrmCMD) GetCommand() interface{} {
 
 			// 使用dig注入所需依赖，通过provide连缀方法连续注入依赖组件
 			dc := m.Ctx.GetDigContainer().
-				Provide(func() frame.ContextCommander { return m.Ctx }).
+				Provide(func() fiberhouse.ContextCommander { return m.Ctx }).
 				Provide(model.NewExampleMysqlModel).
 				Provide(service.NewExampleMysqlService)
 

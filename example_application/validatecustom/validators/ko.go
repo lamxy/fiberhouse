@@ -6,7 +6,7 @@ import (
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
 	translation "github.com/go-playground/validator/v10/translations/ko"
-	"github.com/lamxy/fiberhouse/frame/component/validate"
+	"github.com/lamxy/fiberhouse/component/validate"
 )
 
 // KoValidate 韩语验证器

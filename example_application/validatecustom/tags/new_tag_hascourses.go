@@ -3,7 +3,7 @@ package tags
 import (
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
-	"github.com/lamxy/fiberhouse/frame/component/validate"
+	"github.com/lamxy/fiberhouse/component/validate"
 	"reflect"
 )
 

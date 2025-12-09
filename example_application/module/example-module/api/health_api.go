@@ -2,27 +2,27 @@ package api
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/response"
+	"github.com/lamxy/fiberhouse/response"
 )
 
 type HealthHandler struct {
-	frame.ApiLocator
+	fiberhouse.ApiLocator
 	Service *service.HealthService
 }
 
-func NewHealthHandler(ctx frame.ContextFramer, serv *service.HealthService) *HealthHandler {
+func NewHealthHandler(ctx fiberhouse.ContextFramer, serv *service.HealthService) *HealthHandler {
 	name := GetKeyHealthHandler()
 	return &HealthHandler{
-		ApiLocator: frame.NewApi(ctx).SetName(name),
+		ApiLocator: fiberhouse.NewApi(ctx).SetName(name),
 		Service:    serv,
 	}
 }
 
 func GetKeyHealthHandler(ns ...string) string {
-	return frame.RegisterKeyName("HealthHandler", frame.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("HealthHandler", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
 func (ha *HealthHandler) Liveness(c *fiber.Ctx) error {

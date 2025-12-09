@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/hibiken/asynq"
+	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/task"
-	"github.com/lamxy/fiberhouse/frame"
 	"time"
 )
 
@@ -15,7 +15,7 @@ import (
 // HandleExampleCreateTask 样例任务创建处理器
 func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {
 	// 从 context 中获取 appCtx 全局应用上下文，获取包括配置、日志、注册实例等组件
-	appCtx, _ := ctx.Value(frame.ContextKeyAppCtx).(frame.ContextFramer)
+	appCtx, _ := ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.ContextFramer)
 
 	// 声明任务负载对象
 	var p task.PayloadExampleCreate
@@ -27,7 +27,7 @@ func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// 获取处理任务的实例
-	instance, err := frame.GetInstance[*service.TestService](service.GetKeyTestService())
+	instance, err := fiberhouse.GetInstance[*service.TestService](service.GetKeyTestService())
 	if err != nil {
 		return err
 	}

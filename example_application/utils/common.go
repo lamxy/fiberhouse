@@ -2,7 +2,7 @@ package utils
 
 import (
 	"fmt"
-	"github.com/lamxy/fiberhouse/frame/constant"
+	"github.com/lamxy/fiberhouse/constant"
 	"io"
 	"math"
 	"net/http"

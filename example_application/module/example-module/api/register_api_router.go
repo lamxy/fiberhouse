@@ -3,11 +3,11 @@ package api
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/lamxy/fiberhouse/frame"
+	"github.com/lamxy/fiberhouse"
 	"time"
 )
 
-func RegisterRouteHandlers(ctx frame.ContextFramer, app fiber.Router) {
+func RegisterRouteHandlers(ctx fiberhouse.ContextFramer, app fiber.Router) {
 	// 获取exampleApi处理器
 	exampleApi, _ := InjectExampleApi(ctx) // 由wire编译依赖注入获取
 

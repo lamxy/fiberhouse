@@ -2,24 +2,24 @@ package commands
 
 import (
 	"fmt"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/component"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/model"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/service"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/component"
 	"github.com/urfave/cli/v2"
 )
 
 type TestOrmCMD struct {
-	Ctx frame.ContextCommander
+	Ctx fiberhouse.ContextCommander
 }
 
-func NewTestOrmCMD(ctx frame.ContextCommander) frame.CommandGetter {
+func NewTestOrmCMD(ctx fiberhouse.ContextCommander) fiberhouse.CommandGetter {
 	return &TestOrmCMD{
 		Ctx: ctx,
 	}
 }
 
-// GetCommand 获取命令行命令对象，实现 frame.CommandGetter 接口
+// GetCommand 获取命令行命令对象，实现 fiberhouse.CommandGetter 接口
 func (m *TestOrmCMD) GetCommand() interface{} {
 	return &cli.Command{
 		Name:    "test-orm",
@@ -53,7 +53,7 @@ func (m *TestOrmCMD) GetCommand() interface{} {
 
 			// 使用dig依赖注入组件
 			dc := m.Ctx.GetDigContainer().
-				Provide(func() frame.ContextCommander { return m.Ctx }).
+				Provide(func() fiberhouse.ContextCommander { return m.Ctx }).
 				Provide(model.NewExampleMysqlModel).
 				Provide(service.NewExampleMysqlService)
 

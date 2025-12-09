@@ -3,7 +3,7 @@ package tags
 import (
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
-	"github.com/lamxy/fiberhouse/frame/component/validate"
+	"github.com/lamxy/fiberhouse/component/validate"
 )
 
 // StartswithRegisterTranslation 为已存在的tag: startswith 注册指定语言的翻译提示（如该tag缺失指定语言的翻译提示，在此处自定义实现）

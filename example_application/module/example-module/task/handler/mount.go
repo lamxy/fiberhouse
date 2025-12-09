@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/task"
-	"github.com/lamxy/fiberhouse/frame"
 )
 
 // RegisterTaskHandlers 统一注册任务处理函数和依赖的组件实例初始化器
-func RegisterTaskHandlers(tk frame.TaskRegister) {
+func RegisterTaskHandlers(tk fiberhouse.TaskRegister) {
 	// append task handler to global taskHandlerMap
 	// 通过RegisterKeyXXX注册任务处理的实例初始化器，并获取注册实例的keyName
 

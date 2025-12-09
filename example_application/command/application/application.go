@@ -2,28 +2,28 @@ package application
 
 import (
 	"errors"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/cache/cachelocal"
+	"github.com/lamxy/fiberhouse/cache/cacheremote"
+	"github.com/lamxy/fiberhouse/component/jsoncodec"
+	"github.com/lamxy/fiberhouse/database/dbmongo"
+	"github.com/lamxy/fiberhouse/database/dbmysql"
 	"github.com/lamxy/fiberhouse/example_application"
 	"github.com/lamxy/fiberhouse/example_application/command/application/commands"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/cache/cachelocal"
-	"github.com/lamxy/fiberhouse/frame/cache/cacheremote"
-	"github.com/lamxy/fiberhouse/frame/component/jsoncodec"
-	"github.com/lamxy/fiberhouse/frame/database/dbmongo"
-	"github.com/lamxy/fiberhouse/frame/database/dbmysql"
-	"github.com/lamxy/fiberhouse/frame/globalmanager"
+	"github.com/lamxy/fiberhouse/globalmanager"
 	"github.com/urfave/cli/v2"
 	"reflect"
 	"strconv"
 )
 
-// Application 定义应用对象，实现 frame.ApplicationCmdRegister 接口
+// Application 定义应用对象，实现 fiberhouse.ApplicationCmdRegister 接口
 type Application struct {
-	Ctx             frame.ContextCommander
+	Ctx             fiberhouse.ContextCommander
 	name            string
-	instanceFlagMap map[frame.InstanceKeyFlag]frame.InstanceKey // 预定义实例标识的key映射
+	instanceFlagMap map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey // 预定义实例标识的key映射
 }
 
-func NewApplication(ctx frame.ContextCommander) frame.ApplicationCmdRegister {
+func NewApplication(ctx fiberhouse.ContextCommander) fiberhouse.ApplicationCmdRegister {
 	return &Application{
 		name: "application",
 		Ctx:  ctx,
@@ -41,7 +41,7 @@ func (app *Application) SetName(name string) {
 }
 
 // GetContext 获取应用上下文对象
-func (app *Application) GetContext() frame.ContextCommander {
+func (app *Application) GetContext() fiberhouse.ContextCommander {
 	return app.Ctx
 }
 
@@ -93,7 +93,7 @@ func (app *Application) RegisterCommands(core interface{}) {
 	// 转换为具体核心应用类型
 	coreApp := core.(*cli.App)
 
-	cmdGetters := []frame.CommandGetter{
+	cmdGetters := []fiberhouse.CommandGetter{
 		commands.NewTestOrmCMD(app.Ctx),
 		// TODO 收集更多的实现了CommandGetter接口的命令...
 
@@ -195,7 +195,7 @@ func (app *Application) GetLevel2CacheKey() string {
 	return example_application.KEY_LEVEL2_CACHE
 }
 
-func (app *Application) GetInstanceKey(flag frame.InstanceKeyFlag) frame.InstanceKey {
+func (app *Application) GetInstanceKey(flag fiberhouse.InstanceKeyFlag) fiberhouse.InstanceKey {
 	if ik, ok := app.instanceFlagMap[flag]; ok {
 		return ik
 	}

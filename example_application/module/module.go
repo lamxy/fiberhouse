@@ -2,17 +2,17 @@ package module
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/lamxy/fiberhouse"
 	moduleApi "github.com/lamxy/fiberhouse/example_application/module/api"
-	"github.com/lamxy/fiberhouse/frame"
 )
 
 // Module struct
 type Module struct {
 	name string // for marking & container key
-	Ctx  frame.ContextFramer
+	Ctx  fiberhouse.ContextFramer
 }
 
-func NewModule(ctx frame.ContextFramer) frame.ModuleRegister {
+func NewModule(ctx fiberhouse.ContextFramer) fiberhouse.ModuleRegister {
 	return &Module{
 		name: "module",
 		Ctx:  ctx,
@@ -30,7 +30,7 @@ func (m *Module) SetName(name string) {
 }
 
 // GetContext get module context
-func (m *Module) GetContext() frame.ContextFramer {
+func (m *Module) GetContext() fiberhouse.ContextFramer {
 	return m.Ctx
 }
 

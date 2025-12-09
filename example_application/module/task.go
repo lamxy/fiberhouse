@@ -4,20 +4,20 @@ import (
 	"context"
 	"fmt"
 	"github.com/hibiken/asynq"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/cache"
+	"github.com/lamxy/fiberhouse/component/tasklog"
 	exampleTaskHandler "github.com/lamxy/fiberhouse/example_application/module/example-module/task/handler"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/cache"
-	"github.com/lamxy/fiberhouse/frame/component/tasklog"
 )
 
 // TaskAsync 任务注册器
 type TaskAsync struct {
 	name           string // 用于标记注册器名称或用于容器的keyName
-	Ctx            frame.ContextFramer
+	Ctx            fiberhouse.ContextFramer
 	taskHandlerMap map[string]func(context.Context, *asynq.Task) error
 }
 
-func NewTaskAsync(ctx frame.ContextFramer) frame.TaskRegister {
+func NewTaskAsync(ctx fiberhouse.ContextFramer) fiberhouse.TaskRegister {
 	return &TaskAsync{
 		name:           "task",
 		Ctx:            ctx,
@@ -36,7 +36,7 @@ func (ta *TaskAsync) SetName(name string) {
 }
 
 // GetContext 获取应用上下文
-func (ta *TaskAsync) GetContext() frame.ContextFramer {
+func (ta *TaskAsync) GetContext() fiberhouse.ContextFramer {
 	return ta.Ctx
 }
 
@@ -79,7 +79,7 @@ func (ta *TaskAsync) RegisterTaskServerToContainer() {
 	rdb := cacheIns.(cache.IRedisClient)
 	ta.Ctx.GetContainer().Register(ta.Ctx.GetStarterApp().GetApplication().GetTaskServerKey(), func() (interface{}, error) {
 		// 注入应用上下文
-		worker := frame.NewTaskWorker(ta.GetContext(), rdb.GetRedisClient(), asynq.Config{
+		worker := fiberhouse.NewTaskWorker(ta.GetContext(), rdb.GetRedisClient(), asynq.Config{
 			Concurrency: 10,
 			Queues: map[string]int{
 				"critical": 6,
@@ -104,32 +104,32 @@ func (ta *TaskAsync) RegisterTaskDispatcherToContainer() {
 	}
 	rdb := cacheIns.(cache.IRedisClient)
 	ta.Ctx.GetContainer().Register(ta.Ctx.GetStarterApp().GetApplication().GetTaskDispatcherKey(), func() (interface{}, error) {
-		dispatcher := frame.NewTaskDispatcher(rdb.GetRedisClient())
+		dispatcher := fiberhouse.NewTaskDispatcher(rdb.GetRedisClient())
 		return dispatcher, nil
 	})
 }
 
 // GetTaskDispatcher 从容器获取任务分发器实例
-func (ta *TaskAsync) GetTaskDispatcher() (*frame.TaskDispatcher, error) {
+func (ta *TaskAsync) GetTaskDispatcher() (*fiberhouse.TaskDispatcher, error) {
 	key := ta.Ctx.GetStarterApp().GetApplication().GetTaskDispatcherKey()
 	instance, err := ta.Ctx.GetContainer().Get(key)
 	if err != nil {
 		return nil, err
 	}
-	if result, ok := instance.(*frame.TaskDispatcher); ok {
+	if result, ok := instance.(*fiberhouse.TaskDispatcher); ok {
 		return result, nil
 	}
 	return nil, fmt.Errorf("assertion failure for type of '%s' instance", key)
 }
 
 // GetTaskWorker 从容器获取任务工作服务器实例
-func (ta *TaskAsync) GetTaskWorker(key string) (*frame.TaskWorker, error) {
+func (ta *TaskAsync) GetTaskWorker(key string) (*fiberhouse.TaskWorker, error) {
 	// 启动任务服务
 	instance, err := ta.Ctx.GetContainer().Get(key)
 	if err != nil {
 		return nil, err
 	}
-	if worker, ok := instance.(*frame.TaskWorker); ok {
+	if worker, ok := instance.(*fiberhouse.TaskWorker); ok {
 		return worker, nil
 	}
 	return nil, fmt.Errorf("assertion failure for type of '%s' instance", key)

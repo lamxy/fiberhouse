@@ -1,11 +1,11 @@
 package main
 
 import (
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/bootstrap"
+	"github.com/lamxy/fiberhouse/commandstarter"
 	"github.com/lamxy/fiberhouse/example_application/command/application"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/bootstrap"
-	"github.com/lamxy/fiberhouse/frame/commandstarter"
-	"github.com/lamxy/fiberhouse/frame/option"
+	"github.com/lamxy/fiberhouse/option"
 )
 
 func main() {
@@ -16,7 +16,7 @@ func main() {
 	logger := bootstrap.NewLoggerOnce(cfg, "./logs")
 
 	// 初始化命令全局上下文
-	ctx := frame.NewCmdContextOnce(cfg, logger)
+	ctx := fiberhouse.NewCmdContextOnce(cfg, logger)
 
 	// 初始化应用注册器对象，注入应用启动器
 	appRegister := application.NewApplication(ctx)

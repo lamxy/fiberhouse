@@ -1,13 +1,13 @@
 package main
 
 import (
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/applicationstarter"
+	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/example_application"
 	"github.com/lamxy/fiberhouse/example_application/module"
 	_ "github.com/lamxy/fiberhouse/example_main/docs" // swagger docs
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/applicationstarter"
-	"github.com/lamxy/fiberhouse/frame/bootstrap"
-	"github.com/lamxy/fiberhouse/frame/option"
+	"github.com/lamxy/fiberhouse/option"
 )
 
 // Version 版本信息，通过编译时 ldflags 注入
@@ -33,7 +33,7 @@ func main() {
 	logger := bootstrap.NewLoggerOnce(cfg, "./example_main/logs")
 
 	// 初始化全局应用上下文
-	appContext := frame.NewAppContextOnce(cfg, logger)
+	appContext := fiberhouse.NewAppContextOnce(cfg, logger)
 	// 设置版本信息
 	appContext.GetConfig().SetVersion(Version)
 

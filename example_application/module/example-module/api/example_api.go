@@ -5,25 +5,25 @@ import (
 	"fmt"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/api-vo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/api-vo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/response"
+	"github.com/lamxy/fiberhouse/response"
 	"strconv"
 )
 
-// ExampleHandler 示例处理器，继承自 frame.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
+// ExampleHandler 示例处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
 type ExampleHandler struct {
-	frame.ApiLocator
+	fiberhouse.ApiLocator
 	Service        *service.ExampleService // 直接定义依赖的组件指针类型成员变量，由wire注入，无需注册到全局管理器
-	KeyTestService string                  // 定义依赖组件的全局管理器的实例key。通过key即可由 h.GetInstance(key) 方法获取实例，或由 frame.GetMustInstance[T](key) 泛型方法获取实例，无需wire或其他依赖注入工具
+	KeyTestService string                  // 定义依赖组件的全局管理器的实例key。通过key即可由 h.GetInstance(key) 方法获取实例，或由 fiberhouse.GetMustInstance[T](key) 泛型方法获取实例，无需wire或其他依赖注入工具
 }
 
-func NewExampleHandler(ctx frame.ContextFramer, es *service.ExampleService) *ExampleHandler {
+func NewExampleHandler(ctx fiberhouse.ContextFramer, es *service.ExampleService) *ExampleHandler {
 	return &ExampleHandler{
-		ApiLocator:     frame.NewApi(ctx).SetName(GetKeyExampleHandler()),
+		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyExampleHandler()),
 		Service:        es,
 		KeyTestService: service.RegisterKeyTestService(ctx), // 注册依赖的测试服务实例初始化器并返回注册实例key，通过 h.GetInstance(key) 方法获取实例
 	}
@@ -35,14 +35,14 @@ func NewExampleHandler(ctx frame.ContextFramer, es *service.ExampleService) *Exa
 // 2. 比如：模块内model目录下的ExampleModel对象要注册进全局管理器，最终组合的key名称为: example-module.model.ExampleModel;
 
 // 注意：
-// 1. 框架提供的 frame.RegisterKeyName() 方法会自动帮你组合命名空间前缀和组件名称，生成完整的注册key名称；其中frame.GetNamespace()方法会帮你组合命名空间前缀部分，接受一个名字空间的切片，内部自动
+// 1. 框架提供的 fiberhouse.RegisterKeyName() 方法会自动帮你组合命名空间前缀和组件名称，生成完整的注册key名称；其中fiberhouse.GetNamespace()方法会帮你组合命名空间前缀部分，接受一个名字空间的切片，内部自动
 // 按"."拼接名字空间后作为默认值，但当参数"ns"存在值时，由ns作为的命名空间前缀。
 // 2. 组件注册到全局管理器的key名称，应符合标识符命名规范，注册名需要保证唯一，否则会注册失败。
 */
 
 // GetKeyExampleHandler 定义和获取 ExampleHandler 注册到全局管理器的实例key
 func GetKeyExampleHandler(ns ...string) string {
-	return frame.RegisterKeyName("ExampleHandler", frame.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("ExampleHandler", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
 // GetTest 测试接口，通过 h.GetInstance(key) 方法获取TestService注册实例，无需编译阶段的wire依赖注入

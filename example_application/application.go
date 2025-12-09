@@ -2,36 +2,36 @@ package example_application
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/cache"
+	"github.com/lamxy/fiberhouse/cache/cache2"
+	"github.com/lamxy/fiberhouse/cache/cachelocal"
+	"github.com/lamxy/fiberhouse/cache/cacheremote"
+	"github.com/lamxy/fiberhouse/component/jsoncodec"
+	"github.com/lamxy/fiberhouse/component/validate"
+	"github.com/lamxy/fiberhouse/database/dbmongo"
+	"github.com/lamxy/fiberhouse/database/dbmysql"
 	"github.com/lamxy/fiberhouse/example_application/exceptions"
 	"github.com/lamxy/fiberhouse/example_application/middleware"
 	"github.com/lamxy/fiberhouse/example_application/validatecustom"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/cache"
-	"github.com/lamxy/fiberhouse/frame/cache/cache2"
-	"github.com/lamxy/fiberhouse/frame/cache/cachelocal"
-	"github.com/lamxy/fiberhouse/frame/cache/cacheremote"
-	"github.com/lamxy/fiberhouse/frame/component/jsoncodec"
-	"github.com/lamxy/fiberhouse/frame/component/validate"
-	"github.com/lamxy/fiberhouse/frame/database/dbmongo"
-	"github.com/lamxy/fiberhouse/frame/database/dbmysql"
-	"github.com/lamxy/fiberhouse/frame/globalmanager"
+	"github.com/lamxy/fiberhouse/globalmanager"
 )
 
 // Application 实现Global全局接口
 type Application struct {
 	name            string // for marking & container key
-	Ctx             frame.ContextFramer
-	instanceFlagMap map[frame.InstanceKeyFlag]frame.InstanceKey // 预定义实例KeyName的keyFlag映射
+	Ctx             fiberhouse.ContextFramer
+	instanceFlagMap map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey // 预定义实例KeyName的keyFlag映射
 	KeyMongoLog     string
 	KeyRedisTest    string
 }
 
 // NewApplication new项目应用
-func NewApplication(ctx frame.ContextFramer) frame.ApplicationRegister {
+func NewApplication(ctx fiberhouse.ContextFramer) fiberhouse.ApplicationRegister {
 	return &Application{
 		name:            "application",
 		Ctx:             ctx,
-		instanceFlagMap: make(map[frame.InstanceKeyFlag]frame.InstanceKey), // 初始化时,预定义好Flag跟实例key的映射
+		instanceFlagMap: make(map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey), // 初始化时,预定义好Flag跟实例key的映射
 	}
 }
 
@@ -46,7 +46,7 @@ func (app *Application) SetName(name string) {
 }
 
 // GetContext 获取应用上下文
-func (app *Application) GetContext() frame.ContextFramer {
+func (app *Application) GetContext() fiberhouse.ContextFramer {
 	return app.Ctx
 }
 
@@ -155,7 +155,7 @@ func (app *Application) GetLevel2CacheKey() string {
 }
 
 // GetInstanceKey 获取除框架预定义实例key外的由用户自定义标识映射的实例key
-func (app *Application) GetInstanceKey(flag frame.InstanceKeyFlag) frame.InstanceKey {
+func (app *Application) GetInstanceKey(flag fiberhouse.InstanceKeyFlag) fiberhouse.InstanceKey {
 	if ik, ok := app.instanceFlagMap[flag]; ok {
 		return ik
 	}

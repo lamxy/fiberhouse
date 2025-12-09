@@ -3,21 +3,21 @@ package model
 import (
 	"context"
 	"errors"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/database/dbmysql"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/database/dbmysql"
 	"gorm.io/gorm"
 	"time"
 )
 
 type ExampleMysqlModel struct {
 	dbmysql.MysqlLocator
-	Ctx frame.IContext
+	Ctx fiberhouse.IContext
 }
 
 // NewExampleMysqlModel 构造函数
-func NewExampleMysqlModel(ctx frame.ContextCommander) *ExampleMysqlModel {
+func NewExampleMysqlModel(ctx fiberhouse.ContextCommander) *ExampleMysqlModel {
 	return &ExampleMysqlModel{
 		MysqlLocator: dbmysql.NewMysqlModel(ctx, constant.MysqlInstanceKey).SetDbName("test").SetTable("user").SetName("MysqlModel").(dbmysql.MysqlLocator),
 		Ctx:          ctx,

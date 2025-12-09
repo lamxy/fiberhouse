@@ -19,7 +19,7 @@ const (
 	// MongoInstanceKey Mongo实例key
 	MongoInstanceKey = example_application.KEY_MONGODB
 
-	// DbNameMongo Mongo主库名，默认为test: frame.DefaultMongoDBConfName
+	// DbNameMongo Mongo主库名，默认为test: fiberhouse.DefaultMongoDBConfName
 	DbNameMongo = "test"
 
 	// MysqlInstanceKey Mysql实例key

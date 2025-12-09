@@ -3,35 +3,35 @@ package service
 import (
 	"context"
 	"github.com/hibiken/asynq"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/cache"
 	"github.com/lamxy/fiberhouse/example_application/api-vo/commonvo"
 	"github.com/lamxy/fiberhouse/example_application/api-vo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/api-vo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/task"
-	"github.com/lamxy/fiberhouse/frame"
-	"github.com/lamxy/fiberhouse/frame/cache"
 	"strconv"
 	"time"
 )
 
-// ExampleService 样例服务，继承 frame.ServiceLocator 服务定位器接口，具备获取上下文、配置、日志、注册实例等功能
+// ExampleService 样例服务，继承 fiberhouse.ServiceLocator 服务定位器接口，具备获取上下文、配置、日志、注册实例等功能
 type ExampleService struct {
-	frame.ServiceLocator                               // 继承服务定位器接口
-	Repo                 *repository.ExampleRepository // 依赖的组件: 样例仓库，构造参数注入。由wire自动注入
+	fiberhouse.ServiceLocator                               // 继承服务定位器接口
+	Repo                      *repository.ExampleRepository // 依赖的组件: 样例仓库，构造参数注入。由wire自动注入
 }
 
-func NewExampleService(ctx frame.ContextFramer, repo *repository.ExampleRepository) *ExampleService {
+func NewExampleService(ctx fiberhouse.ContextFramer, repo *repository.ExampleRepository) *ExampleService {
 	name := GetKeyExampleService()
 	return &ExampleService{
-		ServiceLocator: frame.NewService(ctx).SetName(name),
+		ServiceLocator: fiberhouse.NewService(ctx).SetName(name),
 		Repo:           repo,
 	}
 }
 
 // GetKeyExampleService 获取 ExampleService 注册键名
 func GetKeyExampleService(ns ...string) string {
-	return frame.RegisterKeyName("ExampleService", frame.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("ExampleService", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
 // GetExampleWithTaskDispatcher 示例方法，演示如何在服务方法中使用任务调度器异步执行任务
@@ -46,7 +46,7 @@ func (s *ExampleService) GetExampleWithTaskDispatcher(id string) (*responsevo.Ex
 	log := s.GetContext().GetMustLoggerWithOrigin(s.GetContext().GetConfig().LogOriginTask())
 
 	// 获取样例数据成功，推送延迟任务异步执行
-	dispatcher, err := s.GetContext().(frame.ContextFramer).GetStarterApp().GetTask().GetTaskDispatcher()
+	dispatcher, err := s.GetContext().(fiberhouse.ContextFramer).GetStarterApp().GetTask().GetTaskDispatcher()
 	if err != nil {
 		log.Warn().Err(err).Str("Category", "asynq").Msg("GetExampleWithTaskDispatcher GetTaskDispatcher failed")
 	}
@@ -103,8 +103,13 @@ func (s *ExampleService) GetExamples(page, size int) ([]responsevo.ExampleRespVo
 	defer cache.OptionPoolPut(co)
 
 	// 设置缓存参数: 二级缓存、启用本地缓存、设置缓存key、设置本地缓存随机过期时间(10秒±10%)、设置远程缓存随机过期时间(3分钟±1分钟)、写远程缓存同步策略、设置上下文、启用缓存全部的保护措施
-	co.Level2().EnableCache().SetCacheKey("key:example:list:page:"+strconv.Itoa(page)+":size:"+strconv.Itoa(size)).SetLocalTTLRandomPercent(10*time.Second, 0.1).
-		SetRemoteTTLWithRandom(3*time.Minute, 1*time.Minute).SetSyncStrategyWriteRemoteOnly().SetContextCtx(context.TODO()).EnableProtectionAll()
+	co.Level2().EnableCache().
+		SetCacheKey("key:example:list:page:"+strconv.Itoa(page)+":size:"+strconv.Itoa(size)).
+		SetLocalTTLRandomPercent(10*time.Second, 0.1).
+		SetRemoteTTLWithRandom(3*time.Minute, 1*time.Minute).
+		SetSyncStrategyWriteRemoteOnly().
+		SetContextCtx(context.TODO()).
+		EnableProtectionAll()
 
 	// 获取缓存数据
 	return cache.GetCached[[]responsevo.ExampleRespVo](co, func(ctx context.Context) ([]responsevo.ExampleRespVo, error) {
