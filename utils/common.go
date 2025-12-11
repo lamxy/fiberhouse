@@ -11,6 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"unicode"
 	"unsafe"
@@ -102,4 +105,45 @@ func UnsafeString(b []byte) string {
 // copy from goFiber/fiber utils
 func UnsafeBytes(s string) []byte {
 	return unsafe.Slice(unsafe.StringData(s), len(s))
+}
+
+
+// StackMsg 获取当前 goroutine 的完整调用栈信息，需将字节切片转为字符串
+func StackMsg() string {
+	return UnsafeString(debug.Stack())
+}
+
+// CaptureStack 捕获当前 goroutine 的调用栈信息，跳过前3层调用栈
+// 固定 64 个 uintptr 数组，栈上分配
+func CaptureStack() string {
+	const size = 64
+	var pcs [size]uintptr
+	n := runtime.Callers(3, pcs[:]) // skip跳过前3层
+	frames := runtime.CallersFrames(pcs[:n])
+
+	var strBuilder strings.Builder
+	strBuilder.WriteString("stack trace:\n")
+
+	for {
+		frm, more := frames.Next()
+		strBuilder.WriteString(frm.Function)
+		strBuilder.WriteString("\n\t")
+		strBuilder.WriteString(frm.File)
+		strBuilder.WriteByte(':')
+		strBuilder.WriteString(strconv.Itoa(frm.Line))
+		strBuilder.WriteByte('\n')
+
+		if !more {
+			break
+		}
+	}
+	return strBuilder.String()
+}
+
+// debugStackLines 获取当前 goroutine 的调用栈信息行切片
+func DebugStackLines(stacks string) []string {
+	if len(stacks) == 0 || !strings.Contains(stacks, "\n") {
+		return nil
+	}
+	return strings.Split(strings.ReplaceAll(stacks, "\t", "    "), "\n")
 }

@@ -10,10 +10,11 @@ package exception
 
 import (
 	"fmt"
-	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/globalmanager"
+	providerCtx "github.com/lamxy/fiberhouse/provider/context"
 	"github.com/lamxy/fiberhouse/response"
+	"net/http"
 )
 
 /*
@@ -114,12 +115,23 @@ func (e *Exception) Panic() {
 	panic(e)
 }
 
-func (e *Exception) JsonWithCtx(c *fiber.Ctx, status ...int) error {
+// JsonWithCtx Exception 使用 fiber 上下文响应 JSON
+//func (e *Exception) JsonWithCtx(c *fiber.Ctx, status ...int) error {
+//	defer e.Release()
+//	if len(status) > 0 {
+//		return c.Status(status[0]).JSON(e)
+//	}
+//	return c.JSON(e)
+//}
+
+// JsonWithCtx Exception 使用 ContextProvider 上下文响应 JSON
+func (e *Exception) JsonWithCtx(c providerCtx.ContextProvider, status ...int) error {
 	defer e.Release()
+	statusCode := http.StatusOK
 	if len(status) > 0 {
-		return c.Status(status[0]).JSON(e)
+		statusCode = status[0]
 	}
-	return c.JSON(e)
+	return c.JSON(statusCode, e)
 }
 
 // GetInputError 常见异常错误方法
@@ -228,12 +240,23 @@ func (e *ValidateException) RespError(d ...interface{}) *ValidateException {
 	return e
 }
 
-func (e *ValidateException) JsonWithCtx(c *fiber.Ctx, status ...int) error {
+// JsonWithCtx ValidateException 使用 fiber 上下文响应 JSON
+//func (e *ValidateException) JsonWithCtx(c *fiber.Ctx, status ...int) error {
+//	defer e.Release()
+//	if len(status) > 0 {
+//		return c.Status(status[0]).JSON(e)
+//	}
+//	return c.JSON(e)
+//}
+
+// JsonWithCtx ValidateException 使用 ContextProvider 上下文响应 JSON
+func (e *ValidateException) JsonWithCtx(c providerCtx.ContextProvider, status ...int) error {
 	defer e.Release()
+	statusCode := http.StatusOK
 	if len(status) > 0 {
-		return c.Status(status[0]).JSON(e)
+		statusCode = status[0]
 	}
-	return c.JSON(e)
+	return c.JSON(statusCode, e)
 }
 
 // VeGetInputError 常见验证类错误方法

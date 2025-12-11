@@ -82,9 +82,6 @@ type CoreStarter interface {
 	// 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
 	GetAppContext() ContextFramer
 
-	// RegisterCoreCfg 注册核心应用配置
-	RegisterCoreCfg(interface{})
-
 	// InitCoreApp 初始化核心应用
 	// 创建并配置底层HTTP服务实例（如Fiber应用）
 	InitCoreApp(fs FrameStarter)

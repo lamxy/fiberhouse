@@ -21,7 +21,7 @@ import (
 // CoreFiber 应用核心启动器
 type CoreFiber struct {
 	ctx     fiberhouse.ContextFramer
-	coreCfg *fiber.Config
+	CoreCfg *fiber.Config
 	coreApp *fiber.App
 }
 
@@ -53,8 +53,8 @@ func (cf *CoreFiber) InitCoreApp(fs fiberhouse.FrameStarter) {
 	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("InitCoreApp starting...")
 
 	// 自定义核心配置
-	if cf.coreCfg != nil {
-		cf.coreApp = fiber.New(*cf.coreCfg)
+	if cf.CoreCfg != nil {
+		cf.coreApp = fiber.New(*cf.CoreCfg)
 		return
 	}
 
@@ -105,15 +105,6 @@ func (cf *CoreFiber) InitCoreApp(fs fiberhouse.FrameStarter) {
 		StreamRequestBody: cfg.Bool("application.server.streamRequestBody"), // 默认false
 		// more...
 	})
-}
-
-// RegisterCoreCfg 注册应用核心配置对象到应用启动器
-func (cf *CoreFiber) RegisterCoreCfg(coreCfg interface{}) {
-	if cfg, ok := coreCfg.(*fiber.Config); ok {
-		cf.coreCfg = cfg
-	} else {
-		cf.GetAppContext().GetLogger().WarnWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Msg("RegisterCoreCfg coreCfg isn't a fiber.Config")
-	}
 }
 
 // RegisterAppMiddleware 注册应用级的中间件

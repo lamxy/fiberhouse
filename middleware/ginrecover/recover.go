@@ -4,17 +4,21 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy
 
-// Package recover 提供 Fiber 框架的全局异常恢复和错误处理中间件。
-package recover
+// Package ginrecover 提供 Gin 框架的全局异常恢复和错误处理中间件。
+package ginrecover
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/gin-gonic/gin"
+	ginJson "github.com/gin-gonic/gin/codec/json"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component/jsonconvert"
 	"github.com/lamxy/fiberhouse/constant"
 	providerCtx "github.com/lamxy/fiberhouse/provider/context"
+	"io"
 	"net/http"
 	"runtime"
 	"strings"
@@ -23,6 +27,7 @@ import (
 
 	frameUtils "github.com/lamxy/fiberhouse/utils"
 
+	"github.com/gin-contrib/requestid"
 	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse/middleware"
 )
@@ -66,35 +71,20 @@ func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ContextProvider,
 
 	// 原生上下文
 	var (
-		c  *fiber.Ctx
+		c  *gin.Context
 		ok bool
 	)
-	if c, ok = ctx.GetCtx().(*fiber.Ctx); !ok {
-		panic("ContextProvider is not *fiber.Ctx")
+	if c, ok = ctx.GetCtx().(*gin.Context); !ok {
+		panic("ContextProvider is not *gin.Context")
 	}
 
 	// 头部debug标记
-	debugFlagFromHeader := c.Get(debugFlag, "")
+	debugFlagFromHeader := c.GetHeader(debugFlag)
 	// 请求requestId
-	var traceId string
-	if c.Locals(requestID) != nil {
-		traceId = c.Locals(requestID).(string) // 请求类错误，从本地变量获取请求ID
-	} else {
-		traceId = "" // 非请求接口出现的错误，请求ID空值
-	}
+	var traceId = requestid.Get(c)
+
 	var jsonEnCoder func(interface{}) ([]byte, error)
-	// json编码器
-	jsonEnc, errJec := r.GetContext().GetContainer().Get(r.GetContext().GetStarter().GetApplication().GetFastJsonCodecKey())
-	if errJec != nil {
-		logger.Warn(cfg.LogOriginRecover()).Str(requestID, traceId).Err(errJec).Msg("GetFastJsonCodecKey get json encoder from container failed")
-		jsonEnCoder = c.App().Config().JSONEncoder
-	} else {
-		if jsonTmp, ok := jsonEnc.(fiberhouse.JsonWrapper); ok {
-			jsonEnCoder = jsonTmp.Marshal
-		} else {
-			jsonEnCoder = c.App().Config().JSONEncoder
-		}
-	}
+	jsonEnCoder = ginJson.API.Marshal
 
 	var (
 		linesJson []byte
@@ -306,10 +296,10 @@ func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ContextProvider,
 	}
 }
 
-// ErrorHandler 用于fiber.New配置全局错误处理器，处理业务级错误
-func (r *RecoverCatch) ErrorHandler(ctx providerCtx.ContextProvider, err error) error {
+// ErrorHandler 用于gin全局错误处理器中间件，处理业务级错误
+func (r *RecoverCatch) ErrorHandler(c providerCtx.ContextProvider, err error) error {
 	// 记录日志 & 堆栈
-	r.DefaultStackTraceHandler(ctx, err)
+	r.DefaultStackTraceHandler(c, err)
 
 	// ValidateException
 	var (
@@ -319,37 +309,32 @@ func (r *RecoverCatch) ErrorHandler(ctx providerCtx.ContextProvider, err error) 
 	okVe := errors.As(err, &eve)
 	if okVe {
 		// 验证器错误，响应完整错误信息到客户端
-		return eve.RespError().JsonWithCtx(ctx, http.StatusBadRequest)
+		return eve.RespError().JsonWithCtx(c, http.StatusBadRequest)
 	}
 	// Exception
 	var ee *exception.Exception
 	okEe := errors.As(err, &ee)
 	if okEe {
 		if debugMode {
-			return ee.RespError().JsonWithCtx(ctx, http.StatusBadRequest)
+			return ee.RespError().JsonWithCtx(c, http.StatusBadRequest)
 		}
-		return ee.RespError(nil).JsonWithCtx(ctx, http.StatusBadRequest)
-	}
-	// fiber.Error
-	var (
-		fe *fiber.Error
-	)
-	if errors.As(err, &fe) {
-		if debugMode {
-			return exception.New(constant.RespCoreErrorTypeCode, fe.Error(), fe.Code).JsonWithCtx(ctx, http.StatusInternalServerError) // http code 存入 data字段
-		}
-		return exception.New(constant.RespCoreErrorTypeCode, constant.RespCoreErrorMsg).JsonWithCtx(ctx, http.StatusInternalServerError)
+		return ee.RespError(nil).JsonWithCtx(c, http.StatusBadRequest)
 	}
 	// default
 	if debugMode {
-		return exception.GetUnknownError().RespError(err.Error()).JsonWithCtx(ctx, http.StatusInternalServerError)
+		return exception.GetUnknownError().RespError(err.Error()).JsonWithCtx(c, http.StatusInternalServerError)
 	}
-	return exception.GetUnknownError().JsonWithCtx(ctx, http.StatusInternalServerError)
+	return exception.GetUnknownError().JsonWithCtx(c, http.StatusInternalServerError)
 }
 
 // getParamsJson 获取请求参数的 JSON 编码字节切片
-func (r *RecoverCatch) getParamsJson(c *fiber.Ctx, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
-	params := c.AllParams()
+func (r *RecoverCatch) getParamsJson(c *gin.Context, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+	// 获取所有路径参数
+	params := make(map[string]string)
+
+	for i := range c.Params {
+		params[c.Params[i].Key] = c.Params[i].Value
+	}
 	j, err := jsonEnCoder(params)
 	if err != nil {
 		log.Warn(r.GetContext().GetConfig().LogOriginRecover()).Str(requestID, traceId).Str("reqParamsErr", err.Error()).Msg("getParamsJson error")
@@ -359,8 +344,9 @@ func (r *RecoverCatch) getParamsJson(c *fiber.Ctx, log bootstrap.LoggerWrapper, 
 }
 
 // getQueriesJson 获取查询参数的 JSON 编码字节切片
-func (r *RecoverCatch) getQueriesJson(c *fiber.Ctx, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
-	queries := c.Queries()
+func (r *RecoverCatch) getQueriesJson(c *gin.Context, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+	// 获取所有查询参数
+	queries := c.Request.URL.Query()
 	j, err := jsonEnCoder(queries)
 	if err != nil {
 		log.Warn(r.GetContext().GetConfig().LogOriginRecover()).Str(requestID, traceId).Str("reqQueriesErr", err.Error()).Msg("getQueriesJson error")
@@ -370,9 +356,9 @@ func (r *RecoverCatch) getQueriesJson(c *fiber.Ctx, log bootstrap.LoggerWrapper,
 }
 
 // getHeadersJson 获取请求头部的 JSON 编码字节切片，对敏感信息进行脱敏处理
-func (r *RecoverCatch) getHeadersJson(c *fiber.Ctx, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (r *RecoverCatch) getHeadersJson(c *gin.Context, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
 	// 获取所有请求头
-	headers := c.GetReqHeaders()
+	headers := c.Request.Header
 
 	// 对敏感头部信息进行脱敏处理
 	sanitizedHeaders := make(map[string][]string, len(headers))
@@ -433,72 +419,110 @@ func (r *RecoverCatch) getJsonIndent(s string, log bootstrap.LoggerWrapper, json
 }
 
 // getBodyJson 获取请求体的 JSON 编码字节切片，非 JSON 格式返回空字节切片和字符串形式的请求体
-func (r *RecoverCatch) getBodyJson(c *fiber.Ctx) ([]byte, string) {
-	body := c.Body()
-	if len(body) == 0 {
+func (r *RecoverCatch) getBodyJson(c *gin.Context) ([]byte, string) {
+	// 优先从上下文缓存中获取
+	if cachedBody, exists := c.Get("__request_body_cache__"); exists {
+		if bodyBytes, ok := cachedBody.([]byte); ok && len(bodyBytes) > 0 {
+			// 判断是否为有效 JSON
+			if frameUtils.JsonValidBytes(bodyBytes) {
+				return bodyBytes, ""
+			}
+			return nil, frameUtils.UnsafeString(bodyBytes)
+		}
+	}
+
+	// 如果缓存中没有，尝试直接读取（可能已被消费）
+	if c.Request.Body == nil {
 		return nil, ""
 	}
-	//buffer := make([]byte, len(body))
-	//copy(buffer, body)
-	if frameUtils.JsonValidBytes(body) {
-		return body, ""
+
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return nil, ""
 	}
-	return nil, frameUtils.UnsafeString(body)
+
+	// 恢复 Body 供后续使用
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	if len(bodyBytes) == 0 {
+		return nil, ""
+	}
+
+	// 判断是否为有效 JSON
+	if frameUtils.JsonValidBytes(bodyBytes) {
+		return bodyBytes, ""
+	}
+	return nil, frameUtils.UnsafeString(bodyBytes)
 }
 
+// RequestBodyCacheMiddleware 中间件：提前读取并缓存请求体
+func RequestBodyCacheMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Body == nil {
+			c.Next()
+			return
+		}
+
+		// 读取请求体
+		bodyBytes, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.Next()
+			return
+		}
+
+		// 恢复 Body 供后续使用
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		// 将读取的内容存储到上下文中
+		c.Set("__request_body_cache__", bodyBytes)
+
+		c.Next()
+	}
+}
+
+// ErrorStack 获取当前的堆栈信息字符串
 func ErrorStack(debugStack ...bool) string {
 	//if len(debugStack) > 0 && debugStack[0] {
-	//	return StackMsg()
+	//	return frameUtils.StackMsg()
 	//}
 	return frameUtils.CaptureStack()
 }
 
 // New creates a new middleware Exception handler [for unexpected panic]
-func New(config ...Config) fiber.Handler {
+func New(config ...Config) gin.HandlerFunc {
 	// Set default config
 	cfg := configDefault(config...)
 
 	// Return new handler
-	return func(c *fiber.Ctx) (err error) { //nolint:nonamedreturns // Uses recover() to overwrite the error
-		// Don't execute middleware if Next returns true
+	return func(c *gin.Context) {
+		// Don't execute middleware if Cfg Next returns true
 		if cfg.Next != nil && cfg.Next(c) {
-			return c.Next()
+			c.Next()
 		}
 
 		// Catch panics
-		defer func(c *fiber.Ctx) {
-			pCtx := providerCtx.WithFiberContext(c)
+		defer func(c *gin.Context) {
 			if r := recover(); r != nil {
+				pCtx := providerCtx.WithGinContext(c)
 				if cfg.EnableStackTrace {
-					cfg.StackTraceHandler(c, r)
+					cfg.StackTraceHandler(pCtx, r)
 				}
 				debugMode := cfg.DebugMode
 				switch re := r.(type) {
 				case *exception.ValidateException:
-					err = re.RespError().JsonWithCtx(pCtx, fiber.StatusBadRequest) // output validation error information as is
+					_ = re.RespError().JsonWithCtx(pCtx, http.StatusBadRequest)
 					return
 				case *exception.Exception:
 					if debugMode {
-						err = re.RespError().JsonWithCtx(pCtx, fiber.StatusBadRequest)
+						_ = re.RespError().JsonWithCtx(pCtx, http.StatusBadRequest)
 						return
 					}
-					err = re.RespError(nil).JsonWithCtx(pCtx, fiber.StatusBadRequest)
-					return
-				case fiber.Error:
-					code := fiber.StatusInternalServerError
-					if re.Code != 0 {
-						code = re.Code
-					}
-					if debugMode {
-						err = exception.New(constant.RespCoreErrorTypeCode, re.Error(), code).JsonWithCtx(pCtx, fiber.StatusInternalServerError) // http code save to data field
-						return
-					}
-					err = exception.New(constant.RespCoreErrorTypeCode, constant.RespCoreErrorMsg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+					_ = re.RespError(nil).JsonWithCtx(pCtx, http.StatusBadRequest)
 					return
 				case runtime.Error:
 					if debugMode {
 						// panic(re)
-						err = exception.New(constant.UnknownErrCode, "RuntimeError", re.Error()).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+						_ = exception.New(constant.UnknownErrCode, "RuntimeError", re.Error()).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
 						return
 					}
 					var msg string
@@ -507,14 +531,14 @@ func New(config ...Config) fiber.Handler {
 					} else {
 						msg = "UnknownRTException"
 					}
-					err = exception.New(constant.UnknownErrCode, msg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+					_ = exception.New(constant.UnknownErrCode, msg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
 					return
 				case error:
 					if debugMode {
-						err = exception.New(constant.UnknownErrCode, re.Error()).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+						_ = exception.New(constant.UnknownErrCode, re.Error()).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
 						return
 					}
-					err = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+					_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
 					return
 				default:
 					if debugMode {
@@ -522,26 +546,25 @@ func New(config ...Config) fiber.Handler {
 						defer dw.Release()
 						if dw.CanJSONSerializable() {
 							var out interface{}
-							jsonRet, _ := dw.GetJson(c.App().Config().JSONEncoder) // ignore error
+							jsonRet, _ := dw.GetJson(ginJson.API.Marshal) // ignore error
 							if jsonRet == nil {
 								out = ""
 							} else {
 								out = frameUtils.UnsafeString(jsonRet)
 							}
-							err = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, out).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+							_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, out).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
 							return
 						} else {
-							err = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, dw.GetString()).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+							_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, dw.GetString()).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
 							return
 						}
 					}
-					err = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+					_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
 					return
 				}
 			}
 		}(c)
 
-		// Return err if existed, else move to next handler
-		return c.Next()
+		c.Next()
 	}
 }

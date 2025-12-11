@@ -8,7 +8,8 @@
 package response
 
 import (
-	"github.com/gofiber/fiber/v2"
+	providerCtx "github.com/lamxy/fiberhouse/provider/context"
+	"net/http"
 	"sync"
 )
 
@@ -101,12 +102,22 @@ func ErrorWithoutPool(code int, msg string) *RespInfo {
 }
 
 // JsonWithCtx 使用 Fiber 上下文返回 JSON 响应，并释放对象回池
-func (r *RespInfo) JsonWithCtx(c *fiber.Ctx, status ...int) error {
+//func (r *RespInfo) JsonWithCtx(c *fiber.Ctx, status ...int) error {
+//	defer r.Release()
+//	if len(status) > 0 {
+//		return c.Status(status[0]).JSON(r)
+//	}
+//	return c.JSON(r)
+//}
+
+// JsonWithCtx 使用 ContextProvider 上下文提供者返回 JSON 响应，并释放对象回池  // TODO
+func (r *RespInfo) JsonWithCtx(c providerCtx.ContextProvider, status ...int) error {
 	defer r.Release()
+	statusCode := http.StatusOK
 	if len(status) > 0 {
-		return c.Status(status[0]).JSON(r)
+		statusCode = status[0]
 	}
-	return c.JSON(r)
+	return c.JSON(statusCode, r)
 }
 
 // NewExceptionResp 异常专用的池化创建方法
