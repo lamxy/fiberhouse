@@ -9,7 +9,7 @@ import (
 	"github.com/lamxy/fiberhouse/database/dbmongo"
 	"github.com/lamxy/fiberhouse/database/dbmysql"
 	"github.com/lamxy/fiberhouse/example_application"
-	"github.com/lamxy/fiberhouse/example_application/command/application/commands"
+	"github.com/lamxy/fiberhouse/example_application/commandline/application/commands"
 	"github.com/lamxy/fiberhouse/globalmanager"
 	"github.com/urfave/cli/v2"
 	"reflect"
@@ -18,12 +18,12 @@ import (
 
 // Application 定义应用对象，实现 fiberhouse.ApplicationCmdRegister 接口
 type Application struct {
-	Ctx             fiberhouse.ContextCommander
+	Ctx             fiberhouse.ICommandContext
 	name            string
 	instanceFlagMap map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey // 预定义实例标识的key映射
 }
 
-func NewApplication(ctx fiberhouse.ContextCommander) fiberhouse.ApplicationCmdRegister {
+func NewApplication(ctx fiberhouse.ICommandContext) fiberhouse.ApplicationCmdRegister {
 	return &Application{
 		name: "application",
 		Ctx:  ctx,
@@ -41,7 +41,7 @@ func (app *Application) SetName(name string) {
 }
 
 // GetContext 获取应用上下文对象
-func (app *Application) GetContext() fiberhouse.ContextCommander {
+func (app *Application) GetContext() fiberhouse.ICommandContext {
 	return app.Ctx
 }
 

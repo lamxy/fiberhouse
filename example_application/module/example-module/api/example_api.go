@@ -21,7 +21,7 @@ type ExampleHandler struct {
 	KeyTestService string                  // 定义依赖组件的全局管理器的实例key。通过key即可由 h.GetInstance(key) 方法获取实例，或由 fiberhouse.GetMustInstance[T](key) 泛型方法获取实例，无需wire或其他依赖注入工具
 }
 
-func NewExampleHandler(ctx fiberhouse.ContextFramer, es *service.ExampleService) *ExampleHandler {
+func NewExampleHandler(ctx fiberhouse.IApplicationContext, es *service.ExampleService) *ExampleHandler {
 	return &ExampleHandler{
 		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyExampleHandler()),
 		Service:        es,

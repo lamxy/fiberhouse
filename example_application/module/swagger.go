@@ -7,7 +7,7 @@ import (
 )
 
 // RegisterSwagger 注册Swagger UI route
-func RegisterSwagger(ctx fiberhouse.ContextFramer, app fiber.Router) fiber.Router {
+func RegisterSwagger(ctx fiberhouse.IApplicationContext, app fiber.Router) fiber.Router {
 	registerOrNot := ctx.GetConfig().Bool("application.swagger.enable")
 	if registerOrNot {
 		app.Get("/swagger/*", swagger.HandlerDefault) //  Route: /{uuid}/swagger/*

@@ -19,7 +19,7 @@ type ExampleModel struct {
 	ctx context.Context // 可选属性
 }
 
-func NewExampleModel(ctx fiberhouse.ContextFramer) *ExampleModel {
+func NewExampleModel(ctx fiberhouse.IApplicationContext) *ExampleModel {
 	return &ExampleModel{
 		MongoLocator: dbmongo.NewMongoModel(ctx, constant.MongoInstanceKey).SetDbName(constant.DbNameMongo).SetTable(constant.CollExample).
 			SetName(GetKeyExampleModel()).(dbmongo.MongoLocator), // 设置当前模型的配置项名(mongodb)和库名(test)
@@ -33,7 +33,7 @@ func GetKeyExampleModel(ns ...string) string {
 }
 
 // RegisterKeyExampleModel 注册模型到容器（延迟初始化）并返回注册key
-func RegisterKeyExampleModel(ctx fiberhouse.ContextFramer, ns ...string) string {
+func RegisterKeyExampleModel(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleModel(ns...), func() (interface{}, error) {
 		return NewExampleModel(ctx), nil
 	})

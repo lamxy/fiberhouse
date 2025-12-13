@@ -14,7 +14,7 @@ type Api struct {
 	name string
 }
 
-func NewApi(ctx ContextFramer) *Api {
+func NewApi(ctx IApplicationContext) *Api {
 	return &Api{
 		Ctx: ctx,
 	}

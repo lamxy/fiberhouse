@@ -9,7 +9,7 @@ package fiberhouse
 type FrameCmdStarter interface {
 	IStarter
 	// GetContext 获取应用上下文
-	GetContext() ContextCommander
+	GetContext() ICommandContext
 	// RegisterApplicationGlobals 注册应用预定义的全局对象实例到全局管理器容器中
 	RegisterApplicationGlobals()
 	// RegisterLoggerWithOriginToContainer 将预定义带日志源日志器注册到全局管理器容器中
@@ -22,7 +22,7 @@ type FrameCmdStarter interface {
 
 type CoreCmdStarter interface {
 	// GetAppContext 获取应用上下文
-	GetAppContext() ContextCommander
+	GetAppContext() ICommandContext
 	// InitCoreApp 初始化核心命令行应用
 	InitCoreApp()
 	// RegisterCoreApp 注册底层核心命令行应用实例
@@ -52,7 +52,7 @@ type ApplicationCmdRegister interface {
 	IRegister
 	IApplication
 	// GetContext 返回全局上下文
-	GetContext() ContextCommander
+	GetContext() ICommandContext
 
 	// RegisterGlobalErrHandler 注册全局错误处理器到核心应用
 	RegisterGlobalErrHandler(core interface{})

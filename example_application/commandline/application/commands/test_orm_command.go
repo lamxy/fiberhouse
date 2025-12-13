@@ -10,10 +10,10 @@ import (
 )
 
 type TestOrmCMD struct {
-	Ctx fiberhouse.ContextCommander
+	Ctx fiberhouse.ICommandContext
 }
 
-func NewTestOrmCMD(ctx fiberhouse.ContextCommander) fiberhouse.CommandGetter {
+func NewTestOrmCMD(ctx fiberhouse.ICommandContext) fiberhouse.CommandGetter {
 	return &TestOrmCMD{
 		Ctx: ctx,
 	}
@@ -53,7 +53,7 @@ func (m *TestOrmCMD) GetCommand() interface{} {
 
 			// 使用dig依赖注入组件
 			dc := m.Ctx.GetDigContainer().
-				Provide(func() fiberhouse.ContextCommander { return m.Ctx }).
+				Provide(func() fiberhouse.ICommandContext { return m.Ctx }).
 				Provide(model.NewExampleMysqlModel).
 				Provide(service.NewExampleMysqlService)
 

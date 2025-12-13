@@ -477,7 +477,7 @@ example_application/                    # 样例应用根目录
 - 见注册路由示例： [example_application/module/example-module/api/register_api_router.go](./example_application/module/example-module/api/register_api_router.go)
 
 ```go
-func RegisterRouteHandlers(ctx fiberhouse.ContextFramer, app fiber.Router) {
+func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, app fiber.Router) {
     // 获取exampleApi处理器
     exampleApi, _ := InjectExampleApi(ctx) // 由wire编译依赖注入生成注入函数获取ExampleApi
     
@@ -507,7 +507,7 @@ type CommonHandler struct {
 }
 
 // NewCommonHandler 直接New，无需依赖注入(Wire) TestService对象，内部走全局管理器获取依赖组件
-func NewCommonHandler(ctx fiberhouse.ContextFramer) *CommonHandler {
+func NewCommonHandler(ctx fiberhouse.IApplicationContext) *CommonHandler {
 	return &CommonHandler{
 		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyCommonHandler()),
 		
@@ -553,7 +553,7 @@ type Example struct {
 - 路由注册：见 [example_application/module/example-module/api/register_api_router.go](./example_application/module/example-module/api/register_api_router.go)
 
 ```go
-func RegisterRouteHandlers(ctx fiberhouse.ContextFramer, app fiber.Router) {
+func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, app fiber.Router) {
     // 获取exampleApi处理器
     exampleApi, _ := InjectExampleApi(ctx) // 由wire编译依赖注入获取
 	
@@ -582,7 +582,7 @@ type ExampleHandler struct {
 	KeyTestService string                  
 }
 
-func NewExampleHandler(ctx fiberhouse.ContextFramer, es *service.ExampleService) *ExampleHandler {
+func NewExampleHandler(ctx fiberhouse.IApplicationContext, es *service.ExampleService) *ExampleHandler {
 	return &ExampleHandler{
 		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyExampleHandler()),
 		Service:        es,
@@ -637,7 +637,7 @@ type ExampleService struct {
 	Repo                 *repository.ExampleRepository // 依赖的组件: 样例仓库，构造参数注入。由wire工具依赖注入
 }
 
-func NewExampleService(ctx fiberhouse.ContextFramer, repo *repository.ExampleRepository) *ExampleService {
+func NewExampleService(ctx fiberhouse.IApplicationContext, repo *repository.ExampleRepository) *ExampleService {
 	name := GetKeyExampleService()
 	return &ExampleService{
 		ServiceLocator: fiberhouse.NewService(ctx).SetName(name),
@@ -679,7 +679,7 @@ type ExampleRepository struct {
 	Model *model.ExampleModel
 }
 
-func NewExampleRepository(ctx fiberhouse.ContextFramer, m *model.ExampleModel) *ExampleRepository {
+func NewExampleRepository(ctx fiberhouse.IApplicationContext, m *model.ExampleModel) *ExampleRepository {
 	return &ExampleRepository{
 		RepositoryLocator: fiberhouse.NewRepository(ctx).SetName(GetKeyExampleRepository()),
 		Model:             m,
@@ -692,7 +692,7 @@ func GetKeyExampleRepository(ns ...string) string {
 }
 
 // RegisterKeyExampleRepository 注册 ExampleRepository 到容器（延迟初始化）并返回注册key
-func RegisterKeyExampleRepository(ctx fiberhouse.ContextFramer, ns ...string) string {
+func RegisterKeyExampleRepository(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleRepository(ns...), func() (interface{}, error) {
 		m := model.NewExampleModel(ctx)
 		return NewExampleRepository(ctx, m), nil
@@ -723,7 +723,7 @@ type ExampleModel struct {
 	ctx context.Context // 可选属性
 }
 
-func NewExampleModel(ctx fiberhouse.ContextFramer) *ExampleModel {
+func NewExampleModel(ctx fiberhouse.IApplicationContext) *ExampleModel {
 	return &ExampleModel{
 		MongoLocator: dbmongo.NewMongoModel(ctx, constant.MongoInstanceKey).SetDbName(constant.DbNameMongo).SetTable(constant.CollExample).
 			SetName(GetKeyExampleModel()).(dbmongo.MongoLocator), // 设置当前模型的配置项名(mongodb)和库名(test)
@@ -737,7 +737,7 @@ func GetKeyExampleModel(ns ...string) string {
 }
 
 // RegisterKeyExampleModel 注册模型到容器（延迟初始化）并返回注册key
-func RegisterKeyExampleModel(ctx fiberhouse.ContextFramer, ns ...string) string {
+func RegisterKeyExampleModel(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleModel(ns...), func() (interface{}, error) {
 		return NewExampleModel(ctx), nil
 	})
@@ -855,7 +855,7 @@ func NewExampleCreateTask(ctx fiberhouse.IContext, age int8) (*asynq.Task, error
 // HandleExampleCreateTask 样例任务创建的处理器
 func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {
 	// 从 context 中获取 appCtx 全局应用上下文，获取包括配置、日志、注册实例等组件
-	appCtx, _ := ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.ContextFramer)
+	appCtx, _ := ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.IApplicationContext)
 
 	// 声明任务负载对象
 	var p task.PayloadExampleCreate
@@ -926,7 +926,7 @@ func (s *ExampleService) GetExampleWithTaskDispatcher(id string) (*responsevo.Ex
 	log := s.GetContext().GetMustLoggerWithOrigin(s.GetContext().GetConfig().LogOriginTask())
 
 	// 获取样例数据成功，推送延迟任务异步执行
-	dispatcher, err := s.GetContext().(fiberhouse.ContextFramer).GetStarterApp().GetTask().GetTaskDispatcher()
+	dispatcher, err := s.GetContext().(fiberhouse.IApplicationContext).GetStarterApp().GetTask().GetTaskDispatcher()
 	if err != nil {
 		log.Warn().Err(err).Str("Category", "asynq").Msg("GetExampleWithTaskDispatcher GetTaskDispatcher failed")
 	}
@@ -1041,10 +1041,10 @@ func main() {
 ```go
 // TestOrmCMD 测试go-orm库的CURD操作命令，需实现 fiberhouse.CommandGetter 接口，通过 GetCommand 方法返回命令行命令对象
 type TestOrmCMD struct {
-	Ctx fiberhouse.ContextCommander
+	Ctx fiberhouse.IApplicationContext
 }
 
-func NewTestOrmCMD(ctx fiberhouse.ContextCommander) fiberhouse.CommandGetter {
+func NewTestOrmCMD(ctx fiberhouse.IApplicationContext) fiberhouse.CommandGetter {
 	return &TestOrmCMD{
 		Ctx: ctx,
 	}
@@ -1084,7 +1084,7 @@ func (m *TestOrmCMD) GetCommand() interface{} {
 
 			// 使用dig注入所需依赖，通过provide连缀方法连续注入依赖组件
 			dc := m.Ctx.GetDigContainer().
-				Provide(func() fiberhouse.ContextCommander { return m.Ctx }).
+				Provide(func() fiberhouse.IApplicationContext { return m.Ctx }).
 				Provide(model.NewExampleMysqlModel).
 				Provide(service.NewExampleMysqlService)
 

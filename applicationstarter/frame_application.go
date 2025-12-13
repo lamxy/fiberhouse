@@ -32,14 +32,14 @@ func RunApplicationStarter(starter fiberhouse.ApplicationStarter) {
 
 // FrameApplication 框架应用启动器实现，实现了 fiberhouse.ApplicationStarter 接口
 type FrameApplication struct {
-	Ctx         fiberhouse.ContextFramer
+	Ctx         fiberhouse.IApplicationContext
 	application fiberhouse.ApplicationRegister
 	module      fiberhouse.ModuleRegister
 	task        fiberhouse.TaskRegister
 }
 
 // NewFrameApplication 创建一个应用启动器对象
-func NewFrameApplication(ctx fiberhouse.ContextFramer, opts ...fiberhouse.FrameStarterOption) fiberhouse.FrameStarter {
+func NewFrameApplication(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.FrameStarterOption) fiberhouse.FrameStarter {
 	fApp := &FrameApplication{
 		Ctx: ctx,
 	}
@@ -55,7 +55,7 @@ func NewFrameApplication(ctx fiberhouse.ContextFramer, opts ...fiberhouse.FrameS
 }
 
 // GetContext 获取应用上下文
-func (fa *FrameApplication) GetContext() fiberhouse.ContextFramer {
+func (fa *FrameApplication) GetContext() fiberhouse.IApplicationContext {
 	return fa.Ctx
 }
 
@@ -65,7 +65,7 @@ func (fa *FrameApplication) GetFrameApp() fiberhouse.FrameStarter {
 }
 
 // GetAppContext 获取应用上下文
-func (cf *CoreFiber) GetAppContext() fiberhouse.ContextFramer {
+func (cf *CoreFiber) GetAppContext() fiberhouse.IApplicationContext {
 	return cf.ctx
 }
 

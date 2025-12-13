@@ -20,13 +20,13 @@ import (
 
 // CoreFiber 应用核心启动器
 type CoreFiber struct {
-	ctx     fiberhouse.ContextFramer
+	ctx     fiberhouse.IApplicationContext
 	CoreCfg *fiber.Config
 	coreApp *fiber.App
 }
 
 // NewCoreFiber 创建一个应用核心启动器对象
-func NewCoreFiber(ctx fiberhouse.ContextFramer, opts ...fiberhouse.CoreStarterOption) fiberhouse.CoreStarter {
+func NewCoreFiber(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.CoreStarterOption) fiberhouse.CoreStarter {
 	core := &CoreFiber{
 		ctx: ctx,
 	}

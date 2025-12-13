@@ -8,5 +8,5 @@ import (
 type IRecover interface {
 	DefaultStackTraceHandler(providerCtx.ContextProvider, interface{})
 	ErrorHandler(providerCtx.ContextProvider, error) error
-	GetContext() fiberhouse.ContextFramer
+	GetContext() fiberhouse.IApplicationContext
 }

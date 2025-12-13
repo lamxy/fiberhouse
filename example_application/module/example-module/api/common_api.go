@@ -15,7 +15,7 @@ type CommonHandler struct {
 }
 
 // NewCommonHandler 直接New，无需依赖注入(Wire) TestService对象，内部依赖走全局管理器延迟获取依赖组件
-func NewCommonHandler(ctx fiberhouse.ContextFramer) *CommonHandler {
+func NewCommonHandler(ctx fiberhouse.IApplicationContext) *CommonHandler {
 	return &CommonHandler{
 		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyCommonHandler()),
 		KeyTestService: service.RegisterKeyTestService(ctx), // 注册依赖的TestService实例初始化器并返回注册实例key，通过 h.GetInstance(key) 方法获取TestService实例

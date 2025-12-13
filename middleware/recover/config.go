@@ -41,6 +41,7 @@ package recover
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse"
+	providerCtx "github.com/lamxy/fiberhouse/provider/context"
 )
 
 // Config 结构体用于定义 recover 中间件的配置项。
@@ -58,13 +59,13 @@ type Config struct {
 	// StackTraceHandler 定义了一个处理堆栈跟踪的函数
 	//
 	// 可选配置。默认值：defaultStackTraceHandler
-	StackTraceHandler func(c *fiber.Ctx, e interface{})
+	StackTraceHandler func(c providerCtx.ContextProvider, e interface{})
 
 	// Logger for record messages
 	Logger interface{}
 
 	// AppContext 应用上下文
-	AppContext fiberhouse.ContextFramer
+	AppContext fiberhouse.IApplicationContext
 
 	// 默认输出目标是 os.Stdout
 	Stdout bool
@@ -76,7 +77,7 @@ type Config struct {
 var ConfigDefault = Config{
 	Next:              nil,
 	EnableStackTrace:  false,
-	StackTraceHandler: func(c *fiber.Ctx, e interface{}) {},
+	StackTraceHandler: func(c providerCtx.ContextProvider, e interface{}) {},
 	Logger:            nil,
 	AppContext:        nil,
 	Stdout:            true,

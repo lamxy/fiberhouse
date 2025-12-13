@@ -11,7 +11,7 @@ type MongodbService struct {
 	MongoModel *model.MongodbModel
 }
 
-func NewMongodbService(ctx fiberhouse.ContextCommander, mongodbModel *model.MongodbModel) *MongodbService {
+func NewMongodbService(ctx fiberhouse.ICommandContext, mongodbModel *model.MongodbModel) *MongodbService {
 	return &MongodbService{
 		Service:    fiberhouse.NewService(ctx).SetName("MongodbService").(*fiberhouse.Service),
 		MongoModel: mongodbModel,

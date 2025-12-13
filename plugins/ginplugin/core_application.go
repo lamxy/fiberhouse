@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lamxy/fiberhouse/appconfig"
+	"github.com/lamxy/fiberhouse/provider/jsoncodec"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,18 +21,19 @@ import (
 	"github.com/gin-gonic/gin"
 	ginJson "github.com/gin-gonic/gin/codec/json"
 	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/provider"
 )
 
 // CoreGin 基于Gin的核心应用启动器
 type CoreGin struct {
-	ctx            fiberhouse.ContextFramer
+	ctx            fiberhouse.IApplicationContext
 	OptionFuncList []gin.OptionFunc
 	coreApp        *gin.Engine
 	httpServer     *http.Server
 }
 
 // NewCoreGin 创建一个基于Gin的应用核心启动器对象
-func NewCoreGin(ctx fiberhouse.ContextFramer, opts ...fiberhouse.CoreStarterOption) fiberhouse.CoreStarter {
+func NewCoreGin(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.CoreStarterOption) fiberhouse.CoreStarter {
 	core := &CoreGin{
 		ctx: ctx,
 	}
@@ -67,8 +69,16 @@ func (cg *CoreGin) InitCoreApp(fs fiberhouse.FrameStarter) {
 	// 创建Gin引擎
 	cg.coreApp = gin.New(cg.OptionFuncList...)
 
-	// 配置sonic JSON序列化器 // TODO jsoncodec provider
-	ginJson.API = fiberhouse.GetMustInstance[ginJson.Core](fs.GetApplication().GetDefaultJsonCodecKey())
+	// 配置JSON序列化器 // TODO 从全局管理器获取JSON编解码提供者管理器，由开发者在项目应用编写服务提供者，初始化所有的json codec提供者注册进管理器。依据引导配置选择使用哪个json codec提供者。
+	jManager := jsoncodec.NewJsonCodecManager(cg.GetAppContext())
+	err := jManager.LoadProvider()
+	if err != nil {
+		cg.GetAppContext().GetLogger().FatalWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
+			Str("applicationStarter", "GinApplication").
+			Err(err).
+			Msg("Failed to load JSON codec provider")
+		panic(err)
+	}
 
 	// 初始化HTTP Server
 	cg.initHttpServer(cfg)
@@ -313,7 +323,7 @@ func (cg *CoreGin) AppCoreRun() {
 }
 
 // GetAppContext 获取应用上下文
-func (cg *CoreGin) GetAppContext() fiberhouse.ContextFramer {
+func (cg *CoreGin) GetAppContext() fiberhouse.IApplicationContext {
 	return cg.ctx
 }
 

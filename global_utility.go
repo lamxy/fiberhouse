@@ -70,7 +70,7 @@ type RegisterKeyFuncType func(ns ...string) string
 
 // RegisterInitializerFuncType 定义注册全局管理器初始化函数类型，用于便捷自动完成该函数签名
 // @param ns string namespace key前缀命名空间
-type RegisterInitializerFuncType func(ctx ContextFramer, ns ...string) string
+type RegisterInitializerFuncType func(ctx IApplicationContext, ns ...string) string
 
 // GetInstance 从全局管理获取单例
 //

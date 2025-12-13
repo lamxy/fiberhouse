@@ -13,11 +13,11 @@ import (
 // TaskAsync 任务注册器
 type TaskAsync struct {
 	name           string // 用于标记注册器名称或用于容器的keyName
-	Ctx            fiberhouse.ContextFramer
+	Ctx            fiberhouse.IApplicationContext
 	taskHandlerMap map[string]func(context.Context, *asynq.Task) error
 }
 
-func NewTaskAsync(ctx fiberhouse.ContextFramer) fiberhouse.TaskRegister {
+func NewTaskAsync(ctx fiberhouse.IApplicationContext) fiberhouse.TaskRegister {
 	return &TaskAsync{
 		name:           "task",
 		Ctx:            ctx,
@@ -36,7 +36,7 @@ func (ta *TaskAsync) SetName(name string) {
 }
 
 // GetContext 获取应用上下文
-func (ta *TaskAsync) GetContext() fiberhouse.ContextFramer {
+func (ta *TaskAsync) GetContext() fiberhouse.IApplicationContext {
 	return ta.Ctx
 }
 

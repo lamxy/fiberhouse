@@ -65,7 +65,7 @@ type Config struct {
 	Logger interface{}
 
 	// AppContext 应用上下文
-	AppContext fiberhouse.ContextFramer
+	AppContext fiberhouse.IApplicationContext
 
 	// 默认输出目标是 os.Stdout
 	Stdout bool

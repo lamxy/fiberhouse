@@ -34,16 +34,16 @@ var (
 )
 
 type RecoverCatch struct {
-	AppCtx fiberhouse.ContextFramer
+	AppCtx fiberhouse.IApplicationContext
 }
 
-func NewRecoverCatch(ctx fiberhouse.ContextFramer) middleware.IRecover {
+func NewRecoverCatch(ctx fiberhouse.IApplicationContext) middleware.IRecover {
 	return &RecoverCatch{
 		AppCtx: ctx,
 	}
 }
 
-func (r *RecoverCatch) GetContext() fiberhouse.ContextFramer {
+func (r *RecoverCatch) GetContext() fiberhouse.IApplicationContext {
 	return r.AppCtx
 }
 
@@ -470,7 +470,7 @@ func New(config ...Config) fiber.Handler {
 			pCtx := providerCtx.WithFiberContext(c)
 			if r := recover(); r != nil {
 				if cfg.EnableStackTrace {
-					cfg.StackTraceHandler(c, r)
+					cfg.StackTraceHandler(providerCtx.WithFiberContext(c), r)
 				}
 				debugMode := cfg.DebugMode
 				switch re := r.(type) {

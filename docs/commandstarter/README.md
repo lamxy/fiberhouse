@@ -35,12 +35,12 @@
 ## 应用注册器实现示例
 
 	type Application struct {
-		Ctx             fiberhouse.ContextCommander
+		Ctx             fiberhouse.IApplicationContext
 		name            string
 		instanceFlagMap map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey  // 按需
 	}
 
-	func NewApplication(ctx fiberhouse.ContextCommander) fiberhouse.ApplicationCmdRegister {
+	func NewApplication(ctx fiberhouse.IApplicationContext) fiberhouse.ApplicationCmdRegister {
 		return &Application{
 			Ctx:             ctx,
 			name:            "application",
@@ -131,10 +131,10 @@
 
 		 // TestOrmCommand 示例命令，测试 ORM 数据库操作，需要实现fiberhouse.CommandGetter接口的 GetCommand 方法
 			type TestOrmCommand struct {
-				Ctx fiberhouse.ContextCommander
+				Ctx fiberhouse.IApplicationContext
 			}
 
-			func NewTestOrmCommand(ctx fiberhouse.ContextCommander) fiberhouse.CommandGetter {
+			func NewTestOrmCommand(ctx fiberhouse.IApplicationContext) fiberhouse.CommandGetter {
 				return &TestOrmCommand{Ctx: ctx}
 			}
 

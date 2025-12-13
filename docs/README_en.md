@@ -474,7 +474,7 @@ example_application/                    # Example application root directory
 - See route registration example: [example_application/module/example-module/api/register_api_router.go](../example_application/module/example-module/api/register_api_router.go)
 
 ```go
-func RegisterRouteHandlers(ctx fiberhouse.ContextFramer, app fiber.Router) {
+func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, app fiber.Router) {
     // Get exampleApi handler
     exampleApi, _ := InjectExampleApi(ctx) // Get ExampleApi through wire compiled dependency injection function
     
@@ -504,7 +504,7 @@ type CommonHandler struct {
 }
 
 // NewCommonHandler Direct New, no need for dependency injection (Wire) TestService object, internally uses global manager to get dependency components
-func NewCommonHandler(ctx fiberhouse.ContextFramer) *CommonHandler {
+func NewCommonHandler(ctx fiberhouse.IApplicationContext) *CommonHandler {
 	return &CommonHandler{
 		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyCommonHandler()),
 		
@@ -550,7 +550,7 @@ type Example struct {
 - Route registration: See [example_application/module/example-module/api/register_api_router.go](../example_application/module/example-module/api/register_api_router.go)
 
 ```go
-func RegisterRouteHandlers(ctx fiberhouse.ContextFramer, app fiber.Router) {
+func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, app fiber.Router) {
     // Get exampleApi handler
     exampleApi, _ := InjectExampleApi(ctx) // Get through wire compiled dependency injection
 	
@@ -579,7 +579,7 @@ type ExampleHandler struct {
 	KeyTestService string                  
 }
 
-func NewExampleHandler(ctx fiberhouse.ContextFramer, es *service.ExampleService) *ExampleHandler {
+func NewExampleHandler(ctx fiberhouse.IApplicationContext, es *service.ExampleService) *ExampleHandler {
 	return &ExampleHandler{
 		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyExampleHandler()),
 		Service:        es,
@@ -634,7 +634,7 @@ type ExampleService struct {
 	Repo                 *repository.ExampleRepository // Dependent component: example repository, constructor parameter injection. Injected by wire tool
 }
 
-func NewExampleService(ctx fiberhouse.ContextFramer, repo *repository.ExampleRepository) *ExampleService {
+func NewExampleService(ctx fiberhouse.IApplicationContext, repo *repository.ExampleRepository) *ExampleService {
 	name := GetKeyExampleService()
 	return &ExampleService{
 		ServiceLocator: fiberhouse.NewService(ctx).SetName(name),
@@ -676,7 +676,7 @@ type ExampleRepository struct {
 	Model *model.ExampleModel
 }
 
-func NewExampleRepository(ctx fiberhouse.ContextFramer, m *model.ExampleModel) *ExampleRepository {
+func NewExampleRepository(ctx fiberhouse.IApplicationContext, m *model.ExampleModel) *ExampleRepository {
 	return &ExampleRepository{
 		RepositoryLocator: fiberhouse.NewRepository(ctx).SetName(GetKeyExampleRepository()),
 		Model:             m,
@@ -689,7 +689,7 @@ func GetKeyExampleRepository(ns ...string) string {
 }
 
 // RegisterKeyExampleRepository Register ExampleRepository to container (lazy initialization) and return registration key
-func RegisterKeyExampleRepository(ctx fiberhouse.ContextFramer, ns ...string) string {
+func RegisterKeyExampleRepository(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleRepository(ns...), func() (interface{}, error) {
 		m := model.NewExampleModel(ctx)
 		return NewExampleRepository(ctx, m), nil
@@ -720,7 +720,7 @@ type ExampleModel struct {
 	ctx context.Context // Optional attribute
 }
 
-func NewExampleModel(ctx fiberhouse.ContextFramer) *ExampleModel {
+func NewExampleModel(ctx fiberhouse.IApplicationContext) *ExampleModel {
 	return &ExampleModel{
 		MongoLocator: dbmongo.NewMongoModel(ctx, constant.MongoInstanceKey).SetDbName(constant.DbNameMongo).SetTable(constant.CollExample).
 			SetName(GetKeyExampleModel()).(dbmongo.MongoLocator), // Set current model's config item name(mongodb) and database name(test)
@@ -734,7 +734,7 @@ func GetKeyExampleModel(ns ...string) string {
 }
 
 // RegisterKeyExampleModel Register model to container (lazy initialization) and return registration key
-func RegisterKeyExampleModel(ctx fiberhouse.ContextFramer, ns ...string) string {
+func RegisterKeyExampleModel(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleModel(ns...), func() (interface{}, error) {
 		return NewExampleModel(ctx), nil
 	})
@@ -854,7 +854,7 @@ func NewExampleCreateTask(ctx fiberhouse.IContext, age int8) (*asynq.Task, error
 // HandleExampleCreateTask Example task creation handler
 func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {
 	// Get appCtx global application context from context, get components including config, logger, registered instances etc.
-	appCtx, _ := ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.ContextFramer)
+	appCtx, _ := ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.IApplicationContext)
 
 	// Declare task payload object
 	var p task.PayloadExampleCreate
@@ -924,7 +924,7 @@ func (s *ExampleService) GetExampleWithTaskDispatcher(id string) (*responsevo.Ex
 	log := s.GetContext().GetMustLoggerWithOrigin(s.GetContext().GetConfig().LogOriginTask())
 
 	// After successfully getting example data, push delayed task for async execution
-	dispatcher, err := s.GetContext().(fiberhouse.ContextFramer).GetStarterApp().GetTask().GetTaskDispatcher()
+	dispatcher, err := s.GetContext().(fiberhouse.IApplicationContext).GetStarterApp().GetTask().GetTaskDispatcher()
 	if err != nil {
 		log.Warn().Err(err).Str("Category", "asynq").Msg("GetExampleWithTaskDispatcher GetTaskDispatcher failed")
 	}
@@ -1040,10 +1040,10 @@ func main() {
 ```go
 // TestOrmCMD Test go-orm library CRUD operations command, needs to implement fiberhouse.CommandGetter interface, return command line command object through GetCommand method
 type TestOrmCMD struct {
-	Ctx fiberhouse.ContextCommander
+	Ctx fiberhouse.IApplicationContext
 }
 
-func NewTestOrmCMD(ctx fiberhouse.ContextCommander) fiberhouse.CommandGetter {
+func NewTestOrmCMD(ctx fiberhouse.IApplicationContext) fiberhouse.CommandGetter {
 	return &TestOrmCMD{
 		Ctx: ctx,
 	}
@@ -1083,7 +1083,7 @@ func (m *TestOrmCMD) GetCommand() interface{} {
 
 			// Use dig to inject required dependencies, inject dependency components through provide chained methods
 			dc := m.Ctx.GetDigContainer().
-				Provide(func() fiberhouse.ContextCommander { return m.Ctx }).
+				Provide(func() fiberhouse.IApplicationContext { return m.Ctx }).
 				Provide(model.NewExampleMysqlModel).
 				Provide(service.NewExampleMysqlService)
 

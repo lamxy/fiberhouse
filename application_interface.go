@@ -28,7 +28,7 @@ type FrameStarter interface {
 	IStarter
 	// GetContext 获取应用上下文
 	// 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
-	GetContext() ContextFramer
+	GetContext() IApplicationContext
 
 	// RegisterApplication 注册应用注册器
 	// 将应用注册器实例注入到启动器中，用于后续的全局对象初始化和配置
@@ -80,7 +80,7 @@ type FrameStarter interface {
 type CoreStarter interface {
 	// GetAppContext 获取应用上下文
 	// 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
-	GetAppContext() ContextFramer
+	GetAppContext() IApplicationContext
 
 	// InitCoreApp 初始化核心应用
 	// 创建并配置底层HTTP服务实例（如Fiber应用）
@@ -186,7 +186,7 @@ type ApplicationRegister interface {
 	IRegister
 	IApplication
 	// GetContext 返回全局上下文
-	GetContext() ContextFramer
+	GetContext() IApplicationContext
 
 	// ConfigGlobalInitializers 配置并返回全局对象初始化器的列表映射
 	ConfigGlobalInitializers() globalmanager.InitializerMap
@@ -213,7 +213,7 @@ type ApplicationRegister interface {
 type ModuleRegister interface {
 	IRegister
 	// GetContext 返回全局上下文
-	GetContext() ContextFramer
+	GetContext() IApplicationContext
 
 	// RegisterModuleMiddleware 注册模块级别/子系统中间件
 	RegisterModuleMiddleware(cs CoreStarter)
@@ -235,7 +235,7 @@ type ModuleRegister interface {
 type TaskRegister interface {
 	IRegister
 	// GetContext 返回全局上下文
-	GetContext() ContextFramer
+	GetContext() IApplicationContext
 
 	// GetTaskHandlerMap 返回任务处理器配置map
 	//

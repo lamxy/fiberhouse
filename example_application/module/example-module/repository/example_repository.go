@@ -21,7 +21,7 @@ type ExampleRepository struct {
 	Model *model.ExampleModel
 }
 
-func NewExampleRepository(ctx fiberhouse.ContextFramer, m *model.ExampleModel) *ExampleRepository {
+func NewExampleRepository(ctx fiberhouse.IApplicationContext, m *model.ExampleModel) *ExampleRepository {
 	return &ExampleRepository{
 		RepositoryLocator: fiberhouse.NewRepository(ctx).SetName(GetKeyExampleRepository()),
 		Model:             m,
@@ -35,7 +35,7 @@ func GetKeyExampleRepository(ns ...string) string {
 
 // RegisterKeyExampleRepository 注册 ExampleRepository 到容器（延迟初始化）并返回注册key；由上层服务层作为依赖组件的属性key使用，既实现了延迟初始化单例，又实现了依赖注入
 // 见 api.CommonHandler 示例，引用了 service.TestService 作为依赖组件，并通过 service.RegisterKeyTestService(ctx) 注册依赖组件到容器并返回注册key
-func RegisterKeyExampleRepository(ctx fiberhouse.ContextFramer, ns ...string) string {
+func RegisterKeyExampleRepository(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleRepository(ns...), func() (interface{}, error) {
 		m := model.NewExampleModel(ctx)
 		return NewExampleRepository(ctx, m), nil

@@ -9,7 +9,7 @@ import (
 )
 
 // RegisterMiddleware 注册全局中间件
-func RegisterMiddleware(ctx fiberhouse.ContextFramer, app *fiber.App) {
+func RegisterMiddleware(ctx fiberhouse.IApplicationContext, app *fiber.App) {
 	// 全局 requestId中间件(uuid追查一个链路的日志)
 	app.Use(requestid.New(requestid.Config{
 		Next: func(c *fiber.Ctx) bool {

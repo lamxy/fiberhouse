@@ -17,12 +17,12 @@ import (
 
 // CoreCmdCli 核心命令行应用cli启动器
 type CoreCmdCli struct {
-	Ctx     fiberhouse.ContextCommander
+	Ctx     fiberhouse.IApplicationContext
 	coreApp *cli.App
 }
 
 // NewCoreCmdCli 实例化核心命令行应用cli启动器
-func NewCoreCmdCli(ctx fiberhouse.ContextCommander, opts ...fiberhouse.CoreCmdStarterOption) fiberhouse.CoreCmdStarter {
+func NewCoreCmdCli(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.CoreCmdStarterOption) fiberhouse.CoreCmdStarter {
 	cca := &CoreCmdCli{
 		Ctx: ctx,
 	}
@@ -39,7 +39,7 @@ func NewCoreCmdCli(ctx fiberhouse.ContextCommander, opts ...fiberhouse.CoreCmdSt
 }
 
 // GetAppContext 获取全局上下文
-func (ccc *CoreCmdCli) GetAppContext() fiberhouse.ContextCommander {
+func (ccc *CoreCmdCli) GetAppContext() fiberhouse.IApplicationContext {
 	return ccc.Ctx
 }
 

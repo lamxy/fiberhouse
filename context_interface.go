@@ -23,7 +23,7 @@ type IContext interface {
 	GetLogger() bootstrap.LoggerWrapper
 	// GetContainer 定义获取全局管理器的方法
 	GetContainer() *globalmanager.GlobalManager
-	// GetStarter 定义获取启动器实例的方法
+	// GetStarter 定义获取启动器实例的方法，用于获取IApplication实例方法
 	GetStarter() IStarter
 	// GetLoggerWithOrigin 定义获取附加来源的子日志器单例的方法（从全局管理器获取）
 	GetLoggerWithOrigin(originFormCfg appconfig.LogOrigin) (*zerolog.Logger, error)
@@ -33,12 +33,12 @@ type IContext interface {
 	GetValidateWrap() validate.ValidateWrapper
 }
 
-// ContextFramer 框架Web应用上下文接口
-type ContextFramer interface {
+// IApplicationContext 框架Web应用上下文接口
+type IApplicationContext interface {
 	IContext
 	// RegisterStarterApp 挂载框架启动器app
 	RegisterStarterApp(sApp ApplicationStarter)
-	// GetStarterApp 获取框架启动器实例(FrameApplication)
+	// GetStarterApp 获取框架应用启动器实例(如WebApplication)
 	GetStarterApp() ApplicationStarter
 	// SetAppState 设置应用启动状态
 	SetAppState(bool)
@@ -46,8 +46,8 @@ type ContextFramer interface {
 	GetAppState() bool
 }
 
-// ContextCommander 框架命令行应用上下文接口
-type ContextCommander interface {
+// IApplicationContext 框架命令行应用上下文接口
+type ICommandContext interface {
 	IContext
 	// GetDigContainer 获取依赖注入容器
 	GetDigContainer() *component.DigContainer
@@ -55,4 +55,34 @@ type ContextCommander interface {
 	RegisterStarterApp(app CommandStarter)
 	// GetStarterApp 获取框架启动器实例(CommandStarter)
 	GetStarterApp() CommandStarter
+}
+
+// IStorage 通用键值存储接口
+type IStorage interface {
+	// Set 设置键值对,如果键已存在则覆盖
+	Set(key string, value interface{})
+
+	// Get 获取指定键的值,返回值和是否存在的标志
+	Get(key string) (value interface{}, exists bool)
+
+	// GetOrDefault 获取值,如果不存在则返回默认值
+	GetOrDefault(key string, defaultValue interface{}) interface{}
+
+	// Delete 删除指定键,返回是否删除成功
+	Delete(key string) bool
+
+	// Has 检查键是否存在
+	Has(key string) bool
+
+	// Clear 清空所有键值对
+	Clear()
+
+	// Keys 返回所有键的切片
+	Keys() []string
+
+	// Len 返回存储的键值对数量
+	Len() int
+
+	// Range 遍历所有键值对,如果回调函数返回false则停止遍历
+	Range(f func(key string, value interface{}) bool)
 }

@@ -7,7 +7,6 @@
 package fiberhouse
 
 import (
-	"fmt"
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component"
@@ -20,16 +19,17 @@ import (
 
 var (
 	// applicationContext Web应用上下文单例
-	applicationContext ContextFramer
+	applicationContext IApplicationContext
 	once               sync.Once
 
 	// commandContext 命令行应用上下文单例
-	commandContext ContextCommander
+	commandContext ICommandContext
 	onceCmd        sync.Once
 )
 
 // AppContext Web应用上下文实现
 type AppContext struct {
+	IStorage     // 内存键值存储接口实现
 	Cfg          appconfig.IAppConfig
 	logger       bootstrap.LoggerWrapper
 	container    *globalmanager.GlobalManager
@@ -42,8 +42,9 @@ type AppContext struct {
 }
 
 // NewAppContext 获取新的全局上下文对象
-func NewAppContext(cfg *appconfig.AppConfig, logger bootstrap.LoggerWrapper) ContextFramer {
+func NewAppContext(cfg *appconfig.AppConfig, logger bootstrap.LoggerWrapper) IApplicationContext {
 	return &AppContext{
+		IStorage:     NewDefaultStorage(),
 		Cfg:          cfg,
 		logger:       logger,
 		container:    globalmanager.NewGlobalManagerOnce(),
@@ -55,9 +56,10 @@ func NewAppContext(cfg *appconfig.AppConfig, logger bootstrap.LoggerWrapper) Con
 }
 
 // NewAppContextOnce 获取全局应用上下文单例
-func NewAppContextOnce(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper) ContextFramer {
+func NewAppContextOnce(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper) IApplicationContext {
 	once.Do(func() {
 		applicationContext = &AppContext{
+			IStorage:  NewDefaultStorage(),
 			Cfg:       cfg,
 			logger:    logger,
 			container: globalmanager.NewGlobalManagerOnce(),
@@ -152,37 +154,9 @@ func (c *AppContext) GetStarter() IStarter {
 	return c.starterApp
 }
 
-// GetValue 从AppContext的存储中获取指定key的值
-func (c *AppContext) GetValue(key string) (interface{}, error) {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-	if v, ok := c.storage[key]; ok {
-		return v, nil
-	}
-	return nil, fmt.Errorf("no key named '%s' in the context map", key)
-}
-
-// SetValue 向AppContext的存储中设置指定key的值，若key已存在则返回错误
-func (c *AppContext) SetValue(key string, val interface{}) error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	if _, ok := c.storage[key]; ok {
-		return fmt.Errorf("the key named '%s' already exists in the AppContext storage. Duplicate settings are not allowed. You can reset it after deleting it", key)
-	}
-	c.storage[key] = val
-	return nil
-}
-
-// DeleteValue 从AppContext的存储中删除指定key的值，若key不存在也返回true
-func (c *AppContext) DeleteValue(key string) bool {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	delete(c.storage, key)
-	return true
-}
-
 // CmdContext 命令行应用上下文实现
 type CmdContext struct {
+	IStorage     // 内存键值存储接口实现
 	Cfg          appconfig.IAppConfig
 	logger       bootstrap.LoggerWrapper
 	container    *globalmanager.GlobalManager // 全局管理器
@@ -191,9 +165,10 @@ type CmdContext struct {
 }
 
 // NewCmdContextOnce 获取命令行应用上下文对象单例
-func NewCmdContextOnce(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper) ContextCommander {
+func NewCmdContextOnce(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper) ICommandContext {
 	onceCmd.Do(func() {
 		commandContext = &CmdContext{
+			IStorage:     NewDefaultStorage(),
 			Cfg:          cfg,
 			logger:       logger,
 			container:    globalmanager.NewGlobalManagerOnce(),
@@ -278,4 +253,97 @@ func (c *CmdContext) GetStarter() IStarter {
 // GetValidateWrap 获取验证器包装器
 func (c *CmdContext) GetValidateWrap() validate.ValidateWrapper {
 	return nil
+}
+
+// DefaultStorage 默认的内存键值存储实现
+type DefaultStorage struct {
+	data map[string]interface{}
+	lock sync.RWMutex
+}
+
+// NewDefaultStorage 创建默认存储实例
+func NewDefaultStorage() IStorage {
+	return &DefaultStorage{
+		data: make(map[string]interface{}),
+	}
+}
+
+// Set 设置键值对
+func (s *DefaultStorage) Set(key string, value interface{}) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.data[key] = value
+}
+
+// Get 获取指定键的值
+func (s *DefaultStorage) Get(key string) (interface{}, bool) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	v, ok := s.data[key]
+	return v, ok
+}
+
+// GetOrDefault 获取值,不存在则返回默认值
+func (s *DefaultStorage) GetOrDefault(key string, defaultValue interface{}) interface{} {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	if v, ok := s.data[key]; ok {
+		return v
+	}
+	return defaultValue
+}
+
+// Delete 删除指定键
+func (s *DefaultStorage) Delete(key string) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if _, ok := s.data[key]; ok {
+		delete(s.data, key)
+		return true
+	}
+	return false
+}
+
+// Has 检查键是否存在
+func (s *DefaultStorage) Has(key string) bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	_, ok := s.data[key]
+	return ok
+}
+
+// Clear 清空所有键值对
+func (s *DefaultStorage) Clear() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.data = make(map[string]interface{})
+}
+
+// Keys 返回所有键
+func (s *DefaultStorage) Keys() []string {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	keys := make([]string, 0, len(s.data))
+	for k := range s.data {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Len 返回键值对数量
+func (s *DefaultStorage) Len() int {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return len(s.data)
+}
+
+// Range 遍历所有键值对
+func (s *DefaultStorage) Range(f func(key string, value interface{}) bool) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	for k, v := range s.data {
+		if !f(k, v) {
+			break
+		}
+	}
 }

@@ -20,19 +20,23 @@ import (
 // Application 实现Global全局接口
 type Application struct {
 	name            string // for marking & container key
-	Ctx             fiberhouse.ContextFramer
+	Ctx             fiberhouse.IApplicationContext
 	instanceFlagMap map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey // 预定义实例KeyName的keyFlag映射
 	KeyMongoLog     string
 	KeyRedisTest    string
 }
 
 // NewApplication new项目应用
-func NewApplication(ctx fiberhouse.ContextFramer) fiberhouse.ApplicationRegister {
+func NewApplication(ctx fiberhouse.IApplicationContext) fiberhouse.ApplicationRegister {
 	return &Application{
 		name:            "application",
 		Ctx:             ctx,
 		instanceFlagMap: make(map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey), // 初始化时,预定义好Flag跟实例key的映射
 	}
+}
+
+func (app *Application) initialize() {
+	// TODO 自定义实例Key注册提供者
 }
 
 // GetName 获取应用名称
@@ -46,7 +50,7 @@ func (app *Application) SetName(name string) {
 }
 
 // GetContext 获取应用上下文
-func (app *Application) GetContext() fiberhouse.ContextFramer {
+func (app *Application) GetContext() fiberhouse.IApplicationContext {
 	return app.Ctx
 }
 
@@ -115,7 +119,7 @@ func (app *Application) RegisterAppMiddleware(cs fiberhouse.CoreStarter) {
 	middleware.RegisterMiddleware(app.Ctx, cs.GetCoreApp().(*fiber.App))
 }
 
-// 统一定义"获取部分必要对象在全局管理容器中的实例Key"
+// 统一定义"获取部分必要对象在全局管理容器中的实例Key"   // TODO 独立出来由实例KEY提供者
 
 func (app *Application) GetDBMongoKey() string {
 	return KEY_MONGODB

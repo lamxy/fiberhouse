@@ -110,7 +110,7 @@ func ErrorWithoutPool(code int, msg string) *RespInfo {
 //	return c.JSON(r)
 //}
 
-// JsonWithCtx 使用 ContextProvider 上下文提供者返回 JSON 响应，并释放对象回池  // TODO
+// JsonWithCtx 使用 ContextProvider 上下文提供者返回 JSON 响应，并释放对象回池
 func (r *RespInfo) JsonWithCtx(c providerCtx.ContextProvider, status ...int) error {
 	defer r.Release()
 	statusCode := http.StatusOK

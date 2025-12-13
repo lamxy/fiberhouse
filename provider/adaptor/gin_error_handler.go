@@ -5,6 +5,7 @@ import (
 	providerCtx "github.com/lamxy/fiberhouse/provider/context"
 )
 
+// GinErrorHandler 创建一个 Gin 框架的错误处理适配器
 func GinErrorHandler(fn func(providerCtx.ContextProvider, error) error) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		err := fn(providerCtx.WithGinContext(c), c.Errors.Last())

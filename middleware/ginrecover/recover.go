@@ -39,16 +39,16 @@ var (
 )
 
 type RecoverCatch struct {
-	AppCtx fiberhouse.ContextFramer
+	AppCtx fiberhouse.IApplicationContext
 }
 
-func NewRecoverCatch(ctx fiberhouse.ContextFramer) middleware.IRecover {
+func NewRecoverCatch(ctx fiberhouse.IApplicationContext) middleware.IRecover {
 	return &RecoverCatch{
 		AppCtx: ctx,
 	}
 }
 
-func (r *RecoverCatch) GetContext() fiberhouse.ContextFramer {
+func (r *RecoverCatch) GetContext() fiberhouse.IApplicationContext {
 	return r.AppCtx
 }
 
@@ -488,7 +488,7 @@ func ErrorStack(debugStack ...bool) string {
 	return frameUtils.CaptureStack()
 }
 
-// New creates a new middleware Exception handler [for unexpected panic]
+// New creates a recover middleware error handler for Gin framework.
 func New(config ...Config) gin.HandlerFunc {
 	// Set default config
 	cfg := configDefault(config...)

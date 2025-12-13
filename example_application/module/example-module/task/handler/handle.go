@@ -15,7 +15,7 @@ import (
 // HandleExampleCreateTask 样例任务创建处理器
 func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {
 	// 从 context 中获取 appCtx 全局应用上下文，获取包括配置、日志、注册实例等组件
-	appCtx, _ := ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.ContextFramer)
+	appCtx, _ := ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.IApplicationContext)
 
 	// 声明任务负载对象
 	var p task.PayloadExampleCreate

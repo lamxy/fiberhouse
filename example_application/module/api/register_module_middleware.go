@@ -9,7 +9,7 @@ import (
 
 // RegisterMiddleware 注册中间件
 func RegisterMiddleware(app fiber.Router) fiber.Router {
-	// Pprof中间件n /monitor/debug/pprof/
+	// Pprof中间件 /monitor/debug/pprof/
 	app.Use(pprof.New(pprof.Config{
 		Next: func(c *fiber.Ctx) bool {
 			// todo 定义条件

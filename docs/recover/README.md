@@ -89,7 +89,7 @@
 		StackTraceHandler func(c *fiber.Ctx, e interface{})
 
 		// 应用上下文
-		AppContext fiberhouse.ContextFramer
+		AppContext fiberhouse.IApplicationContext
 
 		// 调试模式开关
 		DebugMode bool

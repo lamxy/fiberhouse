@@ -9,10 +9,10 @@ import (
 // Module struct
 type Module struct {
 	name string // for marking & container key
-	Ctx  fiberhouse.ContextFramer
+	Ctx  fiberhouse.IApplicationContext
 }
 
-func NewModule(ctx fiberhouse.ContextFramer) fiberhouse.ModuleRegister {
+func NewModule(ctx fiberhouse.IApplicationContext) fiberhouse.ModuleRegister {
 	return &Module{
 		name: "module",
 		Ctx:  ctx,
@@ -30,7 +30,7 @@ func (m *Module) SetName(name string) {
 }
 
 // GetContext get module context
-func (m *Module) GetContext() fiberhouse.ContextFramer {
+func (m *Module) GetContext() fiberhouse.IApplicationContext {
 	return m.Ctx
 }
 

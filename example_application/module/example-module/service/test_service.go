@@ -12,7 +12,7 @@ type TestService struct {
 	KeyExampleRepository string
 }
 
-func NewTestService(ctx fiberhouse.ContextFramer) *TestService {
+func NewTestService(ctx fiberhouse.IApplicationContext) *TestService {
 	return &TestService{
 		ServiceLocator:       fiberhouse.NewService(ctx).SetName(GetKeyTestService()),
 		KeyExampleRepository: repository.RegisterKeyExampleRepository(ctx),
@@ -25,7 +25,7 @@ func GetKeyTestService(ns ...string) string {
 }
 
 // RegisterKeyTestService 注册 TestService 实例初始化器到全局管理器，并返回注册实例key；该方法可由依赖方法调用，或由组件使用，无需wire或其他依赖注入工具
-func RegisterKeyTestService(ctx fiberhouse.ContextFramer, ns ...string) string {
+func RegisterKeyTestService(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyTestService(ns...), func() (interface{}, error) {
 		return NewTestService(ctx), nil
 	})

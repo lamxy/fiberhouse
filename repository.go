@@ -14,7 +14,7 @@ type Repository struct {
 	name string
 }
 
-func NewRepository(ctx ContextFramer) *Repository {
+func NewRepository(ctx IApplicationContext) *Repository {
 	return &Repository{
 		Ctx: ctx,
 	}
