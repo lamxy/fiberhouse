@@ -4,13 +4,12 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy
 
-// Package recover 提供 Fiber 框架的全局异常恢复和错误处理中间件。
-package recover
+// recover 提供 Fiber 框架的全局异常恢复和错误处理中间件。
+package fiberhouse
 
 import (
 	"encoding/json"
 	"errors"
-	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component/jsonconvert"
 	"github.com/lamxy/fiberhouse/constant"
@@ -24,31 +23,26 @@ import (
 	frameUtils "github.com/lamxy/fiberhouse/utils"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/lamxy/fiberhouse/middleware"
 )
 
-var (
-	debugFlag      = "X-your-custom-debug-flag"             // 自定义debug标记key，由后端recover配置定义覆盖
-	debugFlagValue = "f0dc4970-ed31-4598-acd8-b5c5fd66c12e" // 自定义debug标记值，由后端recover配置定义覆盖
-	requestID      = "traceId"                              // 请求ID字段名称，由后端trace配置定义覆盖
-)
+
 
 type RecoverCatch struct {
-	AppCtx fiberhouse.IApplicationContext
+	AppCtx IApplicationContext
 }
 
-func NewRecoverCatch(ctx fiberhouse.IApplicationContext) middleware.IRecover {
+func NewRecoverCatch(ctx IApplicationContext) IRecover {
 	return &RecoverCatch{
 		AppCtx: ctx,
 	}
 }
 
-func (r *RecoverCatch) GetContext() fiberhouse.IApplicationContext {
+func (r *RecoverCatch) GetContext() IApplicationContext {
 	return r.AppCtx
 }
 
 // DefaultStackTraceHandler 记录请求上下文信息 + panic信息 + 堆栈信息
-func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ContextProvider, e interface{}) {
+func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ICoreContext, e interface{}) {
 	// 从配置文件获取调试相关参数和请求ID参数的配置值
 	cfg := r.GetContext().GetConfig()
 	recoverConfig := cfg.GetRecover()
@@ -89,7 +83,7 @@ func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ContextProvider,
 		logger.Warn(cfg.LogOriginRecover()).Str(requestID, traceId).Err(errJec).Msg("GetFastJsonCodecKey get json encoder from container failed")
 		jsonEnCoder = c.App().Config().JSONEncoder
 	} else {
-		if jsonTmp, ok := jsonEnc.(fiberhouse.JsonWrapper); ok {
+		if jsonTmp, ok := jsonEnc.(JsonWrapper); ok {
 			jsonEnCoder = jsonTmp.Marshal
 		} else {
 			jsonEnCoder = c.App().Config().JSONEncoder
@@ -307,7 +301,7 @@ func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ContextProvider,
 }
 
 // ErrorHandler 用于fiber.New配置全局错误处理器，处理业务级错误
-func (r *RecoverCatch) ErrorHandler(ctx providerCtx.ContextProvider, err error) error {
+func (r *RecoverCatch) ErrorHandler(ctx providerCtx.ICoreContext, err error) error {
 	// 记录日志 & 堆栈
 	r.DefaultStackTraceHandler(ctx, err)
 
@@ -446,22 +440,15 @@ func (r *RecoverCatch) getBodyJson(c *fiber.Ctx) ([]byte, string) {
 	return nil, frameUtils.UnsafeString(body)
 }
 
-func ErrorStack(debugStack ...bool) string {
-	//if len(debugStack) > 0 && debugStack[0] {
-	//	return StackMsg()
-	//}
-	return frameUtils.CaptureStack()
-}
-
 // New creates a new middleware Exception handler [for unexpected panic]
-func New(config ...Config) fiber.Handler {
+func NewFiberHandler(config ...Config) fiber.Handler {
 	// Set default config
 	cfg := configDefault(config...)
 
 	// Return new handler
 	return func(c *fiber.Ctx) (err error) { //nolint:nonamedreturns // Uses recover() to overwrite the error
 		// Don't execute middleware if Next returns true
-		if cfg.Next != nil && cfg.Next(c) {
+		if cfg.Next != nil && cfg.Next(providerCtx.WithFiberContext(c)) {
 			return c.Next()
 		}
 

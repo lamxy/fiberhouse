@@ -4,13 +4,12 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy
 
-package applicationstarter
+package fiberhouse
 
 import (
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
-	"github.com/lamxy/fiberhouse"
-	frameRecover "github.com/lamxy/fiberhouse/middleware/recover"
+	fhAdaptor "github.com/lamxy/fiberhouse/provider/adaptor"
 	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
@@ -18,16 +17,16 @@ import (
 	"time"
 )
 
-// CoreFiber 应用核心启动器
-type CoreFiber struct {
-	ctx     fiberhouse.IApplicationContext
+// CoreWithFiber 应用核心启动器
+type CoreWithFiber struct {
+	ctx     IApplicationContext
 	CoreCfg *fiber.Config
 	coreApp *fiber.App
 }
 
-// NewCoreFiber 创建一个应用核心启动器对象
-func NewCoreFiber(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.CoreStarterOption) fiberhouse.CoreStarter {
-	core := &CoreFiber{
+// NewCoreWithFiber 创建一个应用核心启动器对象
+func NewCoreWithFiber(ctx IApplicationContext, opts ...CoreStarterOption) CoreStarter {
+	core := &CoreWithFiber{
 		ctx: ctx,
 	}
 
@@ -40,13 +39,18 @@ func NewCoreFiber(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.CoreSta
 	return core
 }
 
+// GetAppContext 获取应用上下文
+func (cf *CoreWithFiber) GetAppContext() IApplicationContext {
+	return cf.ctx
+}
+
 // GetCoreApp 获取应用核心实例
-func (cf *CoreFiber) GetCoreApp() interface{} {
+func (cf *CoreWithFiber) GetCoreApp() interface{} {
 	return cf.coreApp
 }
 
 // InitCoreApp 初始化应用核心（框架应用基于 fiber.App）
-func (cf *CoreFiber) InitCoreApp(fs fiberhouse.FrameStarter) {
+func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, manager ...IProviderManager) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
@@ -60,9 +64,38 @@ func (cf *CoreFiber) InitCoreApp(fs fiberhouse.FrameStarter) {
 
 	cfg := cf.GetAppContext().GetConfig()
 	// fiberhouse.JsonWrapper序列化反序列化接口，默认编解码器实例
-	json := fiberhouse.GetMustInstance[fiberhouse.JsonWrapper](fs.GetApplication().GetDefaultJsonCodecKey())
+	//json := GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultJsonCodecKey())
+
+	// 配置JSON序列化器
+	var (
+		json JsonWrapper
+		jOk  bool
+	)
+
+	if len(manager) == 0 {
+		// 默认编解码器实例
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec.")
+		json = GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultJsonCodecKey())
+	} else {
+		jsonCodecManager := manager[0]
+
+		jcodec, err := jsonCodecManager.LoadProvider()
+
+		if err != nil {
+			cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+				Str("applicationStarter", "CoreWithFiber").
+				Err(err).
+				Msg("Failed to load providers into Fiber application starter")
+			panic(err)
+		}
+
+		if json, jOk = jcodec.(JsonWrapper); !jOk {
+			panic("Loaded JSON codec provider does not implement JsonWrapper interface")
+		}
+	}
+
 	// IRecover接口实例
-	rc := frameRecover.NewRecoverCatch(cf.GetAppContext())
+	rc := NewRecoverCatch(cf.GetAppContext())
 	// 默认核心配置
 	cf.coreApp = fiber.New(fiber.Config{
 		// 设置应用名称
@@ -74,7 +107,7 @@ func (cf *CoreFiber) InitCoreApp(fs fiberhouse.FrameStarter) {
 		ServerHeader: cfg.String("application.server.appServerHeader"),
 		// 设置自定义错误处理函数
 		// 该函数会在请求处理过程中发生错误时被调用
-		ErrorHandler: rc.ErrorHandler,
+		ErrorHandler: fhAdaptor.FiberErrorHandler(rc.ErrorHandler),
 		// 设置并发处理请求的数量
 		Concurrency: cfg.Int("application.server.appConcurrency"),
 		// 设置是否启用长连接
@@ -108,21 +141,20 @@ func (cf *CoreFiber) InitCoreApp(fs fiberhouse.FrameStarter) {
 }
 
 // RegisterAppMiddleware 注册应用级的中间件
-func (cf *CoreFiber) RegisterAppMiddleware(fs fiberhouse.FrameStarter) {
+func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
 	cf.GetAppContext().GetLogger().Info(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware")
 	debugMode := cf.GetAppContext().GetConfig().GetRecover().DebugMode
 	// IRecover接口实例
-	rc := frameRecover.NewRecoverCatch(cf.GetAppContext())
+	rc := NewRecoverCatch(cf.GetAppContext())
 
 	// 注册核心应用(coreApp/fiber App)全局错误捕获中间件
-	cf.coreApp.Use(frameRecover.New(frameRecover.Config{
+	cf.coreApp.Use(NewFiberHandler(Config{
 		EnableStackTrace:  true,
 		StackTraceHandler: rc.DefaultStackTraceHandler,
 		Logger:            cf.GetAppContext().GetLogger(),
-		AppContext:        cf.GetAppContext(),
 		Stdout:            false,
 		DebugMode:         debugMode, // true开启调试模式，将详细错误信息显示给客户端，否则隐藏细节，只能通过日志文件查看。生产环境关闭该调式模式。
 	}))
@@ -146,12 +178,12 @@ func (cf *CoreFiber) RegisterAppMiddleware(fs fiberhouse.FrameStarter) {
 
 	if fs.GetApplication() != nil {
 		// 注册项目应用注册器全局中间件
-		fs.GetApplication().(fiberhouse.ApplicationRegister).RegisterAppMiddleware(cf)
+		fs.GetApplication().(ApplicationRegister).RegisterAppMiddleware(cf)
 	}
 }
 
 // RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器、swagger、etc...
-func (cf *CoreFiber) RegisterModuleInitialize(fs fiberhouse.FrameStarter) {
+func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
@@ -164,7 +196,7 @@ func (cf *CoreFiber) RegisterModuleInitialize(fs fiberhouse.FrameStarter) {
 }
 
 // RegisterModuleSwagger 注册模块/子系统级的swagger
-func (cf *CoreFiber) RegisterModuleSwagger(fs fiberhouse.FrameStarter) {
+func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
@@ -178,14 +210,14 @@ func (cf *CoreFiber) RegisterModuleSwagger(fs fiberhouse.FrameStarter) {
 }
 
 // RegisterAppHooks 注册核心应用的生命周期钩子函数（如果存在）
-func (cf *CoreFiber) RegisterAppHooks(fs fiberhouse.FrameStarter) {
+func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
 
 	// 注册应用注册器的钩子函数
 	if fs.GetApplication() != nil {
-		fs.GetApplication().(fiberhouse.ApplicationRegister).RegisterCoreHook(cf)
+		fs.GetApplication().(ApplicationRegister).RegisterCoreHook(cf)
 	}
 
 	cf.coreApp.Hooks().OnListen(func(listenData fiber.ListenData) error {
@@ -212,17 +244,17 @@ func (cf *CoreFiber) RegisterAppHooks(fs fiberhouse.FrameStarter) {
 }
 
 // AppCoreRun 监听核心应用套接字
-func (cf *CoreFiber) AppCoreRun() {
+func (cf *CoreWithFiber) AppCoreRun() {
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM) // 监听信号
 
-	go func(app *CoreFiber) {
+	go func(app *CoreWithFiber) {
 		app.GetAppContext().GetLogger().InfoWith(app.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listening...")
 		host, port := app.GetAppContext().GetConfig().String("application.server.host"), app.GetAppContext().GetConfig().String("application.server.port")
 		if err := app.coreApp.Listen(host + ":" + port); err != nil {
 			app.GetAppContext().GetLogger().FatalWith(app.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listen failed")
 		}
-		app.GetAppContext().SetAppState(true)
+		app.GetAppContext().RegisterAppState(true)
 	}(cf)
 
 	<-stopCh

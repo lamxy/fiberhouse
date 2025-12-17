@@ -10,6 +10,7 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/api-vo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
+	providerCtx "github.com/lamxy/fiberhouse/provider/context"
 	"github.com/lamxy/fiberhouse/response"
 	"strconv"
 )
@@ -57,7 +58,7 @@ func (h *ExampleHandler) HelloWorld(c *fiber.Ctx) error {
 	// 获取TestService服务实例
 	if tss, ok := ts.(*service.TestService); ok {
 		// 成功的响应
-		return response.RespSuccess(tss.HelloWorld()).JsonWithCtx(c)
+		return response.RespSuccess(tss.HelloWorld()).JsonWithCtx(providerCtx.WithFiberContext(c))
 	}
 
 	// 类型断言失败响应
@@ -109,7 +110,7 @@ func (h *ExampleHandler) GetExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(c)
+	return response.RespSuccess(resp).JsonWithCtx(providerCtx.WithFiberContext(c))
 }
 
 // GetExampleWithTaskDispatcher godoc
@@ -153,7 +154,7 @@ func (h *ExampleHandler) GetExampleWithTaskDispatcher(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(c)
+	return response.RespSuccess(resp).JsonWithCtx(providerCtx.WithFiberContext(c))
 }
 
 // CreateExample godoc
@@ -198,7 +199,7 @@ func (h *ExampleHandler) CreateExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(c)
+	return response.RespSuccess(resp).JsonWithCtx(providerCtx.WithFiberContext(c))
 }
 
 // GetExamples godoc
@@ -248,5 +249,5 @@ func (h *ExampleHandler) GetExamples(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(c)
+	return response.RespSuccess(resp).JsonWithCtx(providerCtx.WithFiberContext(c))
 }

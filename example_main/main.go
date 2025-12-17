@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/applicationstarter"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/example_application"
 	"github.com/lamxy/fiberhouse/example_application/module"
@@ -43,17 +42,17 @@ func main() {
 	taskRegister := module.NewTaskAsync(appContext)
 
 	// 实例化 Web 应用启动器
-	webStarter := &applicationstarter.WebApplication{
+	web := &fiberhouse.WebApplication{
 		// 实例化框架启动器
-		FrameStarter: applicationstarter.NewFrameApplication(appContext,
+		FrameStarter: fiberhouse.NewFrameApplication(appContext,
 			option.WithAppRegister(appRegister),
 			option.WithModuleRegister(moduleRegister),
 			option.WithTaskRegister(taskRegister),
 		),
 		// 实例化核心应用启动器
-		CoreStarter: applicationstarter.NewCoreFiber(appContext),
+		CoreStarter: fiberhouse.NewCoreWithFiber(appContext),
 	}
 
 	// 运行应用启动器
-	applicationstarter.RunApplicationStarter(webStarter)
+	fiberhouse.RunApplicationStarter(web)
 }

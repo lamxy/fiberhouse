@@ -84,7 +84,7 @@ type CoreStarter interface {
 
 	// InitCoreApp 初始化核心应用
 	// 创建并配置底层HTTP服务实例（如Fiber应用）
-	InitCoreApp(fs FrameStarter)
+	InitCoreApp(fs FrameStarter, manager ...IProviderManager)
 
 	// RegisterAppMiddleware 注册应用级中间件
 	// 注册应用级别的中间件，如错误恢复、请求日志、CORS等全局中间件

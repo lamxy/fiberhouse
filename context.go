@@ -30,7 +30,7 @@ var (
 // AppContext Web应用上下文实现
 type AppContext struct {
 	IStorage     // 内存键值存储接口实现
-	Cfg          appconfig.IAppConfig
+	cfg          appconfig.IAppConfig
 	logger       bootstrap.LoggerWrapper
 	container    *globalmanager.GlobalManager
 	starterApp   ApplicationStarter
@@ -39,13 +39,15 @@ type AppContext struct {
 	vw           *validate.Wrap
 	storage      map[string]interface{}
 	lock         sync.RWMutex
+	bootCfg      *BootConfig
+	bootCfgOnce  sync.Once
 }
 
 // NewAppContext 获取新的全局上下文对象
 func NewAppContext(cfg *appconfig.AppConfig, logger bootstrap.LoggerWrapper) IApplicationContext {
 	return &AppContext{
 		IStorage:     NewDefaultStorage(),
-		Cfg:          cfg,
+		cfg:          cfg,
 		logger:       logger,
 		container:    globalmanager.NewGlobalManagerOnce(),
 		appState:     false,
@@ -60,7 +62,7 @@ func NewAppContextOnce(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper)
 	once.Do(func() {
 		applicationContext = &AppContext{
 			IStorage:  NewDefaultStorage(),
-			Cfg:       cfg,
+			cfg:       cfg,
 			logger:    logger,
 			container: globalmanager.NewGlobalManagerOnce(),
 			vw:        validate.NewWrap(cfg),
@@ -70,8 +72,22 @@ func NewAppContextOnce(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper)
 	return applicationContext
 }
 
-// setAppState 设置应用启动状态
-func (c *AppContext) SetAppState(state bool) {
+// GetBootConfig 获取应用启动配置
+func (c *AppContext) GetBootConfig() *BootConfig {
+	return c.bootCfg
+}
+
+// RegisterBootConfig 注册应用启动配置
+func (c *AppContext) RegisterBootConfig(bc *BootConfig) {
+	// 仅启动时注册一次
+	c.bootCfgOnce.Do(func() {
+		c.bootCfg = bc
+	})
+}
+
+// RegisterAppState 注册应用启动状态
+func (c *AppContext) RegisterAppState(state bool) {
+	// 仅启动完成时注册一次
 	c.appStateOnce.Do(func() {
 		c.appState = state
 	})
@@ -84,7 +100,7 @@ func (c *AppContext) GetAppState() bool {
 
 // GetConfig 获取全局配置
 func (c *AppContext) GetConfig() appconfig.IAppConfig {
-	return c.Cfg
+	return c.cfg
 }
 
 // GetLogger 获取全局日志器
@@ -250,7 +266,7 @@ func (c *CmdContext) GetStarter() IStarter {
 	return c.starterApp
 }
 
-// GetValidateWrap 获取验证器包装器
+// GetValidateWrap 获取全局验证包装器
 func (c *CmdContext) GetValidateWrap() validate.ValidateWrapper {
 	return nil
 }

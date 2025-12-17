@@ -6,6 +6,7 @@
 
 package constant
 
+// 错误码和错误消息常量定义
 const (
 	UnknownErrCode        = 500000 // 未知错误
 	UnknownErrMsg         = "Don't worry, something went wrong, please try again later."

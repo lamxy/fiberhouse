@@ -36,11 +36,9 @@ Config 结构体包含以下配置选项：
 		StackTraceHandler: customHandler,
 	}))
 */
-package ginrecover
+package fiberhouse
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/lamxy/fiberhouse"
 	providerCtx "github.com/lamxy/fiberhouse/provider/context"
 )
 
@@ -49,7 +47,7 @@ type Config struct {
 	// Next 定义了一个函数，当返回 true 时跳过该中间件。
 	//
 	// 可选。 默认: nil
-	Next func(c *gin.Context) bool
+	Next func(c providerCtx.ICoreContext) bool
 
 	// EnableStackTrace 表示是否启用堆栈跟踪功能
 	//
@@ -59,13 +57,10 @@ type Config struct {
 	// StackTraceHandler 定义了一个处理堆栈跟踪的函数
 	//
 	// 可选配置。默认值：defaultStackTraceHandler
-	StackTraceHandler func(c providerCtx.ContextProvider, e interface{})
+	StackTraceHandler func(c providerCtx.ICoreContext, e interface{})
 
 	// Logger for record messages
 	Logger interface{}
-
-	// AppContext 应用上下文
-	AppContext fiberhouse.IApplicationContext
 
 	// 默认输出目标是 os.Stdout
 	Stdout bool
@@ -77,9 +72,8 @@ type Config struct {
 var ConfigDefault = Config{
 	Next:              nil,
 	EnableStackTrace:  false,
-	StackTraceHandler: func(c providerCtx.ContextProvider, e interface{}) {},
+	StackTraceHandler: func(c providerCtx.ICoreContext, e interface{}) {},
 	Logger:            nil,
-	AppContext:        nil,
 	Stdout:            true,
 	DebugMode:         false,
 }

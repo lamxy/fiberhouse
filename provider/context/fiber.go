@@ -8,7 +8,7 @@ type FiberContext struct {
 }
 
 // WithFiberContext 创建 Fiber 上下文适配器
-func WithFiberContext(c *fiber.Ctx) ContextProvider {
+func WithFiberContext(c *fiber.Ctx) ICoreContext {
 	return &FiberContext{Ctx: c}
 }
 

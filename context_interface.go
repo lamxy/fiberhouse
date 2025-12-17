@@ -40,10 +40,14 @@ type IApplicationContext interface {
 	RegisterStarterApp(sApp ApplicationStarter)
 	// GetStarterApp 获取框架应用启动器实例(如WebApplication)
 	GetStarterApp() ApplicationStarter
-	// SetAppState 设置应用启动状态
-	SetAppState(bool)
+	// RegisterAppState 注册应用启动状态
+	RegisterAppState(bool)
 	// GetAppState 获取应用启动状态
 	GetAppState() bool
+	// GetBootConfig 获取启动配置
+	GetBootConfig() *BootConfig
+	// RegisterBootConfig 注册启动配置
+	RegisterBootConfig(bc *BootConfig)
 }
 
 // IApplicationContext 框架命令行应用上下文接口

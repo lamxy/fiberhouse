@@ -6,9 +6,13 @@
 
 package constant
 
+// 通用常量定义
 const (
 	// RegisterKeyPrefix 通用对象注册key前缀
 	RegisterKeyPrefix = "__key_"
+
+	// ContextKeyPrefix 上下文注册key前缀
+	ContextKeyPrefix = "__ctx_"
 
 	// LogOriginKeyPrefix 不同日志源的日志器注册key前缀
 	LogOriginKeyPrefix = "__logOriginKey_"
@@ -18,6 +22,9 @@ const (
 
 	// CacheProtectionKeyPrefix 缓存保护器注册key前缀
 	CacheProtectionKeyPrefix = "__cacheProtectionKey_"
+
+	// GlobalAppIContext 全局应用上下文IContext的注册key
+	GlobalAppIContext = ContextKeyPrefix + "app_i_context"
 
 	// DBConfPrefix DB默认配置的前缀
 	DBConfPrefix = "database"
@@ -46,4 +53,8 @@ const (
 
 	// DefaultPageSize 默认分页大小
 	DefaultPageSize = 20
+
+	// Provider自动运行标识
+	ProviderTypeAutoRunFlag   = "__provider_auto_run__"
+	ProviderTypeServerRunFlag = "__provider_server_run__"
 )

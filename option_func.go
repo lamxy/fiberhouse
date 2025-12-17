@@ -23,3 +23,6 @@ type FrameStarterOption func(starter FrameStarter)
 
 // CoreStarterOption 定义核心启动器选项函数类型
 type CoreStarterOption func(core CoreStarter)
+
+// BootConfigOption 定义启动配置选项函数类型
+type BootConfigOption func(boot *BootConfig)

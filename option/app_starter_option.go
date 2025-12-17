@@ -48,6 +48,6 @@ func WithTaskRegister(r fiberhouse.IRegister) fiberhouse.FrameStarterOption {
 // WithCoreCfg 返回核心应用配置注入选项函数
 func WithCoreCfg(cfg *fiber.Config) fiberhouse.CoreStarterOption {
 	return func(s fiberhouse.CoreStarter) {
-		s.RegisterCoreCfg(cfg)
+		//s.RegisterCoreCfg(cfg)
 	}
 }

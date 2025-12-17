@@ -4,7 +4,7 @@ application:
   appName: "XYZ Tech APP"                    # 应用名称
   version: "v0.1.0"                          # 应用版本
   env: "test"                                # 当前环境，支持 dev、test、prod
-  server:
+  server:                                    # 默认服务配置：fiber引擎
     appServerHeader: "XYZ Tech Server"       # 服务标头
     host: 0.0.0.0                            # 监听地址
     port: 8080                               # 监听端口
@@ -18,6 +18,18 @@ application:
     idleTimeout: 60                          # 单位s，连接空闲超时时间
     readTimeout: 30                          # 单位s，读取超时时间
     writeTimeout: 30                         # 单位s，写入超时时间
+  plugins:
+    engine:
+      type: "default"                       # 引擎类型，默认default(fiber)、gin、other
+      servers:
+        gin:                                # gin框架的基础配置
+          readBufferSize: 4096              # 读取缓冲区大小
+          writeBufferSize: 4096             # 写入缓冲区大小
+          bodyLimit: 4096                    # 单位B，body最大限制
+          disableKeepalive: false            # 是否启用长连接
+          idleTimeout: 60                    # 单位s，连接空闲超时时间
+          readTimeout: 30                    # 单位s，读取超时时间
+          writeTimeout: 30                   # 单位s，写入超时时间
   appLog:
     filename: "app.log"                      # 日志文件名
     enableConsole: true                      # 增加控制台输出

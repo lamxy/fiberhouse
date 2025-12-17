@@ -3,6 +3,7 @@ package appconfig
 import (
 	"encoding/json"
 	"github.com/knadh/koanf/v2"
+	"github.com/lamxy/fiberhouse/constant"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lamxy/fiberhouse/constant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

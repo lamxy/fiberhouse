@@ -5,7 +5,7 @@
 // GitHub: https://github.com/lamxy
 
 // Package ginrecover 提供 Gin 框架的全局异常恢复和错误处理中间件。
-package ginrecover
+package fiberhouse
 
 import (
 	"bytes"
@@ -13,7 +13,6 @@ import (
 	"errors"
 	"github.com/gin-gonic/gin"
 	ginJson "github.com/gin-gonic/gin/codec/json"
-	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component/jsonconvert"
 	"github.com/lamxy/fiberhouse/constant"
@@ -29,31 +28,24 @@ import (
 
 	"github.com/gin-contrib/requestid"
 	"github.com/gofiber/fiber/v2"
-	"github.com/lamxy/fiberhouse/middleware"
 )
 
-var (
-	debugFlag      = "X-your-custom-debug-flag"             // 自定义debug标记key，由后端recover配置定义覆盖
-	debugFlagValue = "f0dc4970-ed31-4598-acd8-b5c5fd66c12e" // 自定义debug标记值，由后端recover配置定义覆盖
-	requestID      = "traceId"                              // 请求ID字段名称，由后端trace配置定义覆盖
-)
-
-type RecoverCatch struct {
-	AppCtx fiberhouse.IApplicationContext
+type RecoverCatchGin struct {
+	AppCtx IApplicationContext
 }
 
-func NewRecoverCatch(ctx fiberhouse.IApplicationContext) middleware.IRecover {
-	return &RecoverCatch{
+func NewRecoverCatchGin(ctx IApplicationContext) IRecover {
+	return &RecoverCatchGin{
 		AppCtx: ctx,
 	}
 }
 
-func (r *RecoverCatch) GetContext() fiberhouse.IApplicationContext {
+func (r *RecoverCatchGin) GetContext() IApplicationContext {
 	return r.AppCtx
 }
 
 // DefaultStackTraceHandler 记录请求上下文信息 + panic信息 + 堆栈信息
-func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ContextProvider, e interface{}) {
+func (r *RecoverCatchGin) DefaultStackTraceHandler(ctx providerCtx.ICoreContext, e interface{}) {
 	// 从配置文件获取调试相关参数和请求ID参数的配置值
 	cfg := r.GetContext().GetConfig()
 	recoverConfig := cfg.GetRecover()
@@ -297,7 +289,7 @@ func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ContextProvider,
 }
 
 // ErrorHandler 用于gin全局错误处理器中间件，处理业务级错误
-func (r *RecoverCatch) ErrorHandler(c providerCtx.ContextProvider, err error) error {
+func (r *RecoverCatchGin) ErrorHandler(c providerCtx.ICoreContext, err error) error {
 	// 记录日志 & 堆栈
 	r.DefaultStackTraceHandler(c, err)
 
@@ -328,7 +320,7 @@ func (r *RecoverCatch) ErrorHandler(c providerCtx.ContextProvider, err error) er
 }
 
 // getParamsJson 获取请求参数的 JSON 编码字节切片
-func (r *RecoverCatch) getParamsJson(c *gin.Context, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (r *RecoverCatchGin) getParamsJson(c *gin.Context, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
 	// 获取所有路径参数
 	params := make(map[string]string)
 
@@ -344,7 +336,7 @@ func (r *RecoverCatch) getParamsJson(c *gin.Context, log bootstrap.LoggerWrapper
 }
 
 // getQueriesJson 获取查询参数的 JSON 编码字节切片
-func (r *RecoverCatch) getQueriesJson(c *gin.Context, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (r *RecoverCatchGin) getQueriesJson(c *gin.Context, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
 	// 获取所有查询参数
 	queries := c.Request.URL.Query()
 	j, err := jsonEnCoder(queries)
@@ -356,7 +348,7 @@ func (r *RecoverCatch) getQueriesJson(c *gin.Context, log bootstrap.LoggerWrappe
 }
 
 // getHeadersJson 获取请求头部的 JSON 编码字节切片，对敏感信息进行脱敏处理
-func (r *RecoverCatch) getHeadersJson(c *gin.Context, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (r *RecoverCatchGin) getHeadersJson(c *gin.Context, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
 	// 获取所有请求头
 	headers := c.Request.Header
 
@@ -402,7 +394,7 @@ func (r *RecoverCatch) getHeadersJson(c *gin.Context, log bootstrap.LoggerWrappe
 }
 
 // getJsonIndent 将堆栈字符串格式化为 JSON 字符串，保留缩进
-func (r *RecoverCatch) getJsonIndent(s string, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (r *RecoverCatchGin) getJsonIndent(s string, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
 	if len(s) == 0 {
 		return nil
 	}
@@ -419,7 +411,7 @@ func (r *RecoverCatch) getJsonIndent(s string, log bootstrap.LoggerWrapper, json
 }
 
 // getBodyJson 获取请求体的 JSON 编码字节切片，非 JSON 格式返回空字节切片和字符串形式的请求体
-func (r *RecoverCatch) getBodyJson(c *gin.Context) ([]byte, string) {
+func (r *RecoverCatchGin) getBodyJson(c *gin.Context) ([]byte, string) {
 	// 优先从上下文缓存中获取
 	if cachedBody, exists := c.Get("__request_body_cache__"); exists {
 		if bodyBytes, ok := cachedBody.([]byte); ok && len(bodyBytes) > 0 {
@@ -480,23 +472,16 @@ func RequestBodyCacheMiddleware() gin.HandlerFunc {
 	}
 }
 
-// ErrorStack 获取当前的堆栈信息字符串
-func ErrorStack(debugStack ...bool) string {
-	//if len(debugStack) > 0 && debugStack[0] {
-	//	return frameUtils.StackMsg()
-	//}
-	return frameUtils.CaptureStack()
-}
 
 // New creates a recover middleware error handler for Gin framework.
-func New(config ...Config) gin.HandlerFunc {
+func NewGinHandler(config ...Config) gin.HandlerFunc {
 	// Set default config
 	cfg := configDefault(config...)
 
 	// Return new handler
 	return func(c *gin.Context) {
 		// Don't execute middleware if Cfg Next returns true
-		if cfg.Next != nil && cfg.Next(c) {
+		if cfg.Next != nil && cfg.Next(providerCtx.WithGinContext(c)) {
 			c.Next()
 		}
 

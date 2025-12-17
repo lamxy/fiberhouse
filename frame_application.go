@@ -4,42 +4,32 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy
 
-// Package applicationstarter 提供基于 Fiber 框架的应用启动器实现，负责应用的完整生命周期管理和启动流程编排。
-package applicationstarter
+// Package webstarter 提供基于 Fiber 框架的应用启动器实现，负责应用的完整生命周期管理和启动流程编排。
+package fiberhouse
 
 import (
 	"errors"
-	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/validate"
 	"strings"
 	"time"
 )
 
-// RunApplicationStarter 接受实现了ApplicationStarter接口的实例，执行应用启动流程
-func RunApplicationStarter(starter fiberhouse.ApplicationStarter) {
-	// 应用启动流程，保持执行顺序
-	starter.RegisterToCtx(starter)
-	starter.RegisterApplicationGlobals()
-	starter.InitCoreApp(starter.GetFrameApp())
-	starter.RegisterAppHooks(starter.GetFrameApp())
-	starter.RegisterAppMiddleware(starter.GetFrameApp())
-	starter.RegisterModuleInitialize(starter.GetFrameApp())
-	starter.RegisterModuleSwagger(starter.GetFrameApp())
-	starter.RegisterTaskServer()
-	starter.RegisterGlobalsKeepalive()
-	starter.AppCoreRun()
+// WebApplication Web应用启动器，框架和核心启动器组合体，实现了 fiberhouse.FrameStarter 和 fiberhouse.CoreStarter 接口
+type WebApplication struct {
+	FrameStarter
+	CoreStarter
 }
 
 // FrameApplication 框架应用启动器实现，实现了 fiberhouse.ApplicationStarter 接口
 type FrameApplication struct {
-	Ctx         fiberhouse.IApplicationContext
-	application fiberhouse.ApplicationRegister
-	module      fiberhouse.ModuleRegister
-	task        fiberhouse.TaskRegister
+	Ctx         IApplicationContext
+	application ApplicationRegister
+	module      ModuleRegister
+	task        TaskRegister
 }
 
 // NewFrameApplication 创建一个应用启动器对象
-func NewFrameApplication(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.FrameStarterOption) fiberhouse.FrameStarter {
+func NewFrameApplication(ctx IApplicationContext, opts ...FrameStarterOption) FrameStarter {
 	fApp := &FrameApplication{
 		Ctx: ctx,
 	}
@@ -55,52 +45,47 @@ func NewFrameApplication(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.
 }
 
 // GetContext 获取应用上下文
-func (fa *FrameApplication) GetContext() fiberhouse.IApplicationContext {
+func (fa *FrameApplication) GetContext() IApplicationContext {
 	return fa.Ctx
 }
 
 // GetFrameApp 获取框架启动器实例
-func (fa *FrameApplication) GetFrameApp() fiberhouse.FrameStarter {
+func (fa *FrameApplication) GetFrameApp() FrameStarter {
 	return fa
 }
 
-// GetAppContext 获取应用上下文
-func (cf *CoreFiber) GetAppContext() fiberhouse.IApplicationContext {
-	return cf.ctx
-}
-
 // RegisterApplication 注入应用注册器实例到应用启动器的application属性
-func (fa *FrameApplication) RegisterApplication(application fiberhouse.ApplicationRegister) {
+func (fa *FrameApplication) RegisterApplication(application ApplicationRegister) {
 	fa.application = application
 }
 
 // RegisterModule 注入应用模块/子系统注册器实例到应用启动器的module属性
-func (fa *FrameApplication) RegisterModule(module fiberhouse.ModuleRegister) {
+func (fa *FrameApplication) RegisterModule(module ModuleRegister) {
 	fa.module = module
 }
 
 // RegisterTask 注入异步任务注册器实例到应用启动器的task属性
-func (fa *FrameApplication) RegisterTask(task fiberhouse.TaskRegister) {
+func (fa *FrameApplication) RegisterTask(task TaskRegister) {
 	fa.task = task
 }
 
 // GetApplication 获取实现IApplication接口的应用对象（ApplicationRegister）
-func (fa *FrameApplication) GetApplication() fiberhouse.IApplication {
+func (fa *FrameApplication) GetApplication() IApplication {
 	return fa.application
 }
 
 // GetModule 获取ModuleRegister对象
-func (fa *FrameApplication) GetModule() fiberhouse.ModuleRegister {
+func (fa *FrameApplication) GetModule() ModuleRegister {
 	return fa.module
 }
 
 // GetTask 获取TaskRegister对象
-func (fa *FrameApplication) GetTask() fiberhouse.TaskRegister {
+func (fa *FrameApplication) GetTask() TaskRegister {
 	return fa.task
 }
 
 // RegisterToCtx 注册应用启动器对象到应用上下文
-func (fa *FrameApplication) RegisterToCtx(as fiberhouse.ApplicationStarter) {
+func (fa *FrameApplication) RegisterToCtx(as ApplicationStarter) {
 	if fa.GetContext().GetAppState() {
 		return
 	}
@@ -146,7 +131,7 @@ func (fa *FrameApplication) RegisterGlobalInitializers() {
 		panic(errors.New("application that implements the ApplicationRegister interface is nil. Please RegisterApplication first"))
 	}
 
-	appRegister := fa.GetApplication().(fiberhouse.ApplicationRegister)
+	appRegister := fa.GetApplication().(ApplicationRegister)
 	fa.GetContext().GetContainer().Registers(appRegister.ConfigGlobalInitializers())
 }
 
@@ -156,7 +141,7 @@ func (fa *FrameApplication) InitializeGlobalRequired() {
 		return
 	}
 	if fa.GetApplication() != nil {
-		appRegister := fa.GetApplication().(fiberhouse.ApplicationRegister)
+		appRegister := fa.GetApplication().(ApplicationRegister)
 		gm := fa.GetContext().GetContainer()
 		for _, name := range appRegister.ConfigRequiredGlobalKeys() {
 			_, err := gm.Get(name)
@@ -175,7 +160,7 @@ func (fa *FrameApplication) InitializeCustomValidateInitializers() {
 	}
 	if fa.GetApplication() != nil {
 		fa.GetContext().GetLogger().InfoWith(fa.GetContext().GetConfig().LogOriginFrame()).Msg("InitializeCustomValidateInitializers starting...")
-		appRegister := fa.GetApplication().(fiberhouse.ApplicationRegister)
+		appRegister := fa.GetApplication().(ApplicationRegister)
 		validateInitializers := appRegister.ConfigCustomValidateInitializers()
 		if len(validateInitializers) > 0 {
 			for i := range validateInitializers {
@@ -191,7 +176,7 @@ func (fa *FrameApplication) RegisterValidatorCustomTags() {
 		return
 	}
 	if fa.GetApplication() != nil {
-		appRegister := fa.GetApplication().(fiberhouse.ApplicationRegister)
+		appRegister := fa.GetApplication().(ApplicationRegister)
 		// 初始化验证器以及注册验证器公共验证和自定义tag及其多语言翻译
 		if errs := fa.GetContext().GetValidateWrap().RegisterCustomTags(appRegister.ConfigValidatorCustomTags()); errs != nil {
 			var errBuilder = strings.Builder{}

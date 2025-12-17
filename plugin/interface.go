@@ -1,11 +1,13 @@
 package plugin
 
-import "github.com/lamxy/fiberhouse/provider"
+import (
+	"github.com/lamxy/fiberhouse"
+)
 
 // TODO
 
 type Plugin interface {
-	provider.IProvider
+	fiberhouse.IProvider
 	Start() error
 	Stop() error
 	Restart() error

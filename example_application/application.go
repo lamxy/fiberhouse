@@ -13,6 +13,7 @@ import (
 	"github.com/lamxy/fiberhouse/database/dbmysql"
 	"github.com/lamxy/fiberhouse/example_application/exceptions"
 	"github.com/lamxy/fiberhouse/example_application/middleware"
+	"github.com/lamxy/fiberhouse/example_application/providers"
 	"github.com/lamxy/fiberhouse/example_application/validatecustom"
 	"github.com/lamxy/fiberhouse/globalmanager"
 )
@@ -28,15 +29,24 @@ type Application struct {
 
 // NewApplication new项目应用
 func NewApplication(ctx fiberhouse.IApplicationContext) fiberhouse.ApplicationRegister {
-	return &Application{
+	app := &Application{
 		name:            "application",
 		Ctx:             ctx,
 		instanceFlagMap: make(map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey), // 初始化时,预定义好Flag跟实例key的映射
 	}
+	app.initFlagMap()
+	return app
 }
 
-func (app *Application) initialize() {
-	// TODO 自定义实例Key注册提供者
+// initFlagMap 初始化自定义的实例key映射
+func (app *Application) initFlagMap() {
+	cfmProvider := providers.NewCustomFlagMapProvider()
+	initFunc := func(iProvider fiberhouse.IProvider) (any, error) {
+		app.instanceFlagMap["__custom_flag_1"] = "__custom_instance_key_1"
+		app.instanceFlagMap["__custom_flag2"] = "__custom_instance_key_2"
+		return nil, nil
+	}
+	_, _ = cfmProvider.Initialize(app.Ctx, initFunc)
 }
 
 // GetName 获取应用名称
@@ -170,7 +180,7 @@ func (app *Application) GetInstanceKey(flag fiberhouse.InstanceKeyFlag) fiberhou
 func (app *Application) GetCustomKey() globalmanager.KeyName {
 	// 示例：自定义xxx全局对象key的获取方法
 	// 如业务层需要使用时，将application转成IApplicationCustomizer接口，即可调用框架预定义实例key外的更多自定义的实例key
-	return "__key_custom" // 注意：这里是示例key
+	return "__key_custom_example" // 注意：这里是示例key
 }
 
 // RegisterCoreHook 注册核心应用的生命周期钩子函数

@@ -8,7 +8,7 @@ type GinContext struct {
 }
 
 // WithGinContext 创建 Gin 上下文适配器
-func WithGinContext(c *gin.Context) ContextProvider {
+func WithGinContext(c *gin.Context) ICoreContext {
 	return &GinContext{Ctx: c}
 }
 

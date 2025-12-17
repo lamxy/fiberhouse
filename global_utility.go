@@ -13,6 +13,7 @@ import (
 	"github.com/lamxy/fiberhouse/globalmanager"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"strings"
+	"sync"
 )
 
 // RegisterKeyName 定义和拼接全局对象注册带命名空间的key，并返回注册key的名称
@@ -121,3 +122,38 @@ func GetErrOrNoDocuments(err error) error {
 	}
 	return err
 }
+
+type GlobalEntry struct{}
+
+var (
+	globalEntry *GlobalEntry
+	globalOnce  sync.Once
+)
+
+func (g *GlobalEntry) Global() *GlobalEntry {
+	globalOnce.Do(func() {
+		globalEntry = &GlobalEntry{}
+	})
+	return globalEntry
+}
+
+func (g *GlobalEntry) Container() *globalmanager.GlobalManager {
+	return globalmanager.NewGlobalManagerOnce()
+}
+
+//
+//func (g *GlobalEntry) AppConfig() appconfig.IAppConfig {
+//	return bootstrap.NewConfigOnce()
+//}
+//
+//func (g *GlobalEntry) Logger() bootstrap.LoggerWrapper {
+//	return bootstrap.NewLoggerOnce(g.AppConfig())
+//}
+//
+//func (g *GlobalEntry) AppContext() IApplicationContext {
+//	appCtx := NewAppContextOnce(g.AppConfig(), g.Logger())
+//	if !appCtx.GetAppState() {
+//		panic(errors.New("application context is not initialized. Please initialize application context first"))
+//	}
+//	return appCtx
+//}

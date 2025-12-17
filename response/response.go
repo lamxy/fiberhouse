@@ -110,8 +110,8 @@ func ErrorWithoutPool(code int, msg string) *RespInfo {
 //	return c.JSON(r)
 //}
 
-// JsonWithCtx 使用 ContextProvider 上下文提供者返回 JSON 响应，并释放对象回池
-func (r *RespInfo) JsonWithCtx(c providerCtx.ContextProvider, status ...int) error {
+// JsonWithCtx 使用 ContextProvider 上下文提供者返回 JSON 响应，并释放对象回池 // TODO 上下文提供者管理器依据全局应用上下文获取启动配置从提供者map获取指定上下文提供者接口对象进行响应
+func (r *RespInfo) JsonWithCtx(c providerCtx.ICoreContext, status ...int) error {
 	defer r.Release()
 	statusCode := http.StatusOK
 	if len(status) > 0 {

@@ -2,21 +2,22 @@ package providers
 
 import (
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/provider"
 )
 
 type CustomFlagMapProvider struct {
-	provider.IProvider
+	fiberhouse.IProvider
 	custom map[string]string
 }
 
 func NewCustomFlagMapProvider() *CustomFlagMapProvider {
 	return &CustomFlagMapProvider{
-		IProvider: provider.NewProvider().SetName("custom_flag_map"),
+		IProvider: fiberhouse.NewProvider().SetName("custom_flag_map"),
 	}
 }
 
-func (p *CustomFlagMapProvider) Initialize(ctx fiberhouse.IContext, initFn ...provider.InitFunc) error {
-	// TODO
-	return nil
+func (p *CustomFlagMapProvider) Initialize(ctx fiberhouse.IContext, initFn ...fiberhouse.ProviderInitFunc) (any, error) {
+	if len(initFn) > 0 {
+		return initFn[0](p)
+	}
+	return nil, nil
 }

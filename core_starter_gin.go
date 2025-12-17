@@ -4,14 +4,14 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy/fiberhouse
 
-package ginplugin
+package fiberhouse
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	ginJson "github.com/gin-gonic/gin/codec/json"
 	"github.com/lamxy/fiberhouse/appconfig"
-	"github.com/lamxy/fiberhouse/provider/jsoncodec"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,21 +19,18 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	ginJson "github.com/gin-gonic/gin/codec/json"
-	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/provider"
 )
 
 // CoreGin 基于Gin的核心应用启动器
 type CoreGin struct {
-	ctx            fiberhouse.IApplicationContext
+	ctx            IApplicationContext
 	OptionFuncList []gin.OptionFunc
 	coreApp        *gin.Engine
 	httpServer     *http.Server
 }
 
 // NewCoreGin 创建一个基于Gin的应用核心启动器对象
-func NewCoreGin(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.CoreStarterOption) fiberhouse.CoreStarter {
+func NewCoreGin(ctx IApplicationContext, opts ...CoreStarterOption) CoreStarter {
 	core := &CoreGin{
 		ctx: ctx,
 	}
@@ -49,7 +46,7 @@ func NewCoreGin(ctx fiberhouse.IApplicationContext, opts ...fiberhouse.CoreStart
 }
 
 // InitCoreApp 初始化应用核心
-func (cg *CoreGin) InitCoreApp(fs fiberhouse.FrameStarter) {
+func (cg *CoreGin) InitCoreApp(fs FrameStarter, manager ...IProviderManager) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -69,15 +66,23 @@ func (cg *CoreGin) InitCoreApp(fs fiberhouse.FrameStarter) {
 	// 创建Gin引擎
 	cg.coreApp = gin.New(cg.OptionFuncList...)
 
-	// 配置JSON序列化器 // TODO 从全局管理器获取JSON编解码提供者管理器，由开发者在项目应用编写服务提供者，初始化所有的json codec提供者注册进管理器。依据引导配置选择使用哪个json codec提供者。
-	jManager := jsoncodec.NewJsonCodecManager(cg.GetAppContext())
-	err := jManager.LoadProvider()
-	if err != nil {
-		cg.GetAppContext().GetLogger().FatalWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
-			Str("applicationStarter", "GinApplication").
-			Err(err).
-			Msg("Failed to load JSON codec provider")
-		panic(err)
+	// 配置JSON序列化器
+	if len(manager) == 0 {
+		// 使用默认的JSON编解码提供者
+		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec")
+		ginJson.API = GetMustInstance[ginJson.Core](fs.GetApplication().GetDefaultJsonCodecKey())
+	} else {
+		pManager := manager[0]
+
+		_, err := pManager.LoadProvider()
+
+		if err != nil {
+			cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
+				Str("applicationStarter", "GinApplication").
+				Err(err).
+				Msg("Failed to load providers into Gin application starter")
+			panic(err)
+		}
 	}
 
 	// 初始化HTTP Server
@@ -100,7 +105,7 @@ func (cg *CoreGin) initHttpServer(cfg appconfig.IAppConfig) {
 }
 
 // RegisterAppMiddleware 注册应用级的中间件
-func (cg *CoreGin) RegisterAppMiddleware(fs fiberhouse.FrameStarter) {
+func (cg *CoreGin) RegisterAppMiddleware(fs FrameStarter) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -210,7 +215,7 @@ func (cg *CoreGin) loggerMiddleware() gin.HandlerFunc {
 }
 
 // RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器等
-func (cg *CoreGin) RegisterModuleInitialize(fs fiberhouse.FrameStarter) {
+func (cg *CoreGin) RegisterModuleInitialize(fs FrameStarter) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -231,7 +236,7 @@ func (cg *CoreGin) RegisterModuleInitialize(fs fiberhouse.FrameStarter) {
 }
 
 // RegisterModuleSwagger 注册模块/子系统级的swagger
-func (cg *CoreGin) RegisterModuleSwagger(fs fiberhouse.FrameStarter) {
+func (cg *CoreGin) RegisterModuleSwagger(fs FrameStarter) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -249,7 +254,7 @@ func (cg *CoreGin) RegisterModuleSwagger(fs fiberhouse.FrameStarter) {
 }
 
 // RegisterAppHooks 注册核心应用的生命周期钩子函数
-func (cg *CoreGin) RegisterAppHooks(fs fiberhouse.FrameStarter) {
+func (cg *CoreGin) RegisterAppHooks(fs FrameStarter) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -288,7 +293,7 @@ func (cg *CoreGin) AppCoreRun() {
 				Err(err).
 				Msg("Failed to start Gin server")
 		}
-		app.GetAppContext().SetAppState(true)
+		app.GetAppContext().RegisterAppState(true)
 	}(cg)
 
 	// 等待信号
@@ -323,7 +328,7 @@ func (cg *CoreGin) AppCoreRun() {
 }
 
 // GetAppContext 获取应用上下文
-func (cg *CoreGin) GetAppContext() fiberhouse.IApplicationContext {
+func (cg *CoreGin) GetAppContext() IApplicationContext {
 	return cg.ctx
 }
 
