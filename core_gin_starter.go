@@ -72,9 +72,12 @@ func (cg *CoreGin) InitCoreApp(fs FrameStarter, manager ...IProviderManager) {
 		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec")
 		ginJson.API = GetMustInstance[ginJson.Core](fs.GetApplication().GetDefaultJsonCodecKey())
 	} else {
-		pManager := manager[0]
+		jsonCodecManager := manager[0]
 
-		_, err := pManager.LoadProvider()
+		if jsonCodecManager.Type().GetTypeID() != ProviderTypeDefault().GroupJsonCodec.GetTypeID() {
+			panic("json codec manager type mismatch")
+		}
+		_, err := jsonCodecManager.LoadProvider()
 
 		if err != nil {
 			cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).

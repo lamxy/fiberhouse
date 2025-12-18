@@ -49,6 +49,9 @@ type Config struct {
 	// 可选。 默认: nil
 	Next func(c providerCtx.ICoreContext) bool
 
+	// AppCtx 提供应用框架上下文
+	AppCtx IApplicationContext
+
 	// EnableStackTrace 表示是否启用堆栈跟踪功能
 	//
 	// 可选。 默认: false

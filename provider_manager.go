@@ -68,6 +68,7 @@ func (e *ProviderError) Error() string {
 
 // Manager New一个基础的提供者管理器
 type ProviderManager struct {
+	name      string
 	ctx       IContext
 	providers map[string]IProvider
 	lock      sync.RWMutex
@@ -79,8 +80,27 @@ type ProviderManager struct {
 func NewProviderManager(ctx IContext) *ProviderManager {
 	return &ProviderManager{
 		ctx:       ctx,
+		pType:     ProviderTypeDefault().ZeroType, // 默认零值类型
 		providers: make(map[string]IProvider),
 	}
+}
+
+// Check 检查提供者类型是否设置，未设置则抛出异常，强制Initialize方法内优先进行检查
+func (m *ProviderManager) Check() {
+	if m.pType.GetTypeID() == ProviderTypeDefault().ZeroType.GetTypeID() {
+		panic(fmt.Errorf("manager '%s' type is not set", m.name))
+	}
+}
+
+// Name 返回提供者管理器名称
+func (m *ProviderManager) Name() string {
+	return m.name
+}
+
+// SetName 设置提供者管理器名称
+func (m *ProviderManager) SetName(name string) IProviderManager {
+	m.name = name
+	return m
 }
 
 // Type 返回提供者类型
@@ -155,6 +175,7 @@ func (m *ProviderManager) List() []IProvider {
 
 // LoadProvider 加载 providers
 func (m *ProviderManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
+	m.Check()
 	// 如果提供了自定义加载函数，则使用该函数加载 providers
 	if len(loadFunc) > 0 {
 		return loadFunc[0](m)
@@ -168,7 +189,7 @@ type DefaultPManager struct {
 
 func NewDefaultManager(ctx IContext) *DefaultPManager {
 	return &DefaultPManager{
-		IProviderManager: NewProviderManager(ctx).SetType(ProviderTypeDefault().DefaultPManager),
+		IProviderManager: NewProviderManager(ctx).SetType(ProviderTypeDefault().GroupDefaultPManager),
 	}
 }
 
@@ -190,12 +211,12 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 	)
 
 	for _, provider := range m.List() {
-		if provider.Type().GetTypeID() == ProviderTypeDefault().ProviderAutoRun.GetTypeID() { // 自动运行类型的提供者，不依赖Target约束可以直接初始化
+		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupProviderAutoRun.GetTypeID() { // 自动运行类型的提供者，不依赖Target约束可以直接初始化
 			_, err := provider.Initialize(m.GetContext())
 			errs = append(errs, err)
-		} else if provider.Type().GetTypeID() == ProviderTypeDefault().WebRunServer.GetTypeID() { // 提供者类型匹配WebRunServer类型的提供者
+		} else if provider.Type().GetTypeID() == ProviderTypeDefault().GroupWebRunServer.GetTypeID() { // 提供者类型匹配WebRunServer类型的提供者
 			runServerProvider = provider
-		} else if provider.Target() == bootCfg.CoreType { // 目标类型匹配引导配置的核心类型
+		} else if provider.Target() == bootCfg.CoreType { // 目标类型匹配启动配置的核心类型
 			_, err := provider.Initialize(m.GetContext())
 			errs = append(errs, err)
 		}

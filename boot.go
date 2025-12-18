@@ -3,6 +3,8 @@ package fiberhouse
 import (
 	"errors"
 	"fmt"
+	"github.com/lamxy/fiberhouse/bootstrap"
+	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/globalmanager"
 	"sync"
 )
@@ -32,7 +34,7 @@ type BootConfig struct {
 	kvOnce     sync.Once
 }
 
-// InitKV 初始化键值存储
+// InitKVS 初始化键值存储
 func (bc *BootConfig) InitKVS(fn func(cfg *BootConfig)) *BootConfig {
 	bc.kvOnce.Do(func() {
 		bc.kvStorage = make(map[string]any)
@@ -41,7 +43,7 @@ func (bc *BootConfig) InitKVS(fn func(cfg *BootConfig)) *BootConfig {
 	return bc
 }
 
-// GetKVMap 获取键值存储映射
+// GetKVStorage 获取键值存储映射
 func (bc *BootConfig) GetKVStorage() map[string]any {
 	return bc.kvStorage
 }
@@ -63,6 +65,7 @@ type FiberHouse struct {
 	bootCfg   *BootConfig
 	opts      []FrameStarterOption
 	providers []IProvider
+	managers  []IProviderManager
 }
 
 // New 创建FiberHouse实例
@@ -71,6 +74,7 @@ func New(cfg *BootConfig) *FiberHouse {
 		container: globalmanager.NewGlobalManagerOnce(),
 		opts:      make([]FrameStarterOption, 0, 3),
 		providers: make([]IProvider, 0),
+		managers:  make([]IProviderManager, 0),
 	}
 	fh.bootCfg = cfg
 	return fh
@@ -92,14 +96,76 @@ func (fh *FiberHouse) WithProviders(providers ...IProvider) *FiberHouse {
 	return fh
 }
 
-func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
-	// TODO 检查MustWith的配置项是否正确、记录WithProviders的提供者和管理器
-	// bootstrap基础初始化并实例化初始的AppContext, 并即时注册进全局管理器（双向互引用）
-	// TODO 允许提供者相关的管理器初始化
+// WithPManagers 添加服务提供者管理器，启动时初始化的全局服务提供者管理器: 框架默认的提供者管理器、用户自定义的提供者管理器
+func (fh *FiberHouse) WithPManagers(managers ...IProviderManager) *FiberHouse {
+	fh.managers = append(fh.managers, managers...)
+	return fh
+}
 
-	if len(manager) == 0 {
-		// 使用默认提供者管理器
+func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
+	if len(fh.opts) == 0 {
+		panic("BootConfig opts is nil")
 	}
 
-	//  启动服务
+	// bootstrap 初始化启动配置(全局配置、全局日志器)，配置目录默认为当前工作目录"."下的`example_config/`
+	cfg := bootstrap.NewConfigOnce(fh.bootCfg.ConfigPath)
+	// 日志目录默认为当前工作目录"."下的`example_main/logs`
+	logger := bootstrap.NewLoggerOnce(cfg, fh.bootCfg.LogPath)
+
+	// 初始化全局应用上下文
+	appContext := NewAppContextOnce(cfg, logger)
+
+	// 注册全局应用上下文到全局管容器
+	fh.container.Register(constant.GlobalAppIContext, func() (interface{}, error) {
+		return appContext, nil
+	})
+
+	defaultManager := NewDefaultManager(appContext)
+	if len(manager) == 0 {
+		// 使用默认提供者管理器
+		fh.managers = append(fh.managers, defaultManager)
+	} else {
+		fh.managers = append(fh.managers, manager[0])
+	}
+	var leftProviders = make([]IProvider, 0)
+	for _, provider := range fh.providers {
+		matched := false
+		for _, mgr := range fh.managers {
+			if provider.Type().GetTypeID() == mgr.Type().GetTypeID() {
+				matched = true
+				err := provider.RegisterTo(mgr)
+				if err != nil {
+					// 注册失败（如已注册同名提供者）记录日志即可，不影响匹配状态
+					appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
+						Err(err).
+						Msgf("provider %s register failed", provider.Type().GetTypeID())
+				}
+				break
+			}
+		}
+		// 未找到匹配类型的管理器，收集到leftProviders中
+		if !matched {
+			leftProviders = append(leftProviders, provider)
+		}
+	}
+
+	// 将未匹配的提供者注册到默认管理器
+	for _, provider := range leftProviders {
+		err := provider.RegisterTo(defaultManager)
+		if err != nil {
+			appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
+				Err(err).
+				Msgf("provider %s register to default manager failed", provider.Type().GetTypeID())
+		}
+	}
+
+	for _, m := range fh.managers {
+		if m.Type().GetTypeID() != ProviderTypeDefault().GroupDefaultPManager.GetTypeID() {
+			_, _ = m.LoadProvider()
+		}
+	}
+
+	//  启动服务 TODO  New FrameStart & GetCoreStarter from defaultPManager.LoadProvider
+	_, err := defaultManager.LoadProvider()
+	appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).Err(err).Msg("run server failed")
 }

@@ -79,6 +79,10 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, manager ...IProviderManage
 	} else {
 		jsonCodecManager := manager[0]
 
+		if jsonCodecManager.Type().GetTypeID() != ProviderTypeDefault().GroupJsonCodec.GetTypeID() {
+			panic("json codec manager type mismatch")
+		}
+
 		jcodec, err := jsonCodecManager.LoadProvider()
 
 		if err != nil {
@@ -152,6 +156,7 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter) {
 
 	// 注册核心应用(coreApp/fiber App)全局错误捕获中间件
 	cf.coreApp.Use(NewFiberHandler(Config{
+		AppCtx:            cf.GetAppContext(),
 		EnableStackTrace:  true,
 		StackTraceHandler: rc.DefaultStackTraceHandler,
 		Logger:            cf.GetAppContext().GetLogger(),

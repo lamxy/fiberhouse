@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/globalmanager"
-	providerCtx "github.com/lamxy/fiberhouse/provider/context"
+	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"github.com/lamxy/fiberhouse/response"
 	"net/http"
 )
@@ -125,7 +125,7 @@ func (e *Exception) Panic() {
 //}
 
 // JsonWithCtx Exception 使用 ContextProvider 上下文响应 JSON
-func (e *Exception) JsonWithCtx(c providerCtx.ICoreContext, status ...int) error {
+func (e *Exception) JsonWithCtx(c providerctx.ICoreContext, status ...int) error {
 	defer e.Release()
 	statusCode := http.StatusOK
 	if len(status) > 0 {
@@ -250,7 +250,7 @@ func (e *ValidateException) RespError(d ...interface{}) *ValidateException {
 //}
 
 // JsonWithCtx ValidateException 使用 ContextProvider 上下文响应 JSON
-func (e *ValidateException) JsonWithCtx(c providerCtx.ICoreContext, status ...int) error {
+func (e *ValidateException) JsonWithCtx(c providerctx.ICoreContext, status ...int) error {
 	defer e.Release()
 	statusCode := http.StatusOK
 	if len(status) > 0 {

@@ -5,19 +5,20 @@ import (
 	"github.com/lamxy/fiberhouse"
 )
 
-type SonicJCodecProvider struct {
+type SonicJCodecGinProvider struct {
 	fiberhouse.IProvider
 }
 
 // NewJCodecProvider 创建一个新的 JSON 编解码提供者
-func NewJCodecProvider() *SonicJCodecProvider {
-	return &SonicJCodecProvider{
-		IProvider: fiberhouse.NewProvider().SetName("sonic_json_codec").SetVersion("").SetTarget("gin").SetType(fiberhouse.ProviderTypeDefault().JsonCodec),
+func NewSonicJCodecGinProvider() *SonicJCodecGinProvider {
+	return &SonicJCodecGinProvider{
+		IProvider: fiberhouse.NewProvider().SetName("sonic_json_codec").SetTarget("gin").SetType(fiberhouse.ProviderTypeDefault().GroupJsonCodec),
 	}
 }
 
 // Initialize 初始化 JSON 编解码提供者
-func (j *SonicJCodecProvider) Initialize(ctx fiberhouse.IContext, fn ...fiberhouse.ProviderInitFunc) (any, error) {
+func (j *SonicJCodecGinProvider) Initialize(ctx fiberhouse.IContext, fn ...fiberhouse.ProviderInitFunc) (any, error) {
+	j.Check()
 	if j.Status() == fiberhouse.StateLoaded {
 		return nil, nil
 	}

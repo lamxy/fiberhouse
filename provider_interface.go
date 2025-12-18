@@ -21,10 +21,13 @@ type IProvider interface {
 	SetStatus(IState) IProvider
 	// SetType 设置提供者类型，仅允许设置一次
 	SetType(IProviderType) IProvider
+	Check() // 检查提供者是否设置类型值
 }
 
 // Manager 提供者管理器接口
 type IProviderManager interface {
+	Name() string
+	SetName(string) IProviderManager
 	// Type 返回提供者类型
 	Type() IProviderType
 	// SetType 设置提供者类型，仅允许设置一次
@@ -35,12 +38,19 @@ type IProviderManager interface {
 	GetProvider(name string) (IProvider, error)
 	List() []IProvider
 	LoadProvider(loadFunc ...ProviderLoadFunc) (any, error)
+	Check() // 检查提供者管理器是否设置类型值
 }
 
-// Stater 提供者状态接口
+// IState 提供者状态接口
 type IState interface {
 	Id() uint8
 	Name() string
 	Set(uint8, string) IState
 	SetState(IState) IState
 }
+
+//type IContextCore interface {
+//	WithAppCtx(appCtx IApplicationContext) IContextCore
+//	GetCoreContext() providerCtx.ICoreContext
+//	Release()
+//}

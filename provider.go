@@ -19,6 +19,14 @@ type Provider struct {
 func NewProvider() *Provider {
 	return &Provider{
 		status: StateUnload,
+		pType:  ProviderTypeDefault().ZeroType, // 默认零值类型
+	}
+}
+
+// Check 检查提供者类型是否设置，未设置则抛出异常，强制Initialize方法内优先进行检查
+func (p *Provider) Check() {
+	if p.pType.GetTypeID() == ProviderTypeDefault().ZeroType.GetTypeID() {
+		panic(fmt.Errorf("provider '%s' type is not set", p.name))
 	}
 }
 
@@ -34,6 +42,7 @@ func (p *Provider) Version() string {
 
 // Initialize 初始化提供者
 func (p *Provider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
+	p.Check()
 	if len(initFunc) > 0 {
 		return initFunc[0](p)
 	}
@@ -101,6 +110,6 @@ type DefaultServerProvider struct {
 // NewDefaultServerProvider 创建一个默认服务器提供者
 func NewDefaultServerProvider() *DefaultServerProvider {
 	return &DefaultServerProvider{
-		IProvider: NewProvider().SetName("default_server_provider").SetType(ProviderTypeDefault().WebRunServer),
+		IProvider: NewProvider().SetName("default_server_provider").SetType(ProviderTypeDefault().GroupWebRunServer),
 	}
 }
