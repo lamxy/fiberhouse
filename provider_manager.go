@@ -74,13 +74,15 @@ type ProviderManager struct {
 	lock      sync.RWMutex
 	pType     IProviderType
 	pTypeOnce sync.Once
+	location  IProviderLocation
 }
 
 // NewManager 创建一个基础的提供者管理器
 func NewProviderManager(ctx IContext) *ProviderManager {
 	return &ProviderManager{
 		ctx:       ctx,
-		pType:     ProviderTypeDefault().ZeroType, // 默认零值类型
+		pType:     ProviderTypeDefault().ZeroType,         // 默认零值类型
+		location:  ProviderLocationDefault().ZeroLocation, // 默认零值位置
 		providers: make(map[string]IProvider),
 	}
 }
@@ -113,6 +115,21 @@ func (m *ProviderManager) SetType(typ IProviderType) IProviderManager {
 	m.pTypeOnce.Do(func() {
 		m.pType = typ
 	})
+	return m
+}
+
+// Location 返回管理器执行位置点标识
+func (m *ProviderManager) Location() IProviderLocation {
+	return m.location
+}
+
+// SetLocation 设置管理器执行位置点标识
+func (m *ProviderManager) SetOrBindToLocation(l IProviderLocation, bind ...bool) IProviderManager {
+	m.location = l
+	// 绑定管理器到位点对象
+	if len(bind) > 0 && bind[0] {
+		_ = l.Bind(m)
+	}
 	return m
 }
 
@@ -189,7 +206,7 @@ type DefaultPManager struct {
 
 func NewDefaultManager(ctx IContext) *DefaultPManager {
 	return &DefaultPManager{
-		IProviderManager: NewProviderManager(ctx).SetType(ProviderTypeDefault().GroupDefaultPManager),
+		IProviderManager: NewProviderManager(ctx).SetType(ProviderTypeDefault().GroupDefaultManagerType).SetOrBindToLocation(ProviderLocationDefault().ZeroLocation),
 	}
 }
 
@@ -205,17 +222,13 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 		return nil, ErrProviderNotFound
 	}
 
-	var (
-		runServerProvider IProvider
-		errs              []error
-	)
+	var errs []error
 
+	// TODO 记录最终未被加载的提供者列表日志
 	for _, provider := range m.List() {
 		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupProviderAutoRun.GetTypeID() { // 自动运行类型的提供者，不依赖Target约束可以直接初始化
 			_, err := provider.Initialize(m.GetContext())
 			errs = append(errs, err)
-		} else if provider.Type().GetTypeID() == ProviderTypeDefault().GroupWebRunServer.GetTypeID() { // 提供者类型匹配WebRunServer类型的提供者
-			runServerProvider = provider
 		} else if provider.Target() == bootCfg.CoreType { // 目标类型匹配启动配置的核心类型
 			_, err := provider.Initialize(m.GetContext())
 			errs = append(errs, err)
@@ -224,18 +237,6 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("failed to load providers: %v", errs)
-	}
-
-	if runServerProvider != nil {
-		serverStarter, err := runServerProvider.Initialize(m.GetContext())
-		if err != nil {
-			return nil, err
-		}
-		s, ok := serverStarter.(ApplicationStarter)
-		if !ok {
-			return nil, fmt.Errorf("type assertion failed for ApplicationStarter from provider '%s'", runServerProvider.Name())
-		}
-		RunApplicationStarter(s)
 	}
 
 	return nil, nil

@@ -50,7 +50,7 @@ func (cf *CoreWithFiber) GetCoreApp() interface{} {
 }
 
 // InitCoreApp 初始化应用核心（框架应用基于 fiber.App）
-func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, manager ...IProviderManager) {
+func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...IProviderManager) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
@@ -72,14 +72,14 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, manager ...IProviderManage
 		jOk  bool
 	)
 
-	if len(manager) == 0 {
+	if len(jsonCodecManagerOrMore) == 0 {
 		// 默认编解码器实例
 		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec.")
 		json = GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultJsonCodecKey())
 	} else {
-		jsonCodecManager := manager[0]
+		jsonCodecManager := jsonCodecManagerOrMore[0]
 
-		if jsonCodecManager.Type().GetTypeID() != ProviderTypeDefault().GroupJsonCodec.GetTypeID() {
+		if jsonCodecManager.Type().GetTypeID() != ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() {
 			panic("json codec manager type mismatch")
 		}
 

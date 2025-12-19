@@ -47,19 +47,23 @@ const (
 )
 
 // DefaultPType 预定义的默认类型对象集合
+//
+// 分组类默认逻辑
+// 1. GroupXXXChoose 选择其中唯一一个提供者执行（仅符合Target单个提供者执行，即匹配到提供者则中断后续提供者执行）（比如切换核心引擎、切换编解码器）
+// 2. GroupYYYType 类型，受Target条件和Name等约束，符合条件的多个提供者都可以执行（比如多个中间件注册、多个路由组注册）
+// 3. GroupZZZAutoRun 自动运行，不受条件约束，所有注册的提供者均执行一次（比如全局对象注册、默认启动对象初始化）
+// 其他自定义，又开发者自行约定和实现（比如自定义扩展逻辑）
 type DefaultPType struct {
-	ZeroType                IProviderType
-	GroupDefaultPManager    IProviderType
-	GroupJsonCodec          IProviderType
-	GroupCoreEngineType     IProviderType // 用于多个核心引擎类型提供者作为一个组交给同类型组的提供者管理器处理（依据启动配置决策执行那个提供者）
-	GroupMiddlewareRegister IProviderType
-	GroupRouteRegister      IProviderType
-	GroupWebRunServer       IProviderType
-	GroupProviderAutoRun    IProviderType
-	GroupCoreContextType    IProviderType // 用于多个核心下上下文类型提供者作为一个组交给同类型组的提供者管理器处理（依据启动配置决策执行那个提供者）
-	GroupDatabase           IProviderType
-	GroupMessageQueue       IProviderType
-	GroupScheduler          IProviderType
+	ZeroType                    IProviderType
+	GroupDefaultManagerType     IProviderType
+	GroupJsonCodecChoose        IProviderType
+	GroupCoreEngineChoose       IProviderType
+	GroupMiddlewareRegisterType IProviderType
+	GroupRouteRegisterType      IProviderType
+	GroupFrameStarterChoose     IProviderType
+	GroupCoreStarterChoose      IProviderType
+	GroupProviderAutoRun        IProviderType
+	GroupCoreContextChoose      IProviderType
 }
 
 var (
@@ -72,18 +76,16 @@ func ProviderTypeDefault() *DefaultPType {
 	providerTypeOnce.Do(func() {
 		registry := ProviderTypeGen()
 		providerTypeInstance = &DefaultPType{
-			ZeroType:                registry.MustDefault("__ZERO__"),
-			GroupDefaultPManager:    registry.MustDefault("DefaultProviderManager"),
-			GroupJsonCodec:          registry.MustDefault("JsonCodec"),
-			GroupCoreEngineType:     registry.MustDefault("CoreEngineType"),
-			GroupMiddlewareRegister: registry.MustDefault("MiddlewareRegister"),
-			GroupRouteRegister:      registry.MustDefault("RouteRegister"),
-			GroupWebRunServer:       registry.MustDefault("WebRunServer"),
-			GroupProviderAutoRun:    registry.MustDefault("ProviderAutoRun"),
-			GroupCoreContextType:    registry.MustDefault("CoreContextType"),
-			GroupDatabase:           registry.MustDefault("Database"),
-			GroupMessageQueue:       registry.MustDefault("MessageQueue"),
-			GroupScheduler:          registry.MustDefault("Scheduler"),
+			ZeroType:                    registry.MustDefault("__ZERO__"),
+			GroupDefaultManagerType:     registry.MustDefault("DefaultManagerType"),
+			GroupJsonCodecChoose:        registry.MustDefault("JsonCodecChoose"),
+			GroupCoreEngineChoose:       registry.MustDefault("CoreEngineChoose"),
+			GroupMiddlewareRegisterType: registry.MustDefault("MiddlewareRegisterType"),
+			GroupRouteRegisterType:      registry.MustDefault("RouteRegisterType"),
+			GroupFrameStarterChoose:     registry.MustDefault("FrameStarterChoose"),
+			GroupCoreStarterChoose:      registry.MustDefault("CoreStarterChoose"),
+			GroupProviderAutoRun:        registry.MustDefault("ProviderAutoRun"),
+			GroupCoreContextChoose:      registry.MustDefault("CoreContextChoose"),
 		}
 	})
 	return providerTypeInstance

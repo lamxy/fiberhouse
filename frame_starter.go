@@ -14,12 +14,6 @@ import (
 	"time"
 )
 
-// WebApplication Web应用启动器，框架和核心启动器组合体，实现了 fiberhouse.FrameStarter 和 fiberhouse.CoreStarter 接口
-type WebApplication struct {
-	FrameStarter
-	CoreStarter
-}
-
 // FrameApplication 框架应用启动器实现，实现了 fiberhouse.ApplicationStarter 接口
 type FrameApplication struct {
 	Ctx         IApplicationContext

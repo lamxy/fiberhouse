@@ -21,17 +21,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CoreGin 基于Gin的核心应用启动器
-type CoreGin struct {
+// CoreWithGin 基于Gin的核心应用启动器
+type CoreWithGin struct {
 	ctx            IApplicationContext
 	OptionFuncList []gin.OptionFunc
 	coreApp        *gin.Engine
 	httpServer     *http.Server
 }
 
-// NewCoreGin 创建一个基于Gin的应用核心启动器对象
-func NewCoreGin(ctx IApplicationContext, opts ...CoreStarterOption) CoreStarter {
-	core := &CoreGin{
+// NewCoreWithGin 创建一个基于Gin的应用核心启动器对象
+func NewCoreWithGin(ctx IApplicationContext, opts ...CoreStarterOption) CoreStarter {
+	core := &CoreWithGin{
 		ctx: ctx,
 	}
 
@@ -46,7 +46,7 @@ func NewCoreGin(ctx IApplicationContext, opts ...CoreStarterOption) CoreStarter 
 }
 
 // InitCoreApp 初始化应用核心
-func (cg *CoreGin) InitCoreApp(fs FrameStarter, manager ...IProviderManager) {
+func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...IProviderManager) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -67,14 +67,14 @@ func (cg *CoreGin) InitCoreApp(fs FrameStarter, manager ...IProviderManager) {
 	cg.coreApp = gin.New(cg.OptionFuncList...)
 
 	// 配置JSON序列化器
-	if len(manager) == 0 {
+	if len(jsonCodecManagerOrMore) == 0 {
 		// 使用默认的JSON编解码提供者
 		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec")
 		ginJson.API = GetMustInstance[ginJson.Core](fs.GetApplication().GetDefaultJsonCodecKey())
 	} else {
-		jsonCodecManager := manager[0]
+		jsonCodecManager := jsonCodecManagerOrMore[0]
 
-		if jsonCodecManager.Type().GetTypeID() != ProviderTypeDefault().GroupJsonCodec.GetTypeID() {
+		if jsonCodecManager.Type().GetTypeID() != ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() {
 			panic("json codec manager type mismatch")
 		}
 		_, err := jsonCodecManager.LoadProvider()
@@ -93,7 +93,7 @@ func (cg *CoreGin) InitCoreApp(fs FrameStarter, manager ...IProviderManager) {
 }
 
 // initHttpServer 初始化HTTP服务器
-func (cg *CoreGin) initHttpServer(cfg appconfig.IAppConfig) {
+func (cg *CoreWithGin) initHttpServer(cfg appconfig.IAppConfig) {
 	host := cfg.String("application.plugins.server.gin.host")
 	port := cfg.String("application.plugins.server.gin.port")
 
@@ -108,7 +108,7 @@ func (cg *CoreGin) initHttpServer(cfg appconfig.IAppConfig) {
 }
 
 // RegisterAppMiddleware 注册应用级的中间件
-func (cg *CoreGin) RegisterAppMiddleware(fs FrameStarter) {
+func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -140,7 +140,7 @@ func (cg *CoreGin) RegisterAppMiddleware(fs FrameStarter) {
 }
 
 // recoverMiddleware 错误恢复中间件
-func (cg *CoreGin) recoverMiddleware(debugMode bool) gin.HandlerFunc {
+func (cg *CoreWithGin) recoverMiddleware(debugMode bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -178,7 +178,7 @@ func (cg *CoreGin) recoverMiddleware(debugMode bool) gin.HandlerFunc {
 }
 
 // loggerMiddleware HTTP请求日志中间件
-func (cg *CoreGin) loggerMiddleware() gin.HandlerFunc {
+func (cg *CoreWithGin) loggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ms := cg.GetAppContext().GetConfig().GetMiddlewareSwitch("coreHttp")
 		if !ms {
@@ -218,7 +218,7 @@ func (cg *CoreGin) loggerMiddleware() gin.HandlerFunc {
 }
 
 // RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器等
-func (cg *CoreGin) RegisterModuleInitialize(fs FrameStarter) {
+func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -239,7 +239,7 @@ func (cg *CoreGin) RegisterModuleInitialize(fs FrameStarter) {
 }
 
 // RegisterModuleSwagger 注册模块/子系统级的swagger
-func (cg *CoreGin) RegisterModuleSwagger(fs FrameStarter) {
+func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -257,7 +257,7 @@ func (cg *CoreGin) RegisterModuleSwagger(fs FrameStarter) {
 }
 
 // RegisterAppHooks 注册核心应用的生命周期钩子函数
-func (cg *CoreGin) RegisterAppHooks(fs FrameStarter) {
+func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -272,12 +272,12 @@ func (cg *CoreGin) RegisterAppHooks(fs FrameStarter) {
 }
 
 // AppCoreRun 启动Gin应用并监听信号
-func (cg *CoreGin) AppCoreRun() {
+func (cg *CoreWithGin) AppCoreRun() {
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
 
 	// 启动HTTP服务器
-	go func(app *CoreGin) {
+	go func(app *CoreWithGin) {
 		cfg := app.GetAppContext().GetConfig()
 		scheme := "http"
 		if app.httpServer.TLSConfig != nil {
@@ -331,11 +331,11 @@ func (cg *CoreGin) AppCoreRun() {
 }
 
 // GetAppContext 获取应用上下文
-func (cg *CoreGin) GetAppContext() IApplicationContext {
+func (cg *CoreWithGin) GetAppContext() IApplicationContext {
 	return cg.ctx
 }
 
 // GetCoreApp 获取核心Gin引擎实例
-func (cg *CoreGin) GetCoreApp() interface{} {
+func (cg *CoreWithGin) GetCoreApp() interface{} {
 	return cg.coreApp
 }

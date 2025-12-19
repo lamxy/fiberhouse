@@ -12,7 +12,7 @@ type JsonJCodecFiberProvider struct {
 // NewJsonJCodecFiberProvider 创建一个新的 JSON 编解码提供者
 func NewJsonJCodecFiberProvider() *JsonJCodecFiberProvider {
 	return &JsonJCodecFiberProvider{
-		IProvider: fiberhouse.NewProvider().SetName("json_codec").SetTarget("Fiber").SetType(fiberhouse.ProviderTypeDefault().GroupJsonCodec),
+		IProvider: fiberhouse.NewProvider().SetName("json_codec").SetTarget("Fiber").SetType(fiberhouse.ProviderTypeDefault().GroupJsonCodecChoose),
 	}
 }
 

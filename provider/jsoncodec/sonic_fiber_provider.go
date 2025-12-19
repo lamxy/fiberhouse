@@ -11,7 +11,7 @@ type SonicJCodecFiberProvider struct {
 // NewJCodecProvider 创建一个新的 JSON 编解码提供者
 func NewSonicJCodecFiberProvider() *SonicJCodecFiberProvider {
 	return &SonicJCodecFiberProvider{
-		IProvider: fiberhouse.NewProvider().SetName("sonic_json_codec").SetTarget("fiber").SetType(fiberhouse.ProviderTypeDefault().GroupJsonCodec),
+		IProvider: fiberhouse.NewProvider().SetName("sonic_json_codec").SetTarget("fiber").SetType(fiberhouse.ProviderTypeDefault().GroupJsonCodecChoose),
 	}
 }
 

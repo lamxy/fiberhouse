@@ -103,13 +103,3 @@ func (p *Provider) RegisterTo(m IProviderManager) error {
 	return m.Register(p.Name(), p)
 }
 
-type DefaultServerProvider struct {
-	IProvider
-}
-
-// NewDefaultServerProvider 创建一个默认服务器提供者
-func NewDefaultServerProvider() *DefaultServerProvider {
-	return &DefaultServerProvider{
-		IProvider: NewProvider().SetName("default_server_provider").SetType(ProviderTypeDefault().GroupWebRunServer),
-	}
-}

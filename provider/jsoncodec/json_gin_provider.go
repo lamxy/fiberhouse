@@ -13,7 +13,7 @@ type JsonJCodecGinProvider struct {
 // NewJsonJCodecGinProvider 创建一个新的 JSON 编解码提供者
 func NewJsonJCodecGinProvider() *JsonJCodecGinProvider {
 	return &JsonJCodecGinProvider{
-		IProvider: fiberhouse.NewProvider().SetName("json_codec").SetTarget("gin").SetType(fiberhouse.ProviderTypeDefault().GroupJsonCodec),
+		IProvider: fiberhouse.NewProvider().SetName("json_codec").SetTarget("gin").SetType(fiberhouse.ProviderTypeDefault().GroupJsonCodecChoose),
 	}
 }
 

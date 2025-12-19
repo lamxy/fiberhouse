@@ -13,7 +13,10 @@ type JsonCodecPManager struct {
 // NewJsonCodecPManager 创建一个新的 JSON 编解码管理器
 func NewJsonCodecPManager(ctx fiberhouse.IApplicationContext) *JsonCodecPManager {
 	return &JsonCodecPManager{
-		IProviderManager: fiberhouse.NewProviderManager(ctx),
+		IProviderManager: fiberhouse.NewProviderManager(ctx).
+			SetName("JsonCodecPManager").
+			SetType(fiberhouse.ProviderTypeDefault().GroupJsonCodecChoose).
+			SetOrBindToLocation(fiberhouse.ProviderLocationDefault().LocationCoreEngineInit, true), // 设置并绑定到核心引擎初始化位置点
 	}
 }
 
@@ -31,7 +34,7 @@ func (m *JsonCodecPManager) LoadProvider(loadFunc ...fiberhouse.ProviderLoadFunc
 	)
 
 	for _, provider := range m.List() {
-		if provider.Type().GetTypeID() == fiberhouse.ProviderTypeDefault().GroupJsonCodec.GetTypeID() &&
+		if provider.Type().GetTypeID() == fiberhouse.ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() &&
 			provider.Name() == bootCfg.JsonCodec &&
 			provider.Target() == bootCfg.CoreType {
 			finalProvider = provider

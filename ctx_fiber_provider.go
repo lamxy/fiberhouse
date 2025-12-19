@@ -13,7 +13,7 @@ type CtxFiberProvider struct {
 
 func NewCtxFiberProvider() *CtxFiberProvider {
 	return &CtxFiberProvider{
-		IProvider: NewProvider().SetName("CtxFiberProvider").SetTarget("fiber").SetType(ProviderTypeDefault().GroupCoreContextType),
+		IProvider: NewProvider().SetName("CtxFiberProvider").SetTarget("fiber").SetType(ProviderTypeDefault().GroupCoreContextChoose),
 	}
 }
 

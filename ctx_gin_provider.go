@@ -13,7 +13,7 @@ type CtxGinProvider struct {
 
 func NewCtxGinProvider() *CtxGinProvider {
 	return &CtxGinProvider{
-		IProvider: NewProvider().SetName("CtxGinProvider").SetTarget("gin").SetType(ProviderTypeDefault().GroupCoreContextType),
+		IProvider: NewProvider().SetName("CtxGinProvider").SetTarget("gin").SetType(ProviderTypeDefault().GroupCoreContextChoose),
 	}
 }
 

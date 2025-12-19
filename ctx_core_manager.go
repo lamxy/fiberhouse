@@ -16,7 +16,7 @@ var (
 
 func NewCoreCtxPManager(appCtx IApplicationContext) *CoreCtxPManager {
 	return &CoreCtxPManager{
-		IProviderManager: NewProviderManager(appCtx).SetType(ProviderTypeDefault().GroupCoreContextType),
+		IProviderManager: NewProviderManager(appCtx).SetType(ProviderTypeDefault().GroupCoreContextChoose),
 	}
 }
 

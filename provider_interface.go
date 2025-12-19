@@ -32,6 +32,10 @@ type IProviderManager interface {
 	Type() IProviderType
 	// SetType 设置提供者类型，仅允许设置一次
 	SetType(IProviderType) IProviderManager
+	// 获取管理器的执行位置点
+	Location() IProviderLocation
+	// 设置管理器的执行位置点，仅允许设置一次
+	SetOrBindToLocation(IProviderLocation, ...bool) IProviderManager
 	GetContext() IContext
 	Register(name string, provider IProvider) error
 	Unregister(name string) error
@@ -48,9 +52,3 @@ type IState interface {
 	Set(uint8, string) IState
 	SetState(IState) IState
 }
-
-//type IContextCore interface {
-//	WithAppCtx(appCtx IApplicationContext) IContextCore
-//	GetCoreContext() providerCtx.ICoreContext
-//	Release()
-//}
