@@ -66,18 +66,20 @@ func (e *ProviderError) Error() string {
 	return e.msg
 }
 
-// Manager New一个基础的提供者管理器
+// ProviderManager New一个基础的提供者管理器，用于组合/继承和扩展
 type ProviderManager struct {
-	name      string
-	ctx       IContext
-	providers map[string]IProvider
-	lock      sync.RWMutex
-	pType     IProviderType
-	pTypeOnce sync.Once
-	location  IProviderLocation
+	name       string
+	sonManager IProviderManager
+	ctx        IContext
+	providers  map[string]IProvider
+	lock       sync.RWMutex
+	pType      IProviderType
+	pTypeOnce  sync.Once
+	location   IProviderLocation
+	isUnique   bool // 标识管理器是否处于唯一提供者模式
 }
 
-// NewManager 创建一个基础的提供者管理器
+// NewProviderManager 创建一个基础的提供者管理器，用于组合/继承和扩展
 func NewProviderManager(ctx IContext) *ProviderManager {
 	return &ProviderManager{
 		ctx:       ctx,
@@ -123,7 +125,7 @@ func (m *ProviderManager) Location() IProviderLocation {
 	return m.location
 }
 
-// SetLocation 设置管理器执行位置点标识
+// SetOrBindToLocation 设置管理器执行位置点标识
 func (m *ProviderManager) SetOrBindToLocation(l IProviderLocation, bind ...bool) IProviderManager {
 	m.location = l
 	// 绑定管理器到位点对象
@@ -139,15 +141,15 @@ func (m *ProviderManager) GetContext() IContext {
 }
 
 // Register 注册一个 provider
-func (m *ProviderManager) Register(name string, provider IProvider) error {
+func (m *ProviderManager) Register(provider IProvider) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	if _, exists := m.providers[name]; exists {
+	if _, exists := m.providers[provider.Name()]; exists {
 		return ErrProviderAlreadyExists
 	}
 
-	m.providers[name] = provider
+	m.providers[provider.Name()] = provider
 	return nil
 }
 
@@ -193,20 +195,76 @@ func (m *ProviderManager) List() []IProvider {
 // LoadProvider 加载 providers
 func (m *ProviderManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
 	m.Check()
-	// 如果提供了自定义加载函数，则使用该函数加载 providers
-	if len(loadFunc) > 0 {
-		return loadFunc[0](m)
+	if m.sonManager == nil {
+		return nil, errors.New("sonManager is not set, need to call the MountToParent method of the subclass instance to attach the subclass instance to the parent class's sonManager field")
 	}
-	return nil, errors.New("no provider load function provided")
+	return m.sonManager.LoadProvider(loadFunc...)
 }
 
+// IsUnique 返回管理器是否处于唯一提供者模式
+func (m *ProviderManager) IsUnique() bool {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.isUnique
+}
+
+// BindToUniqueProvider 绑定唯一的提供者到管理器
+// 确保管理器有且仅有一个提供者注册进来
+// 如果已存在相同的提供者记录，视为注册成功并设置唯一属性为 true
+// 如果已存在多个提供者，则 panic 错误
+// 返回管理器自身以支持链式调用
+func (m *ProviderManager) BindToUniqueProvider(provider IProvider) IProviderManager {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	providerCount := len(m.providers)
+
+	// 检查是否已存在多个提供者
+	if providerCount > 1 {
+		panic(fmt.Errorf("manager '%s' already has multiple providers (%d), cannot bind unique provider", m.name, providerCount))
+	}
+
+	// 检查是否已存在一个提供者
+	if providerCount == 1 {
+		// 检查是否是相同的提供者
+		if existingProvider, exists := m.providers[provider.Name()]; exists {
+			// 相同提供者，视为注册成功
+			if existingProvider == provider {
+				m.isUnique = true
+				return m
+			}
+		}
+		// 已存在不同的提供者，无法绑定
+		panic(fmt.Errorf("manager '%s' already has a different provider, cannot bind unique provider '%s'", m.name, provider.Name()))
+	}
+
+	// 没有提供者，直接注册
+	m.providers[provider.Name()] = provider
+	m.isUnique = true
+	return m
+}
+
+// MountToParent 将子类管理器实例挂载到父类管理器的 sonManager 字段上
+func (m *ProviderManager) MountToParent(son ...IProviderManager) IProviderManager {
+	if len(son) == 0 {
+		panic(errors.New(m.name + "MountToParent() must provide at least one IProviderManager"))
+	}
+	if m == son[0] {
+		panic(errors.New(m.name + "MountToParent() sonManager parameter cannot be the same as the parent manager instance"))
+	}
+	m.sonManager = son[0]
+	return m
+}
+
+// DefaultPManager 默认提供者管理器，实现默认的提供者加载逻辑
 type DefaultPManager struct {
 	IProviderManager
 }
 
-func NewDefaultManager(ctx IContext) *DefaultPManager {
+// NewDefaultPManager 创建一个默认提供者管理器实例，实现默认的提供者加载逻辑
+func NewDefaultPManager(ctx IContext) *DefaultPManager {
 	return &DefaultPManager{
-		IProviderManager: NewProviderManager(ctx).SetType(ProviderTypeDefault().GroupDefaultManagerType).SetOrBindToLocation(ProviderLocationDefault().ZeroLocation),
+		IProviderManager: NewProviderManager(ctx).SetName("DefaultPManager").SetType(ProviderTypeDefault().GroupDefaultManagerType).SetOrBindToLocation(ProviderLocationDefault().ZeroLocation),
 	}
 }
 
@@ -226,10 +284,12 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 
 	// TODO 记录最终未被加载的提供者列表日志
 	for _, provider := range m.List() {
-		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupProviderAutoRun.GetTypeID() { // 自动运行类型的提供者，不依赖Target约束可以直接初始化
+		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupProviderAutoRun.GetTypeID() {
+			// 自动运行类型的提供者，不依赖Target约束可以直接初始化
 			_, err := provider.Initialize(m.GetContext())
 			errs = append(errs, err)
-		} else if provider.Target() == bootCfg.CoreType { // 目标类型匹配启动配置的核心类型
+		} else if provider.Target() == bootCfg.CoreType {
+			// 目标类型匹配启动配置的核心类型的提供者，进行初始化
 			_, err := provider.Initialize(m.GetContext())
 			errs = append(errs, err)
 		}

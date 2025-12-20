@@ -98,8 +98,16 @@ func (p *Provider) SetType(typ IProviderType) IProvider {
 	return p
 }
 
-// RegisterToManager 将提供者注册到提供者管理器
+// RegisterToManager 将提供者注册到提供者管理器 // TODO 继承的子类提供者未重载该方法，将会注册父类的提供者实例到管理器中，需确认是否符合预期
 func (p *Provider) RegisterTo(m IProviderManager) error {
-	return m.Register(p.Name(), p)
+	return m.Register(p)
 }
 
+// BindToUniqueManagerIfSingleton 将提供者绑定到唯一的管理器  // TODO 继承的子类提供者未重载该方法，将会绑定父类的提供者实例到管理器中，需确认是否符合预期
+// 注意：传入的管理器对象应当是一个单例实现，以确保全局唯一性
+// 该方法内部调用管理器的 BindToUniqueProvider 方法进行彼此唯一绑定
+// 返回提供者自身以支持链式调用
+func (p *Provider) BindToUniqueManagerIfSingleton(m IProviderManager) IProvider {
+	m.BindToUniqueProvider(p)
+	return p
+}

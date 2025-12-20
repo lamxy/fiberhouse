@@ -9,12 +9,15 @@ type FrameDefaultPManager struct {
 }
 
 func NewFrameDefaultPManager(appCtx IApplicationContext) *FrameDefaultPManager {
-	return &FrameDefaultPManager{
+	son := &FrameDefaultPManager{
 		IProviderManager: NewProviderManager(appCtx).
-			SetType(ProviderTypeDefault().GroupFrameStarterChoose).
 			SetName("FrameDefaultPManager").
-			SetOrBindToLocation(ProviderLocationDefault().LocationFrameStarterCreate, true), // 设置并绑定到 FrameStarter 创建位置点
+			SetType(ProviderTypeDefault().GroupFrameStarterChoose).
+			SetOrBindToLocation(ProviderLocationDefault().LocationFrameStarterCreate, true), // 设置并绑定到 FrameStarterCreate 创建位置点
 	}
+	// 挂载子实例到父实例的sonManager字段，用上述继承的父类SetOrBindToLocation绑定子类实例到执行位置点
+	son.MountToParent(son)
+	return son
 }
 
 func (m *FrameDefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {

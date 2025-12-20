@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/lamxy/fiberhouse"
 	_ "github.com/lamxy/fiberhouse/example_main/docs" // swagger docs
 	"github.com/lamxy/fiberhouse/example_main/provider"
@@ -58,11 +59,20 @@ func main() {
 	fh := fiberhouse.New(&fiberhouse.BootConfig{
 		FrameType:  "default",
 		CoreType:   "fiber",
-		JsonCodec:  "sonic",
+		JsonCodec:  "sonic_json_codec", // sonic_json_codec|json_codec|go_json_codec|...
 		ConfigPath: "./example_config",
 		LogPath:    "./example_main/logs",
 	})
-	fh.WithProviders([]fiberhouse.IProvider{provider.NewFrameOptionInitProvider()}...).
-		WithManagers([]fiberhouse.IProviderManager{provider.NewFrameOptionInitManager(fh.AppCtx)}...).
-		RunServer()
+	providers := fiberhouse.DefaultProviders().List()
+	managers := fiberhouse.DefaultPManagers(fh.AppCtx).AndMore(provider.NewFrameOptionInitPManager(fh.AppCtx), provider.NewCoreOptionInitPManager(fh.AppCtx).MountToParent())
+
+	for _, manager := range managers {
+		fmt.Printf("Provider Manager: Name=%s, Type=%s, Location=%s\n", manager.Name(), manager.Type().GetTypeName(), manager.Location().GetLocationName())
+	}
+
+	for _, p := range providers {
+		fmt.Printf("Provider: Name=%s, Type=%s, Target=%s\n", p.Name(), p.Type().GetTypeName(), p.Target())
+	}
+
+	fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 }

@@ -48,22 +48,25 @@ const (
 
 // DefaultPType 预定义的默认类型对象集合
 //
-// 分组类默认逻辑
-// 1. GroupXXXChoose 选择其中唯一一个提供者执行（仅符合Target单个提供者执行，即匹配到提供者则中断后续提供者执行）（比如切换核心引擎、切换编解码器）
-// 2. GroupYYYType 类型，受Target条件和Name等约束，符合条件的多个提供者都可以执行（比如多个中间件注册、多个路由组注册）
-// 3. GroupZZZAutoRun 自动运行，不受条件约束，所有注册的提供者均执行一次（比如全局对象注册、默认启动对象初始化）
-// 其他自定义，又开发者自行约定和实现（比如自定义扩展逻辑）
+// 提供者类型分组的默认逻辑，同一类型的提供者都仅允许注册同一类型管理器并加载处理
+// 1. GroupXXXChoose Choose结尾，表示选择其中一个提供者执行（仅符合Target()单个提供者执行，即匹配到提供者则中断后续提供者执行）（比如切换核心引擎、切换编解码器）
+// 2. GroupYYYType Type结尾，表示受Target条件和Name等约束条件，符合条件的多个提供者都可以执行（比如多个中间件注册、多个路由组注册）
+// 3. GroupZZZAutoRun AutoRun结尾，表示自动运行，不受条件约束，所有注册的提供者均执行一次（比如全局对象注册、默认启动对象初始化）
+// 4. GroupWWWUnique Unique结尾，表示有且只有一个提供者存在和执行（比如框架启动器选项初始化）
+// 5. 其他自定义，又开发者自行约定和实现（比如自定义扩展逻辑）
 type DefaultPType struct {
-	ZeroType                    IProviderType
-	GroupDefaultManagerType     IProviderType
-	GroupJsonCodecChoose        IProviderType
-	GroupCoreEngineChoose       IProviderType
-	GroupMiddlewareRegisterType IProviderType
-	GroupRouteRegisterType      IProviderType
-	GroupFrameStarterChoose     IProviderType
-	GroupCoreStarterChoose      IProviderType
-	GroupProviderAutoRun        IProviderType
-	GroupCoreContextChoose      IProviderType
+	ZeroType                        IProviderType // 默认零值类型
+	GroupDefaultManagerType         IProviderType // 默认管理器类型组，该类型提供者都注册进默认管理器进行处理
+	GroupJsonCodecChoose            IProviderType // JSON编解码器选择组，该类型提供者中仅选择一个进行JSON编解码处理
+	GroupCoreEngineChoose           IProviderType // 核心引擎选择组，该类型提供者中仅选择一个进行核心引擎处理
+	GroupMiddlewareRegisterType     IProviderType // 中间件注册类型组，该类型提供者都注册进中间件链进行处理
+	GroupRouteRegisterType          IProviderType // 路由注册类型组，该类型提供者都注册进路由表进行处理
+	GroupFrameStarterChoose         IProviderType // 框架启动器选择组，该类型提供者中仅选择一个进行框架启动处理
+	GroupCoreStarterChoose          IProviderType // 核心启动器选择组，该类型提供者中仅选择一个进行核心启动处理
+	GroupProviderAutoRun            IProviderType // 提供者自动运行组，该类型提供者都自动运行一次进行处理
+	GroupCoreContextChoose          IProviderType // 核心上下文选择组，该类型提供者中仅选择一个进行核心上下文处理
+	GroupFrameStarterOptsInitUnique IProviderType // 框架启动器选项初始化唯一组，该类型提供者中仅唯一绑定一个管理器，并由该唯一的提供者进行处理
+	GroupCoreStarterOptsInitUnique  IProviderType // 核心启动器选项初始化唯一组，该类型提供者中仅唯一绑定一个管理器，并由该唯一的提供者进行处理
 }
 
 var (
@@ -76,16 +79,18 @@ func ProviderTypeDefault() *DefaultPType {
 	providerTypeOnce.Do(func() {
 		registry := ProviderTypeGen()
 		providerTypeInstance = &DefaultPType{
-			ZeroType:                    registry.MustDefault("__ZERO__"),
-			GroupDefaultManagerType:     registry.MustDefault("DefaultManagerType"),
-			GroupJsonCodecChoose:        registry.MustDefault("JsonCodecChoose"),
-			GroupCoreEngineChoose:       registry.MustDefault("CoreEngineChoose"),
-			GroupMiddlewareRegisterType: registry.MustDefault("MiddlewareRegisterType"),
-			GroupRouteRegisterType:      registry.MustDefault("RouteRegisterType"),
-			GroupFrameStarterChoose:     registry.MustDefault("FrameStarterChoose"),
-			GroupCoreStarterChoose:      registry.MustDefault("CoreStarterChoose"),
-			GroupProviderAutoRun:        registry.MustDefault("ProviderAutoRun"),
-			GroupCoreContextChoose:      registry.MustDefault("CoreContextChoose"),
+			ZeroType:                        registry.MustDefault("__ZERO__"),
+			GroupDefaultManagerType:         registry.MustDefault("DefaultManagerType"),
+			GroupJsonCodecChoose:            registry.MustDefault("JsonCodecChoose"),
+			GroupCoreEngineChoose:           registry.MustDefault("CoreEngineChoose"),
+			GroupMiddlewareRegisterType:     registry.MustDefault("MiddlewareRegisterType"),
+			GroupRouteRegisterType:          registry.MustDefault("RouteRegisterType"),
+			GroupFrameStarterChoose:         registry.MustDefault("FrameStarterChoose"),
+			GroupCoreStarterChoose:          registry.MustDefault("CoreStarterChoose"),
+			GroupProviderAutoRun:            registry.MustDefault("ProviderAutoRun"),
+			GroupCoreContextChoose:          registry.MustDefault("CoreContextChoose"),
+			GroupFrameStarterOptsInitUnique: registry.MustDefault("FrameStarterOptsInitUnique"),
+			GroupCoreStarterOptsInitUnique:  registry.MustDefault("CoreStarterOptsInitUnique"),
 		}
 	})
 	return providerTypeInstance

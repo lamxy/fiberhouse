@@ -10,12 +10,15 @@ type CoreStarterPManager struct {
 }
 
 func NewCoreStarterPManager(appCtx IApplicationContext) *CoreStarterPManager {
-	return &CoreStarterPManager{
+	son := &CoreStarterPManager{
 		IProviderManager: NewProviderManager(appCtx).
 			SetType(ProviderTypeDefault().GroupCoreStarterChoose).
 			SetName("CoreStarterPManager").
 			SetOrBindToLocation(ProviderLocationDefault().LocationCoreStarterCreate, true), // 设置并绑定执行位置点
 	}
+	// 让子管理器挂载到父管理器上
+	son.MountToParent(son)
+	return son
 }
 
 func (m *CoreStarterPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
@@ -38,13 +41,13 @@ func (m *CoreStarterPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, e
 	}
 
 	bootCfg := m.GetContext().(IApplicationContext).GetBootConfig()
-	defaultFrame := bootCfg.FrameType
-	if defaultFrame == "" {
-		defaultFrame = "default"
+	defaultCore := bootCfg.CoreType
+	if defaultCore == "" {
+		defaultCore = "fiber"
 	}
 
 	for _, provider := range m.List() {
-		if provider.Target() == defaultFrame {
+		if provider.Target() == defaultCore {
 			return provider.Initialize(m.GetContext(), func(provider IProvider) (any, error) {
 				return coreStarterOpts, nil
 			})

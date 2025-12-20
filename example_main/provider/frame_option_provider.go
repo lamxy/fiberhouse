@@ -7,13 +7,14 @@ import (
 	"github.com/lamxy/fiberhouse/option"
 )
 
+// FrameOptionInitProvider 框架启动器选项初始化提供者
 type FrameOptionInitProvider struct {
 	fiberhouse.IProvider
 }
 
 func NewFrameOptionInitProvider() *FrameOptionInitProvider {
 	return &FrameOptionInitProvider{
-		IProvider: fiberhouse.NewProvider().SetName("RegisterInitProvider").SetTarget("fiber").SetType(fiberhouse.ProviderTypeDefault().GroupProviderAutoRun),
+		IProvider: fiberhouse.NewProvider().SetName("FrameOptionInitProvider").SetTarget("fiber").SetType(fiberhouse.ProviderTypeDefault().GroupFrameStarterOptsInitUnique),
 	}
 }
 
