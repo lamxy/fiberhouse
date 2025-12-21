@@ -108,7 +108,7 @@ func (cg *CoreWithGin) initHttpServer(cfg appconfig.IAppConfig) {
 }
 
 // RegisterAppMiddleware 注册应用级的中间件
-func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter) {
+func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProviderManager) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -218,7 +218,7 @@ func (cg *CoreWithGin) loggerMiddleware() gin.HandlerFunc {
 }
 
 // RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器等
-func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter) {
+func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter, managers ...IProviderManager) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -239,7 +239,7 @@ func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter) {
 }
 
 // RegisterModuleSwagger 注册模块/子系统级的swagger
-func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter) {
+func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter, managers ...IProviderManager) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -257,7 +257,7 @@ func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter) {
 }
 
 // RegisterAppHooks 注册核心应用的生命周期钩子函数
-func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter) {
+func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderManager) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -272,7 +272,7 @@ func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter) {
 }
 
 // AppCoreRun 启动Gin应用并监听信号
-func (cg *CoreWithGin) AppCoreRun() {
+func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) {
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
 

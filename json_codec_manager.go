@@ -22,6 +22,7 @@ func NewJsonCodecPManager(ctx IApplicationContext) *JsonCodecPManager {
 	return son
 }
 
+// LoadProvider 重载加载提供者
 func (m *JsonCodecPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
 	m.Check()
 	if len(loadFunc) > 0 {
@@ -47,4 +48,15 @@ func (m *JsonCodecPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, err
 		return nil, errors.New("no matching json codec provider found")
 	}
 	return finalProvider.Initialize(m.GetContext())
+}
+
+// MountToParent 重载挂载到父级提供者管理器
+// 注意: 该方法的重载实现不是必须的，当NewXXX()内调用基类的MountToParent方法时，则无需重载该方法，二选一
+func (m *JsonCodecPManager) MountToParent(son ...IProviderManager) IProviderManager {
+	if len(son) > 0 {
+		m.IProviderManager.MountToParent(son[0])
+		return m
+	}
+	m.IProviderManager.MountToParent(m)
+	return m
 }

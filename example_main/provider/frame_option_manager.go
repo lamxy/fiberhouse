@@ -15,10 +15,12 @@ func NewFrameOptionInitPManager(ctx fiberhouse.IContext) *FrameOptionInitPManage
 		IProviderManager: fiberhouse.NewProviderManager(ctx).
 			SetName("FrameOptionManager").
 			SetType(fiberhouse.ProviderTypeDefault().GroupFrameStarterOptsInitUnique).
-			SetOrBindToLocation(fiberhouse.ProviderLocationDefault().LocationFrameStarterOptionInit, true). // 当前管理器绑定到框架启动器选项初始化位置点，并在该位置点执行
-			BindToUniqueProvider(NewFrameOptionInitProvider()),                                             // 当前管理器唯一绑定到 FrameOptionInitProvider，绑定后将无需初始化提供者
+			// 当前管理器绑定到框架启动器选项初始化位置点，并在该位置点执行
+			SetOrBindToLocation(fiberhouse.ProviderLocationDefault().LocationFrameStarterOptionInit, true).
+			// 当前管理器唯一绑定到 FrameOptionInitProvider，绑定后将无需初始化提供者
+			BindToUniqueProvider(NewFrameOptionInitProvider()),
 	}
-	// 挂载到父级提供者管理器
+	// 挂载子类实例到父级提供者管理器的sonManager字段上，确保多态行为正确
 	son.MountToParent(son)
 	return son
 }
@@ -32,10 +34,11 @@ func (m *FrameOptionInitPManager) LoadProvider(loadFunc ...fiberhouse.ProviderLo
 	return m.List()[0].Initialize(m.GetContext().(fiberhouse.IApplicationContext))
 }
 
-// MountToParent 重载挂载到父级提供者管理器
+// MountToParent 重载挂载到父级提供者管理器方法
+// 注意: 该方法的重载实现不是必须的，当NewFrameOptionInitPManager()内调用基类的MountToParent方法时，则无需重载该方法，二选一
 func (m *FrameOptionInitPManager) MountToParent(son ...fiberhouse.IProviderManager) fiberhouse.IProviderManager {
 	if len(son) > 0 {
-		m.IProviderManager.MountToParent(son[0])
+		m.IProviderManager.MountToParent(son...)
 		return m
 	}
 	m.IProviderManager.MountToParent(m)

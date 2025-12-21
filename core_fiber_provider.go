@@ -4,6 +4,7 @@ import (
 	"fmt"
 )
 
+// CoreFiberProvider 核心Fiber提供者
 type CoreFiberProvider struct {
 	IProvider
 }
@@ -14,6 +15,7 @@ func NewCoreFiberProvider() *CoreFiberProvider {
 	}
 }
 
+// Initialize 重载初始化核心Fiber提供者
 func (p *CoreFiberProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
 	p.Check()
 	if len(initFunc) == 0 {

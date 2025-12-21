@@ -26,7 +26,7 @@ func DefaultProviders() *DefaultProviderCollection {
 		defaultProvidersInstance = &DefaultProviderCollection{
 			providers: make([]IProvider, 0),
 		}
-		// 在此处添加默认的提供者
+		// 在此处添加默认的提供者，实例化后挂载到基类字段
 		defaultProvidersInstance.providers = append(defaultProvidersInstance.providers,
 			NewFrameDefaultProvider(),
 			NewCoreFiberProvider(),
@@ -99,12 +99,12 @@ func DefaultPManagers(ctx IApplicationContext) *DefaultPManagerCollection {
 		defaultPManagersInstance = &DefaultPManagerCollection{
 			managers: make([]IProviderManager, 0),
 		}
-		// 在此处添加默认的提供者管理器
+		// 在此处添加默认的提供者管理器，实例化后挂载到基类字段
 		defaultPManagersInstance.managers = append(defaultPManagersInstance.managers,
-			NewDefaultPManager(ctx),
-			NewFrameDefaultPManager(ctx),
-			NewCoreStarterPManager(ctx),
-			NewJsonCodecPManager(ctx),
+			NewDefaultPManager(ctx),                      // 初始化方法NewDefaultPManager内调用基类挂载方法已挂载子类实例，该管理器无需重载MountToParent并进行调用
+			NewFrameDefaultPManager(ctx).MountToParent(), // 对于未在初始化方法内调用基类挂载方法的子类管理器，则需要在此处调用子类重载MountToParent进行挂载
+			NewCoreStarterPManager(ctx).MountToParent(),  // 同上
+			NewJsonCodecPManager(ctx).MountToParent(),    // 同上
 			// TODO more...
 		)
 	})

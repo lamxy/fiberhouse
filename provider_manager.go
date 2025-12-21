@@ -1,7 +1,6 @@
 package fiberhouse
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 )
@@ -66,7 +65,9 @@ func (e *ProviderError) Error() string {
 	return e.msg
 }
 
-// ProviderManager New一个基础的提供者管理器，用于组合/继承和扩展
+// ProviderManager 提供者管理器接口的基类实现，通过组合模式支持子类扩展，子类只需重载所需方法即可实现多态行为
+// 注意：在调用提供者管理器接口的一些特性方法前，子类实例应通过 MountToParent 方法将子类实例挂载到该基类的 sonManager 字段，以确保多态行为的正确实现
+// 如LoadProvider()方法
 type ProviderManager struct {
 	name       string
 	sonManager IProviderManager
@@ -79,7 +80,7 @@ type ProviderManager struct {
 	isUnique   bool // 标识管理器是否处于唯一提供者模式
 }
 
-// NewProviderManager 创建一个基础的提供者管理器，用于组合/继承和扩展
+// NewProviderManager 创建一个基类的提供者管理器，用于组合和扩展
 func NewProviderManager(ctx IContext) *ProviderManager {
 	return &ProviderManager{
 		ctx:       ctx,
@@ -128,9 +129,13 @@ func (m *ProviderManager) Location() IProviderLocation {
 // SetOrBindToLocation 设置管理器执行位置点标识
 func (m *ProviderManager) SetOrBindToLocation(l IProviderLocation, bind ...bool) IProviderManager {
 	m.location = l
-	// 绑定管理器到位点对象
+	// 绑定管理器到执行位点对象
 	if len(bind) > 0 && bind[0] {
-		_ = l.Bind(m)
+		if m.sonManager != nil && m.sonManager != m { // 子类实例已挂载到基类的 sonManager 字段上，绑定子类实例到执行位点对象
+			_ = l.Bind(m.sonManager)
+		} else {
+			_ = l.Bind(m) // 绑定基类实例到执行位点对象
+		}
 	}
 	return m
 }
@@ -144,6 +149,11 @@ func (m *ProviderManager) GetContext() IContext {
 func (m *ProviderManager) Register(provider IProvider) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+
+	// 如果管理器处于唯一提供者模式,且已有提供者,则拒绝注册
+	if m.isUnique && len(m.providers) > 0 {
+		return fmt.Errorf("manager '%s' is in unique provider mode, cannot register another provider", m.name)
+	}
 
 	if _, exists := m.providers[provider.Name()]; exists {
 		return ErrProviderAlreadyExists
@@ -196,7 +206,10 @@ func (m *ProviderManager) List() []IProvider {
 func (m *ProviderManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
 	m.Check()
 	if m.sonManager == nil {
-		return nil, errors.New("sonManager is not set, need to call the MountToParent method of the subclass instance to attach the subclass instance to the parent class's sonManager field")
+		return nil, fmt.Errorf("sonManager from base class '%s' is not set, need to call the MountToParent method of the subclass instance to attach the subclass instance to the parent class's sonManager field", m.name)
+	}
+	if m == m.sonManager {
+		return nil, fmt.Errorf("sonManager from base class '%s' cannot be the same as the parent manager instance", m.name)
 	}
 	return m.sonManager.LoadProvider(loadFunc...)
 }
@@ -247,10 +260,10 @@ func (m *ProviderManager) BindToUniqueProvider(provider IProvider) IProviderMana
 // MountToParent 将子类管理器实例挂载到父类管理器的 sonManager 字段上
 func (m *ProviderManager) MountToParent(son ...IProviderManager) IProviderManager {
 	if len(son) == 0 {
-		panic(errors.New(m.name + "MountToParent() must provide at least one IProviderManager"))
+		panic(fmt.Errorf("MountToParent() from base class '%s' must provide at least one IProviderManager", m.name))
 	}
 	if m == son[0] {
-		panic(errors.New(m.name + "MountToParent() sonManager parameter cannot be the same as the parent manager instance"))
+		panic(fmt.Errorf("MountToParent() form base class '%s', sonManager parameter cannot be the same as the parent manager instance", m.name))
 	}
 	m.sonManager = son[0]
 	return m
@@ -263,9 +276,16 @@ type DefaultPManager struct {
 
 // NewDefaultPManager 创建一个默认提供者管理器实例，实现默认的提供者加载逻辑
 func NewDefaultPManager(ctx IContext) *DefaultPManager {
-	return &DefaultPManager{
-		IProviderManager: NewProviderManager(ctx).SetName("DefaultPManager").SetType(ProviderTypeDefault().GroupDefaultManagerType).SetOrBindToLocation(ProviderLocationDefault().ZeroLocation),
+	son := &DefaultPManager{
+		IProviderManager: NewProviderManager(ctx).
+			SetName("DefaultPManager").
+			SetType(ProviderTypeDefault().GroupDefaultManagerType).
+			SetOrBindToLocation(ProviderLocationDefault().ZeroLocation),
 	}
+	// 让子管理器挂载到父管理器上，确保多态行为的正确实现
+	// 无需重载MountToParent方法，NewDefaultPManager()内已调基类挂载方法进行了挂载
+	son.MountToParent(son)
+	return son
 }
 
 func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
@@ -300,4 +320,15 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 	}
 
 	return nil, nil
+}
+
+// MountToParent 重载挂载到父级提供者管理器
+// 注意: 该方法的重载实现不是必须的，当NewXXX()内调用基类的MountToParent方法时，则无需重载该方法，二选一
+func (m *DefaultPManager) MountToParent(son ...IProviderManager) IProviderManager {
+	if len(son) > 0 {
+		m.IProviderManager.MountToParent(son[0])
+		return m
+	}
+	m.IProviderManager.MountToParent(m)
+	return m
 }

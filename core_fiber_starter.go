@@ -145,7 +145,7 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...
 }
 
 // RegisterAppMiddleware 注册应用级的中间件
-func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter) {
+func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IProviderManager) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
@@ -188,7 +188,7 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter) {
 }
 
 // RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器、swagger、etc...
-func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter) {
+func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter, managers ...IProviderManager) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
@@ -201,7 +201,7 @@ func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter) {
 }
 
 // RegisterModuleSwagger 注册模块/子系统级的swagger
-func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter) {
+func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter, managers ...IProviderManager) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
@@ -215,7 +215,7 @@ func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter) {
 }
 
 // RegisterAppHooks 注册核心应用的生命周期钩子函数（如果存在）
-func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter) {
+func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProviderManager) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
@@ -249,7 +249,7 @@ func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter) {
 }
 
 // AppCoreRun 监听核心应用套接字
-func (cf *CoreWithFiber) AppCoreRun() {
+func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) {
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM) // 监听信号
 

@@ -16,9 +16,9 @@ func NewCoreOptionInitPManager(ctx fiberhouse.IContext) *CoreOptionInitPManager 
 			SetName("CoreOptionInitPManager").
 			SetType(fiberhouse.ProviderTypeDefault().GroupCoreStarterOptsInitUnique).
 			SetOrBindToLocation(fiberhouse.ProviderLocationDefault().LocationCoreStarterOptionInit, true). // 当前管理器绑定到核心启动器选项初始化位置点，并在该位置点执行
-			BindToUniqueProvider(NewCoreOptionInitProvider()),                                             // 当前管理器唯一绑定到CoreOptionInitProvider，绑定后将无需初始化提供者
+			BindToUniqueProvider(NewCoreOptionInitProvider()),                                             // 当前管理器唯一绑定到CoreOptionInitProvider，绑定后将无需再次初始化该提供者
 	}
-	// 挂载到父级提供者管理器
+	// 挂载到父级管理器上
 	son.MountToParent(son)
 	return son
 }

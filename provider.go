@@ -5,14 +5,18 @@ import (
 	"sync"
 )
 
+// Provider 提供者接口的基类实现，通过组合模式支持子类扩展，子类只需重载所需方法即可实现多态行为
+// 注意：在调用提供者接口的一些特性方法前，子类实例应通过 MountToParent 方法将子类实例挂载到该基类的 sonProvider 字段，以确保多态行为的正确实现
+// 如Initialize、RegisterTo、BindToUniqueManagerIfSingleton
 type Provider struct {
-	name      string
-	version   string
-	target    string
-	status    IState
-	statOnce  sync.Once
-	pType     IProviderType
-	pTypeOnce sync.Once
+	sonProvider IProvider // 允许子类继承该接口以实现多态
+	name        string
+	version     string
+	target      string
+	status      IState
+	statOnce    sync.Once
+	pType       IProviderType
+	pTypeOnce   sync.Once
 }
 
 // NewProvider 创建一个基础提供者
@@ -43,10 +47,23 @@ func (p *Provider) Version() string {
 // Initialize 初始化提供者
 func (p *Provider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
 	p.Check()
-	if len(initFunc) > 0 {
-		return initFunc[0](p)
+	// 检查sonProvider字段是否存在
+	err := p.checkSonProvider()
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("no initialize function provided for provider '%s'", p.name)
+	return p.sonProvider.Initialize(ctx, initFunc...)
+}
+
+// checkSonProvider 检查子类提供者是否设置
+func (p *Provider) checkSonProvider() error {
+	if p.sonProvider == nil {
+		return fmt.Errorf("sonManager from base class '%s' is not set, need to call the MountToParent method of the subclass instance to attach the subclass instance to the parent class's sonManager field", p.name)
+	}
+	if p.sonProvider == p {
+		return fmt.Errorf("sonManager from base class '%s' cannot be the same instance as the parent manager, please check the MountToParent method parameter", p.name)
+	}
+	return nil
 }
 
 // Status 返回提供者状态
@@ -98,16 +115,32 @@ func (p *Provider) SetType(typ IProviderType) IProvider {
 	return p
 }
 
-// RegisterToManager 将提供者注册到提供者管理器 // TODO 继承的子类提供者未重载该方法，将会注册父类的提供者实例到管理器中，需确认是否符合预期
+// RegisterTo 将提供者注册到管理器
+// 注意：此方法会注册 sonProvider 字段指向的实例，子类型应通过 MountToParent 设置该字段，否则避免该基类方法
 func (p *Provider) RegisterTo(m IProviderManager) error {
-	return m.Register(p)
+	if err := p.checkSonProvider(); err != nil {
+		return err
+	}
+	return m.Register(p.sonProvider)
 }
 
-// BindToUniqueManagerIfSingleton 将提供者绑定到唯一的管理器  // TODO 继承的子类提供者未重载该方法，将会绑定父类的提供者实例到管理器中，需确认是否符合预期
+// BindToUniqueManagerIfSingleton 将提供者绑定到唯一的管理器
 // 注意：传入的管理器对象应当是一个单例实现，以确保全局唯一性
 // 该方法内部调用管理器的 BindToUniqueProvider 方法进行彼此唯一绑定
 // 返回提供者自身以支持链式调用
 func (p *Provider) BindToUniqueManagerIfSingleton(m IProviderManager) IProvider {
 	m.BindToUniqueProvider(p)
+	return p
+}
+
+// MountToParent 将当前提供者挂载到父级提供者 sonManager 字段上
+func (p *Provider) MountToParent(son ...IProvider) IProvider {
+	if len(son) == 0 {
+		panic(fmt.Errorf("MountToParent() from base class '%s' must provide at least one IProviderManager", p.name))
+	}
+	if p == son[0] {
+		panic(fmt.Errorf("MountToParent() form base class '%s', sonManager parameter cannot be the same as the parent manager instance", p.name))
+	}
+	p.sonProvider = son[0]
 	return p
 }

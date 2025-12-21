@@ -92,7 +92,7 @@ func (fa *FrameApplication) RegisterToCtx(as ApplicationStarter) {
 // 初始化必要的全局对象和组件
 // 注册自定义新增语言的验证器实例到验证其包装器中
 // 注册自定义验证器tag和tag的语言翻译
-func (fa *FrameApplication) RegisterApplicationGlobals() {
+func (fa *FrameApplication) RegisterApplicationGlobals(managers ...IProviderManager) {
 	if fa.GetContext().GetAppState() {
 		return
 	}
@@ -209,7 +209,7 @@ func (fa *FrameApplication) RegisterLoggerWithOriginToContainer() {
 }
 
 // RegisterTaskServer 注册启动异步任务服务器后台工作器服务
-func (fa *FrameApplication) RegisterTaskServer() {
+func (fa *FrameApplication) RegisterTaskServer(managers ...IProviderManager) {
 	if fa.GetContext().GetAppState() {
 		return
 	}
@@ -231,7 +231,7 @@ func (fa *FrameApplication) RegisterTaskServer() {
 }
 
 // RegisterGlobalsKeepalive 注册需要保活的全局对象后台健康检测
-func (fa *FrameApplication) RegisterGlobalsKeepalive() {
+func (fa *FrameApplication) RegisterGlobalsKeepalive(managers ...IProviderManager) {
 	if fa.GetContext().GetAppState() {
 		return
 	}

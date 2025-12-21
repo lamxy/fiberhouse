@@ -6,7 +6,8 @@ import (
 	"sync"
 )
 
-// IProviderLocation 提供者位点接口
+// IProviderLocation 提供者位点接口，用于标识提供者的执行位置，应用启动流程或生命周期的相关阶段，以及其他自定义执行点
+// 位置点对象可以收集绑定到该位置点的提供者管理器，并按顺序执行这些管理器中的提供者，实现灵活地扩展和定制化行为
 type IProviderLocation interface {
 	// GetLocationID 获取位点序号
 	GetLocationID() uint8
@@ -92,25 +93,31 @@ const (
 // 位点用于标识提供者的执行位置，相同位点的管理器会被收集并按顺序执行
 // 1. LocationXXXBefore 在某个阶段之前执行
 // 2. LocationXXXAfter 在某个阶段之后执行
-// 3. LocationXXXInit 在初始化阶段执行
+// 3. LocationXXXInit 在某个初始化阶段执行
 // 4. LocationXXXRun 在运行阶段执行
+// 5. LocationXXXCreate 在创建阶段执行
 type DefaultPLocation struct {
-	ZeroLocation                   IProviderLocation // 初始化默认位点/零位点
+	ZeroLocation                   IProviderLocation // 初始化默认位点/零位点/保留为初始化状态
 	LocationBootStrapConfig        IProviderLocation // 引导配置阶段位点
 	LocationFrameStarterOptionInit IProviderLocation // 框架启动器选项初始化位点
 	LocationCoreStarterOptionInit  IProviderLocation // 核心启动器选项初始化位点
 	LocationFrameStarterCreate     IProviderLocation // 创建框架启动器位点
 	LocationCoreStarterCreate      IProviderLocation // 创建核心引擎启动器位点
 	LocationGlobalInit             IProviderLocation // 全局初始化位点
+	LocationGlobalKeepaliveInit    IProviderLocation // 全局对象保活初始化位点
 	LocationCoreEngineInit         IProviderLocation // 核心引擎初始化位点
-	LocationAppMiddlewareInit      IProviderLocation // 注册核心应用中间件初始化位点
+	LocationCoreHookInit           IProviderLocation // 核心引擎钩子（如有）初始化位点
+	LocationAppMiddlewareInit      IProviderLocation // 注册应用中间件初始化位点
 	LocationModuleMiddlewareInit   IProviderLocation // 注册模块中间件初始化位点
-	LocationRouteRegisterInit      IProviderLocation // 路由注册初始化位点
-	LocationBeforeRunServer        IProviderLocation // 运行服务前位点
-	LocationRunServer              IProviderLocation // 运行服务位点
-	LocationAfterRunServer         IProviderLocation // 运行服务后位点
-	LocationBeforeShutdown         IProviderLocation // 服务关闭前位点
-	LocationAfterShutdown          IProviderLocation // 服务关闭后位点
+	LocationRouteRegisterInit      IProviderLocation // 注册路由初始化位点
+	LocationTaskServerInit         IProviderLocation // 任务服务器初始化位点
+	LocationModuleSwaggerInit      IProviderLocation // 注册Swagger初始化位点
+	LocationServerRunBefore        IProviderLocation // 服务运行前位点
+	LocationServerRun              IProviderLocation // 服务运行位点
+	LocationServerRunAfter         IProviderLocation // 服务运行后位点
+	LocationServerShutdownBefore   IProviderLocation // 服务关闭前位点
+	LocationServerShutdown         IProviderLocation // 服务关闭位点
+	LocationServerShutdownAfter    IProviderLocation // 服务关闭后位点
 }
 
 var (
@@ -130,15 +137,20 @@ func ProviderLocationDefault() *DefaultPLocation {
 			LocationFrameStarterCreate:     registry.MustDefault("FrameStarterCreate"),     // 创建框架启动器位点
 			LocationCoreStarterCreate:      registry.MustDefault("CoreStarterCreate"),      // 创建核心引擎启动器位点
 			LocationGlobalInit:             registry.MustDefault("GlobalInit"),             // 全局初始化位点
+			LocationGlobalKeepaliveInit:    registry.MustDefault("GlobalKeepaliveInit"),    // 全局对象保活初始化位点
 			LocationCoreEngineInit:         registry.MustDefault("CoreEngineInit"),         // 核心引擎初始化位点
+			LocationCoreHookInit:           registry.MustDefault("CoreHookInit"),           // 核心引擎钩子（如有）初始化位点
 			LocationAppMiddlewareInit:      registry.MustDefault("AppMiddlewareInit"),      // 注册核心应用中间件初始化位点
 			LocationModuleMiddlewareInit:   registry.MustDefault("ModuleMiddlewareInit"),   // 注册模块中间件初始化位点
-			LocationRouteRegisterInit:      registry.MustDefault("RouteRegisterInit"),      // 路由注册初始化位点
-			LocationBeforeRunServer:        registry.MustDefault("BeforeRunServer"),        // 运行服务前位点
-			LocationRunServer:              registry.MustDefault("RunServer"),              // 运行服务位点
-			LocationAfterRunServer:         registry.MustDefault("AfterRunServer"),         // 运行服务后位点
-			LocationBeforeShutdown:         registry.MustDefault("BeforeShutdown"),         // 服务关闭前位点
-			LocationAfterShutdown:          registry.MustDefault("AfterShutdown"),          // 服务关闭后位点
+			LocationRouteRegisterInit:      registry.MustDefault("RouteRegisterInit"),      // 注册路由初始化位点
+			LocationTaskServerInit:         registry.MustDefault("TaskServerInit"),         // 任务服务器初始化位点
+			LocationModuleSwaggerInit:      registry.MustDefault("ModuleSwaggerInit"),      // 注册Swagger初始化位点
+			LocationServerRunBefore:        registry.MustDefault("ServerRunBefore"),        // 服务运行前位点
+			LocationServerRun:              registry.MustDefault("ServerRun"),              // 服务运行位点
+			LocationServerRunAfter:         registry.MustDefault("ServerRunAfter"),         // 服务运行后位点
+			LocationServerShutdownBefore:   registry.MustDefault("ServerShutdownBefore"),   // 服务关闭前位点
+			LocationServerShutdown:         registry.MustDefault("ServerShutdown"),         // 服务关闭位点
+			LocationServerShutdownAfter:    registry.MustDefault("ServerShutdownAfter"),    // 服务关闭后位点
 		}
 	})
 	return providerLocationInstance

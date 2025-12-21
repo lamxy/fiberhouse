@@ -54,7 +54,6 @@ const (
 	// DefaultPageSize 默认分页大小
 	DefaultPageSize = 20
 
-	// Provider自动运行标识
-	ProviderTypeAutoRunFlag   = "__provider_auto_run__"
-	ProviderTypeServerRunFlag = "__provider_server_run__"
+	// 默认框架启动器提供者类型标识
+	ProviderTypeDefaultFrameStarter = "DefaultFrameStarter"
 )

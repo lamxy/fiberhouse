@@ -38,7 +38,10 @@ type IProvider interface {
 	// 注意：传入的管理器对象应当是一个单例实现，以确保全局唯一性
 	// 该方法内部调用管理器的 BindToUniqueProvider 方法进行彼此唯一绑定
 	// 返回提供者自身以支持链式调用
+	// 生效条件：1. 传入的管理器对象是单例实现；2. 子类提供者重载该方法且子类实例本身调用该方法；3. 需要将子类实例反向挂载到父类属性上
 	BindToUniqueManagerIfSingleton(IProviderManager) IProvider
+	// 将当前提供者挂载到父级提供者中
+	MountToParent(son ...IProvider) IProvider
 }
 
 // Manager 提供者管理器接口

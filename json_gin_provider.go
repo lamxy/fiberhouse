@@ -16,7 +16,7 @@ func NewJsonJCodecGinProvider() *JsonJCodecGinProvider {
 	}
 }
 
-// Initialize 初始化 JSON 编解码提供者
+// Initialize 重载初始化 JSON 编解码提供者
 func (j *JsonJCodecGinProvider) Initialize(ctx IContext, fn ...ProviderInitFunc) (any, error) {
 	j.Check()
 	if j.Status() == StateLoaded {

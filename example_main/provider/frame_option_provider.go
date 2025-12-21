@@ -14,7 +14,10 @@ type FrameOptionInitProvider struct {
 
 func NewFrameOptionInitProvider() *FrameOptionInitProvider {
 	return &FrameOptionInitProvider{
-		IProvider: fiberhouse.NewProvider().SetName("FrameOptionInitProvider").SetTarget("fiber").SetType(fiberhouse.ProviderTypeDefault().GroupFrameStarterOptsInitUnique),
+		IProvider: fiberhouse.NewProvider().
+			SetName("FrameOptionInitProvider").
+			SetTarget("fiber").
+			SetType(fiberhouse.ProviderTypeDefault().GroupFrameStarterOptsInitUnique),
 	}
 }
 

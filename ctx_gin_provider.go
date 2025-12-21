@@ -7,6 +7,7 @@ import (
 	providerCtx "github.com/lamxy/fiberhouse/provider/context"
 )
 
+// CtxGinProvider Gin 框架上下文提供者
 type CtxGinProvider struct {
 	IProvider
 }

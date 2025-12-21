@@ -16,29 +16,45 @@ type WebApplication struct {
 }
 
 // RunApplicationStarter 接受实现了ApplicationStarter接口的实例，执行应用启动流程
-func RunApplicationStarter(starter ApplicationStarter, jsonCodecManagerOrMore ...IProviderManager) {
+func RunApplicationStarter(starter ApplicationStarter, managers ...IProviderManager) {
 	// 应用启动流程，保持执行顺序
 	starter.RegisterToCtx(starter)
-	starter.RegisterApplicationGlobals()
-	starter.InitCoreApp(starter.GetFrameApp(), jsonCodecManagerOrMore...)
-	starter.RegisterAppHooks(starter.GetFrameApp())
-	starter.RegisterAppMiddleware(starter.GetFrameApp())
-	starter.RegisterModuleInitialize(starter.GetFrameApp())
-	starter.RegisterModuleSwagger(starter.GetFrameApp())
-	starter.RegisterTaskServer()
-	starter.RegisterGlobalsKeepalive()
-	starter.AppCoreRun()
+	starter.RegisterApplicationGlobals(managers...)
+	starter.InitCoreApp(starter.GetFrameApp(), managers...)
+	starter.RegisterAppHooks(starter.GetFrameApp(), managers...)
+	starter.RegisterAppMiddleware(starter.GetFrameApp(), managers...)
+	starter.RegisterModuleInitialize(starter.GetFrameApp(), managers...)
+	starter.RegisterModuleSwagger(starter.GetFrameApp(), managers...)
+	starter.RegisterTaskServer(managers...)
+	starter.RegisterGlobalsKeepalive(managers...)
+	starter.AppCoreRun(managers...)
 }
 
 // BootConfig 启动配置
 type BootConfig struct {
-	FrameType  string
-	CoreType   string
-	JsonCodec  string
+	// AppId 应用唯一标识符
+	AppId string
+	// AppName 应用名称
+	AppName string
+	// Version 应用版本
+	Version string
+	// BuildDate 应用构建日期
+	Date string
+	// FrameType 框架启动器的类型标识，由提供者的Target属性区分，如FiberHouse默认提供的"DefaultFrameStarter"、其他更多FrameStarter实现的标识
+	// 见constant.ProviderTypeDefaultFrameStarter
+	FrameType string
+	// CoreType 核心启动器的类型标识，由提供者的target属性区分，如FiberHouse提供的"fiber"、"gin"、其他选择
+	CoreType string
+	// JsonCodec json编解码器类型标识，由提供者的name属性区分，如"json_codec"、"sonic_json_codec"、"go_json_codec"、其他选择
+	JsonCodec string
+	// ConfigPath 全局应用配置文件的路径
 	ConfigPath string
-	LogPath    string
-	kvStorage  map[string]any // once初始化一次
-	kvOnce     sync.Once
+	// LogPath 全局应用日志文件的路径
+	LogPath string
+	// kvStorage 键值存储映射，用于存储额外自定义的属性
+	kvStorage map[string]any
+	// kvOnce 初始化一次
+	kvOnce sync.Once
 }
 
 // InitKVS 初始化键值存储
@@ -66,7 +82,7 @@ func (bc *BootConfig) GetValue(key string) (any, error) {
 	return nil, fmt.Errorf("BootConfig kvStorage not found key: %s", key)
 }
 
-// FiberHouse
+// FiberHouse FiberHouse应用运行器，用于配置和运行基于底层可切换框架的Web应用
 type FiberHouse struct {
 	AppCtx           IApplicationContext
 	container        *globalmanager.GlobalManager
@@ -96,6 +112,17 @@ func New(cfg *BootConfig) *FiberHouse {
 	// 初始化全局应用上下文
 	appContext := NewAppContextOnce(appCfg, logger)
 
+	if cfg.AppId != "" {
+		appCfg.SetAppId(cfg.AppId)
+	}
+
+	if cfg.AppName != "" {
+		appCfg.SetAppName(cfg.AppName)
+	}
+	if cfg.Version != "" {
+		appCfg.SetVersion(cfg.Version)
+	}
+
 	// 注册全局应用上下文到全局管容器
 	fh.container.Register(constant.GlobalAppIContext, func() (interface{}, error) {
 		return appContext, nil
@@ -108,7 +135,7 @@ func New(cfg *BootConfig) *FiberHouse {
 	return fh
 }
 
-// Default 创建默认的FiberHouse实例
+// Default TODO 创建默认的FiberHouse实例
 func Default(opts ...BootConfigOption) *FiberHouse {
 	return nil
 }
@@ -137,12 +164,18 @@ func (fh *FiberHouse) WithPManagers(managers ...IProviderManager) *FiberHouse {
 	return fh
 }
 
+// RunServer 运行应用服务器 TODO 记录已收集的提供者和已加载和未加载的提供者日志
 func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	// 引导配置完成位置点，获取该位点的提供者管理器列表并加载提供者
 	ms := ProviderLocationDefault().LocationBootStrapConfig.GetManagers()
 	if len(ms) > 0 {
 		for _, m := range ms {
-			_, _ = m.LoadProvider()
+			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
+				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
+					return fh, nil
+				})
+			}
+			break
 		}
 	}
 
@@ -167,7 +200,6 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		for _, mgr := range fh.managers {
 			if pdr.Type().GetTypeID() == mgr.Type().GetTypeID() {
 				matched = true
-				//err := pdr.RegisterTo(mgr)  // TODO 提供者调用父类的注册方法，将提供者的父类实例注册到了管理器，管理器调用提供者初始化时调用的为父类提供者的初始化方法
 				err := mgr.Register(pdr) // 注册子类提供者实例
 				if err != nil {
 					// 注册失败（如已注册同名提供者）记录日志即可，不影响匹配状态
@@ -215,7 +247,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	if len(frameOptions) == 0 {
 		logger.WarnWith(cfg.LogOriginFrame()).Msg("FiberHouse: frameStarterOpts not set, loading from FrameStarterOptionInit location point")
 		// 配置项未设置，从框架启动器选项位置点加载
-		ms = ProviderLocationDefault().LocationFrameStarterOptionInit.GetManagers()
+		ms := ProviderLocationDefault().LocationFrameStarterOptionInit.GetManagers()
 		if len(ms) > 0 {
 			anyFrameOpts, err := ms[0].LoadProvider()
 			if err != nil {
@@ -238,7 +270,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		return frameOptions, nil
 	})
 	if err != nil {
-		logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msgf("FrameStarterCreate provider load failed")
+		logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msg("FrameStarterCreate provider load failed")
 	}
 	frameStarter, ok := anyStarter.(FrameStarter)
 	if !ok {
@@ -286,8 +318,63 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		CoreStarter:  coreStarter,
 	}
 
-	// TODO 核心启动器接口改造增加传入响应的提供者管理器（如果有需要） 此处可以添加更多的位置点管理器
+	// 应用启动流程，保持执行顺序
+	appStarter.RegisterToCtx(appStarter)
+	// 注册全局应用对象位置点
+	appStarter.RegisterApplicationGlobals(ProviderLocationDefault().LocationGlobalInit.GetManagers()...)
+	// 初始化应用核心位置点
+	appStarter.InitCoreApp(appStarter.GetFrameApp(), ProviderLocationDefault().LocationCoreEngineInit.GetManagers()...)
+	// 应用钩子函数注册位置点
+	appStarter.RegisterAppHooks(appStarter.GetFrameApp(), ProviderLocationDefault().LocationCoreHookInit.GetManagers()...)
+	// 应用中间件注册位置点
+	appStarter.RegisterAppMiddleware(appStarter.GetFrameApp(), ProviderLocationDefault().LocationAppMiddlewareInit.GetManagers()...)
 
-	// 应用启动
-	RunApplicationStarter(appStarter, ProviderLocationDefault().LocationCoreEngineInit.GetManagers()...)
+	// 模块初始化位置点，合并模块中间件初始化和路由注册位置点的管理器列表
+	moduleMS := ProviderLocationDefault().LocationModuleMiddlewareInit.GetManagers()
+	routeMS := ProviderLocationDefault().LocationRouteRegisterInit.GetManagers()
+	ms = make([]IProviderManager, 0, len(moduleMS)+len(routeMS))
+	ms = append(ms, moduleMS...)
+	ms = append(ms, routeMS...)
+	appStarter.RegisterModuleInitialize(appStarter.GetFrameApp(), ms...)
+
+	// Swagger模块初始化位置点
+	appStarter.RegisterModuleSwagger(appStarter.GetFrameApp(), ProviderLocationDefault().LocationModuleSwaggerInit.GetManagers()...)
+	// 异步任务服务器注册位置点
+	appStarter.RegisterTaskServer(ProviderLocationDefault().LocationTaskServerInit.GetManagers()...)
+	// 全局对象保活注册位置点
+	appStarter.RegisterGlobalsKeepalive(ProviderLocationDefault().LocationGlobalKeepaliveInit.GetManagers()...)
+
+	// 运行前位置点
+	beforeRuns := ProviderLocationDefault().LocationServerRunBefore.GetManagers()
+	if len(beforeRuns) > 0 {
+		for _, m := range beforeRuns {
+			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
+				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
+					return appStarter, nil
+				})
+				break
+			}
+		}
+	}
+
+	// 应用核心运行位置点
+	runMS := ProviderLocationDefault().LocationServerRun.GetManagers()
+	shutdownMS := ProviderLocationDefault().LocationServerShutdown.GetManagers()
+	ms = make([]IProviderManager, 0, len(runMS)+len(shutdownMS))
+	ms = append(ms, runMS...)
+	ms = append(ms, shutdownMS...)
+	appStarter.AppCoreRun(ms...)
+
+	// 运行后位置点
+	afterRun := ProviderLocationDefault().LocationServerRunAfter.GetManagers()
+	if len(afterRun) > 0 {
+		for _, m := range afterRun {
+			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
+				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
+					return appStarter, nil
+				})
+				break
+			}
+		}
+	}
 }

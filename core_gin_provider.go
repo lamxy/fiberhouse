@@ -4,6 +4,7 @@ import (
 	"fmt"
 )
 
+// CoreGinProvider 核心Gin提供者
 type CoreGinProvider struct {
 	IProvider
 }
@@ -14,6 +15,7 @@ func NewCoreGinProvider() *CoreGinProvider {
 	}
 }
 
+// Initialize 重载初始化核心Gin提供者
 func (p *CoreGinProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
 	p.Check()
 	if len(initFunc) == 0 {

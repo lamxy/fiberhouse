@@ -5,6 +5,7 @@ import (
 	"sync"
 )
 
+// CoreCtxPManager 核心上下文提供者管理器
 type CoreCtxPManager struct {
 	IProviderManager
 }
@@ -14,12 +15,14 @@ var (
 	coreCtxOnce     sync.Once
 )
 
+// NewCoreCtxPManager 创建核心上下文提供者管理器
 func NewCoreCtxPManager(appCtx IApplicationContext) *CoreCtxPManager {
 	return &CoreCtxPManager{
 		IProviderManager: NewProviderManager(appCtx).SetType(ProviderTypeDefault().GroupCoreContextChoose),
 	}
 }
 
+// NewCoreCtxPManagerOnce 单例模式创建核心上下文提供者管理器
 func NewCoreCtxPManagerOnce(ctx IApplicationContext) *CoreCtxPManager {
 	coreCtxOnce.Do(func() {
 		coreCtxPManager = NewCoreCtxPManager(ctx)
@@ -27,6 +30,7 @@ func NewCoreCtxPManagerOnce(ctx IApplicationContext) *CoreCtxPManager {
 	return coreCtxPManager
 }
 
+// LoadProvider 重载加载提供者
 func (m *CoreCtxPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
 	m.Check()
 	if len(loadFunc) == 0 {
@@ -45,4 +49,15 @@ func (m *CoreCtxPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 		}
 	}
 	return nil, errors.New("no core context provider found")
+}
+
+// MountToParent 重载挂载到父级提供者管理器
+// 注意: 该方法的重载实现不是必须的，当NewXXX()内调用基类的MountToParent方法时，则无需重载该方法，二选一
+func (m *CoreCtxPManager) MountToParent(son ...IProviderManager) IProviderManager {
+	if len(son) > 0 {
+		m.IProviderManager.MountToParent(son[0])
+		return m
+	}
+	m.IProviderManager.MountToParent(m)
+	return m
 }
