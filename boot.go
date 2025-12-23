@@ -53,22 +53,32 @@ type BootConfig struct {
 	LogPath string
 	// kvStorage 键值存储映射，用于存储额外自定义的属性
 	kvStorage map[string]any
-	// kvOnce 初始化一次
-	kvOnce sync.Once
+	// sealed 是否已封闭，封闭后不可再添加键值
+	sealed bool
+	// mu 读写锁
+	mu sync.RWMutex
 }
 
-// InitKVS 初始化键值存储
-func (bc *BootConfig) InitKVS(fn func(cfg *BootConfig)) *BootConfig {
-	bc.kvOnce.Do(func() {
+// WithCustom 初始化时设置键值对，仅在未封闭前有效，支持链式调用
+func (bc *BootConfig) WithCustom(key string, value any) *BootConfig {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	if bc.sealed {
+		return bc
+	}
+	if bc.kvStorage == nil {
 		bc.kvStorage = make(map[string]any)
-		fn(bc)
-	})
+	}
+	bc.kvStorage[key] = value
 	return bc
 }
 
-// GetKVStorage 获取键值存储映射
-func (bc *BootConfig) GetKVStorage() map[string]any {
-	return bc.kvStorage
+// Finally 封闭配置，封闭后不可再添加键值
+func (bc *BootConfig) Finally() *BootConfig {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	bc.sealed = true
+	return bc
 }
 
 // GetValue 获取键值存储中的值
@@ -80,6 +90,19 @@ func (bc *BootConfig) GetValue(key string) (any, error) {
 		return v, nil
 	}
 	return nil, fmt.Errorf("BootConfig kvStorage not found key: %s", key)
+}
+
+// GetMustValue 获取键值存储中的值，键不存在时panic
+func (bc *BootConfig) GetMustValue(key string) any {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+	if bc.kvStorage == nil {
+		panic("BootConfig kvStorage is nil")
+	}
+	if v, ok := bc.kvStorage[key]; ok {
+		return v
+	}
+	panic(fmt.Sprintf("BootConfig kvStorage not found key: %s", key))
 }
 
 // FiberHouse FiberHouse应用运行器，用于配置和运行基于底层可切换框架的Web应用
@@ -135,18 +158,106 @@ func New(cfg *BootConfig) *FiberHouse {
 	return fh
 }
 
-// Default TODO 创建默认的FiberHouse实例
+// Default 创建默认的FiberHouse实例，支持通过函数选项修改默认配置
 func Default(opts ...BootConfigOption) *FiberHouse {
-	return nil
+	// 默认启动配置
+	cfg := &BootConfig{
+		AppId:      "",
+		AppName:    "FiberHouse Application",
+		Version:    "1.0.0",
+		Date:       "",
+		FrameType:  constant.ProviderTypeDefaultFrameStarter,
+		CoreType:   "fiber",
+		JsonCodec:  "sonic_json_codec",
+		ConfigPath: "./config",
+		LogPath:    "./logs",
+	}
+
+	// 应用函数选项
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	return New(cfg)
 }
 
-// WithFrameOptions 添加框架启动器选项: 用于fiberhouse.NewFrameApplication(appContext, opts...)创建框架启动器时传入的选项
+// WithAppId 设置应用ID
+func WithAppId(appId string) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.AppId = appId
+	}
+}
+
+// WithAppName 设置应用名称
+func WithAppName(appName string) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.AppName = appName
+	}
+}
+
+// WithVersion 设置应用版本
+func WithVersion(version string) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.Version = version
+	}
+}
+
+// WithDate 设置应用构建日期
+func WithDate(date string) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.Date = date
+	}
+}
+
+// WithFrameType 设置框架启动器类型
+func WithFrameType(frameType string) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.FrameType = frameType
+	}
+}
+
+// WithCoreType 设置核心启动器类型
+func WithCoreType(coreType string) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.CoreType = coreType
+	}
+}
+
+// WithJsonCodec 设置JSON编解码器类型
+func WithJsonCodec(jsonCodec string) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.JsonCodec = jsonCodec
+	}
+}
+
+// WithConfigPath 设置配置文件路径
+func WithConfigPath(configPath string) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.ConfigPath = configPath
+	}
+}
+
+// WithLogPath 设置日志文件路径
+func WithLogPath(logPath string) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.LogPath = logPath
+	}
+}
+
+// WithCustomKV 设置自定义键值对
+func WithCustomKV(key string, value any) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.WithCustom(key, value)
+	}
+}
+
+// WithFrameStarterOptions 添加框架启动器选项: 用于fiberhouse.NewFrameApplication(appContext, opts...)创建框架启动器时传入的选项
 func (fh *FiberHouse) WithFrameStarterOptions(opts ...FrameStarterOption) *FiberHouse {
 	fh.frameStarterOpts = append(fh.frameStarterOpts, opts...)
 	return fh
 }
 
-// WithCoreOptions 添加核心启动器选项: 用于fiberhouse.NewCoreWithFiber(appContext, opts...)创建核心启动器时传入的选项
+// WithCoreStarterOptions 添加核心启动器选项: 用于fiberhouse.NewCoreWithFiber(appContext, opts...)创建核心启动器时传入的选项
 func (fh *FiberHouse) WithCoreStarterOptions(opts ...CoreStarterOption) *FiberHouse {
 	fh.coreStarterOpts = append(fh.coreStarterOpts, opts...)
 	return fh
@@ -164,7 +275,7 @@ func (fh *FiberHouse) WithPManagers(managers ...IProviderManager) *FiberHouse {
 	return fh
 }
 
-// RunServer 运行应用服务器 TODO 记录已收集的提供者和已加载和未加载的提供者日志
+// RunServer 运行应用服务器 TODO 记录已收集的提供者和已加载和未加载的提供者日志: pending、loaded、skipped、failed
 func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	// 引导配置完成位置点，获取该位点的提供者管理器列表并加载提供者
 	ms := ProviderLocationDefault().LocationBootStrapConfig.GetManagers()
@@ -274,7 +385,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	}
 	frameStarter, ok := anyStarter.(FrameStarter)
 	if !ok {
-		logger.FatalWith(cfg.LogOriginFrame()).Msgf("loaded FrameStarterCreate provider is not FrameStarter type")
+		logger.FatalWith(cfg.LogOriginFrame()).Msg("loaded FrameStarterCreate provider is not FrameStarter type")
 	}
 
 	// 获取创建核心启动器选项参数列表
@@ -286,11 +397,11 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		if len(ms) > 0 {
 			anyCoreOpts, err := ms[0].LoadProvider()
 			if err != nil {
-				logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msgf("CoreStarterOptionInit provider load failed")
+				logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msg("CoreStarterOptionInit provider load failed")
 			}
 			opts, ok := anyCoreOpts.([]CoreStarterOption)
 			if !ok {
-				logger.FatalWith(cfg.LogOriginFrame()).Msgf("loaded CoreStarterOptionInit provider is not []CoreStarterOption type")
+				logger.FatalWith(cfg.LogOriginFrame()).Msg("loaded CoreStarterOptionInit provider is not []CoreStarterOption type")
 			}
 			coreOptions = opts
 		}
@@ -305,11 +416,11 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		return coreOptions, nil
 	})
 	if err != nil {
-		logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msgf("CoreStarterCreate provider load failed")
+		logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msg("CoreStarterCreate provider load failed")
 	}
 	coreStarter, ok := anyCoreStarter.(CoreStarter)
 	if !ok {
-		logger.FatalWith(cfg.LogOriginFrame()).Msgf("loaded CoreStarterCreate provider is not CoreStarter type")
+		logger.FatalWith(cfg.LogOriginFrame()).Msg("loaded CoreStarterCreate provider is not CoreStarter type")
 	}
 
 	// 创建应用启动器

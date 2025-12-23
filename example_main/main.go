@@ -39,7 +39,7 @@ func main() {
 		}
 	*/
 
-	// 创建 FiberHouse 实例
+	// 创建 FiberHouse 应用运行实例
 	fh := fiberhouse.New(&fiberhouse.BootConfig{
 		AppName:    "Default FiberHouse Application",         // 应用名称
 		Version:    Version,                                  // 应用版本
@@ -54,10 +54,12 @@ func main() {
 	providers := fiberhouse.DefaultProviders().List()
 	managers := fiberhouse.DefaultPManagers(fh.AppCtx).
 		AndMore(
-			// 提供者继承了基类父类实例，并绑定了管理器执行位置点
-			// 'New实例化方法中'挂载当前实例到父类属性上，以便调用父类实例的初始化方法Initialize()时内部转调用子类的初始化方法
+			// 管理器继承了基类父类实例，并绑定了管理器执行位置点
+			// 'New实例化方法中'挂载当前实例到父类属性上，
+			//以便调用父类实例的初始化方法Initialize()时内部转调用子类的初始化方法
 			provider.NewFrameOptionInitPManager(fh.AppCtx),
-			// '实例化后'即时挂载当前实例到父类属性上，子类重载了MountToParent方法，直接调用子类自己重载方法，作用同上
+			// '实例化后'即时挂载当前实例到父类属性上，子类重载了MountToParent方法，
+			//直接调用子类自己重载方法，作用同上
 			provider.NewCoreOptionInitPManager(fh.AppCtx).MountToParent(),
 		)
 

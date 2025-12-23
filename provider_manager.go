@@ -130,13 +130,7 @@ func (m *ProviderManager) Location() IProviderLocation {
 func (m *ProviderManager) SetOrBindToLocation(l IProviderLocation, bind ...bool) IProviderManager {
 	m.location = l
 	// 绑定管理器到执行位点对象
-	if len(bind) > 0 && bind[0] {
-		if m.sonManager != nil && m.sonManager != m { // 子类实例已挂载到基类的 sonManager 字段上，绑定子类实例到执行位点对象
-			_ = l.Bind(m.sonManager)
-		} else {
-			_ = l.Bind(m) // 绑定基类实例到执行位点对象
-		}
-	}
+	_ = l.Bind(m)
 	return m
 }
 
@@ -302,7 +296,6 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 
 	var errs []error
 
-	// TODO 记录最终未被加载的提供者列表日志
 	for _, provider := range m.List() {
 		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupProviderAutoRun.GetTypeID() {
 			// 自动运行类型的提供者，不依赖Target约束可以直接初始化

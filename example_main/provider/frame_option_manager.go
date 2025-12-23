@@ -17,7 +17,7 @@ func NewFrameOptionInitPManager(ctx fiberhouse.IContext) *FrameOptionInitPManage
 			SetType(fiberhouse.ProviderTypeDefault().GroupFrameStarterOptsInitUnique).
 			// 当前管理器绑定到框架启动器选项初始化位置点，并在该位置点执行
 			SetOrBindToLocation(fiberhouse.ProviderLocationDefault().LocationFrameStarterOptionInit, true).
-			// 当前管理器唯一绑定到 FrameOptionInitProvider，绑定后将无需初始化提供者
+			// 当前管理器唯一绑定到 FrameOptionInitProvider，绑定后将无需再次初始化提供者
 			BindToUniqueProvider(NewFrameOptionInitProvider()),
 	}
 	// 挂载子类实例到父级提供者管理器的sonManager字段上，确保多态行为正确

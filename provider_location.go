@@ -98,6 +98,7 @@ const (
 // 5. LocationXXXCreate 在创建阶段执行
 type DefaultPLocation struct {
 	ZeroLocation                   IProviderLocation // 初始化默认位点/零位点/保留为初始化状态
+	LocationAdaptCoreCtxChoose     IProviderLocation // 适配核心上下文选择位点（用于统一输出响应时屏蔽不同核心引擎上下文差异）
 	LocationBootStrapConfig        IProviderLocation // 引导配置阶段位点
 	LocationFrameStarterOptionInit IProviderLocation // 框架启动器选项初始化位点
 	LocationCoreStarterOptionInit  IProviderLocation // 核心启动器选项初始化位点
@@ -131,6 +132,7 @@ func ProviderLocationDefault() *DefaultPLocation {
 		registry := ProviderLocationGen()
 		providerLocationInstance = &DefaultPLocation{
 			ZeroLocation:                   registry.MustDefault("__ZERO__"),
+			LocationAdaptCoreCtxChoose:     registry.MustDefault("AdaptCoreCtxChoose"),     // 适配核心上下文选择位点
 			LocationBootStrapConfig:        registry.MustDefault("BootStrapConfig"),        // 引导配置阶段位点
 			LocationFrameStarterOptionInit: registry.MustDefault("FrameStarterOptionInit"), // 框架启动器选项初始化位点
 			LocationCoreStarterOptionInit:  registry.MustDefault("CoreStarterOptionInit"),  // 核心启动器选项初始化位点

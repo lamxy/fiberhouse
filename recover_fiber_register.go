@@ -13,7 +13,7 @@ import (
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component/jsonconvert"
 	"github.com/lamxy/fiberhouse/constant"
-	providerCtx "github.com/lamxy/fiberhouse/provider/context"
+	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"net/http"
 	"runtime"
 	"strings"
@@ -24,8 +24,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 )
-
-
 
 type RecoverCatch struct {
 	AppCtx IApplicationContext
@@ -42,7 +40,7 @@ func (r *RecoverCatch) GetContext() IApplicationContext {
 }
 
 // DefaultStackTraceHandler 记录请求上下文信息 + panic信息 + 堆栈信息
-func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ICoreContext, e interface{}) {
+func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerctx.ICoreContext, e interface{}) {
 	// 从配置文件获取调试相关参数和请求ID参数的配置值
 	cfg := r.GetContext().GetConfig()
 	recoverConfig := cfg.GetRecover()
@@ -301,7 +299,7 @@ func (r *RecoverCatch) DefaultStackTraceHandler(ctx providerCtx.ICoreContext, e 
 }
 
 // ErrorHandler 用于fiber.New配置全局错误处理器，处理业务级错误
-func (r *RecoverCatch) ErrorHandler(ctx providerCtx.ICoreContext, err error) error {
+func (r *RecoverCatch) ErrorHandler(ctx providerctx.ICoreContext, err error) error {
 	// 记录日志 & 堆栈
 	r.DefaultStackTraceHandler(ctx, err)
 
@@ -448,16 +446,16 @@ func NewFiberHandler(config ...Config) fiber.Handler {
 	// Return new handler
 	return func(c *fiber.Ctx) (err error) { //nolint:nonamedreturns // Uses recover() to overwrite the error
 		// Don't execute middleware if Next returns true
-		if cfg.Next != nil && cfg.Next(providerCtx.WithFiberContext(c)) {
+		if cfg.Next != nil && cfg.Next(providerctx.WithFiberContext(c)) {
 			return c.Next()
 		}
 
 		// Catch panics
 		defer func(c *fiber.Ctx) {
-			pCtx := providerCtx.WithFiberContext(c)
+			pCtx := providerctx.WithFiberContext(c)
 			if r := recover(); r != nil {
 				if cfg.EnableStackTrace {
-					cfg.StackTraceHandler(providerCtx.WithFiberContext(c), r)
+					cfg.StackTraceHandler(providerctx.WithFiberContext(c), r)
 				}
 				debugMode := cfg.DebugMode
 				switch re := r.(type) {

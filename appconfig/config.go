@@ -235,7 +235,7 @@ func NewAppConfig(delim ...string) *AppConfig {
 		container: globalmanager.NewGlobalManagerOnce(),
 		lock:      sync.RWMutex{},
 		logOriginEnum: map[string]LogOrigin{
-			"coreHttp": "FiberHttpLog",
+			"coreHttp": "WebHttpLog",
 			"frame":    "Frame",
 			"recover":  "Recover",
 			"web":      "Web",

@@ -54,7 +54,7 @@ application:
       maxAge: 7                              # days
       compress: false                        # disabled by default
     logOriginEnum:                           # 预定义日志来源字段标识，对日志记录标记不同的来源
-      coreHttp: FiberHttpLog
+      coreHttp: WebHttpLog
       frame: Frame
       web: Web
       recover: Recover

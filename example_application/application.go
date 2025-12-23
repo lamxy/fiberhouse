@@ -129,7 +129,7 @@ func (app *Application) RegisterAppMiddleware(cs fiberhouse.CoreStarter) {
 	middleware.RegisterMiddleware(app.Ctx, cs.GetCoreApp().(*fiber.App))
 }
 
-// 统一定义"获取部分必要对象在全局管理容器中的实例Key"   // TODO 独立出来由实例KEY提供者
+// 统一定义"获取部分必要对象在全局管理容器中的实例Key"   // TODO 独立出来由实例KEY提供者初始化
 
 func (app *Application) GetDBMongoKey() string {
 	return KEY_MONGODB

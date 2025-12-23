@@ -28,14 +28,16 @@ func DefaultProviders() *DefaultProviderCollection {
 		}
 		// 在此处添加默认的提供者，实例化后挂载到基类字段
 		defaultProvidersInstance.providers = append(defaultProvidersInstance.providers,
-			NewFrameDefaultProvider(),
-			NewCoreFiberProvider(),
-			NewCoreGinProvider(),
-			NewJsonJCodecFiberProvider(),
-			NewJsonJCodecGinProvider(),
-			NewSonicJCodecFiberProvider(),
-			NewSonicJCodecGinProvider(),
-			// TODO more...
+			NewFrameDefaultProvider(),     // 默认框架启动器提供者
+			NewCoreFiberProvider(),        // 核心Fiber提供者
+			NewCoreGinProvider(),          // 核心Gin提供者
+			NewJsonJCodecFiberProvider(),  // JSON编解码Fiber提供者
+			NewJsonJCodecGinProvider(),    // JSON编解码Gin提供者
+			NewSonicJCodecFiberProvider(), // Sonic编解码Fiber提供者
+			NewSonicJCodecGinProvider(),   // Sonic编解码Gin提供者
+			NewCtxFiberProvider(),         // 上下文Fiber适配器提供者
+			NewCtxGinProvider(),           // 上下文Gin适配器提供者
+			// more...
 		)
 	})
 	return defaultProvidersInstance
@@ -101,11 +103,19 @@ func DefaultPManagers(ctx IApplicationContext) *DefaultPManagerCollection {
 		}
 		// 在此处添加默认的提供者管理器，实例化后挂载到基类字段
 		defaultPManagersInstance.managers = append(defaultPManagersInstance.managers,
-			NewDefaultPManager(ctx),                      // 初始化方法NewDefaultPManager内调用基类挂载方法已挂载子类实例，该管理器无需重载MountToParent并进行调用
-			NewFrameDefaultPManager(ctx).MountToParent(), // 对于未在初始化方法内调用基类挂载方法的子类管理器，则需要在此处调用子类重载MountToParent进行挂载
-			NewCoreStarterPManager(ctx).MountToParent(),  // 同上
-			NewJsonCodecPManager(ctx).MountToParent(),    // 同上
-			// TODO more...
+			// 默认提供者管理器(加载提供者的默认处理逻辑)
+			//初始化方法NewDefaultPManager内调用基类挂载方法已挂载子类实例，该管理器无需重载MountToParent并进行调用
+			NewDefaultPManager(ctx),
+			// 默认框架启动器管理器
+			//对于未在初始化方法内调用基类挂载方法的子类管理器，则需要在此处调用子类重载MountToParent进行挂载
+			NewFrameDefaultPManager(ctx).MountToParent(),
+			// 核心启动器管理器
+			NewCoreStarterPManager(ctx).MountToParent(),
+			// JSON编解码管理器
+			NewJsonCodecPManager(ctx).MountToParent(),
+			// 核心上下文适配器管理器
+			NewCoreCtxPManager(ctx),
+			// more...
 		)
 	})
 	return defaultPManagersInstance

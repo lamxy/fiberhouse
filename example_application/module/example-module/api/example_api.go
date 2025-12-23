@@ -12,6 +12,7 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"github.com/lamxy/fiberhouse/response"
+	"net/http"
 	"strconv"
 )
 
@@ -46,7 +47,7 @@ func GetKeyExampleHandler(ns ...string) string {
 	return fiberhouse.RegisterKeyName("ExampleHandler", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
-// GetTest 测试接口，通过 h.GetInstance(key) 方法获取TestService注册实例，无需编译阶段的wire依赖注入
+// HelloWorld 测试接口，通过 h.GetInstance(key) 方法获取TestService注册实例，无需编译阶段的wire依赖注入
 func (h *ExampleHandler) HelloWorld(c *fiber.Ctx) error {
 	// 通过Key即时获取注册在全局管理器的TestService实例单例
 	ts, err := h.GetInstance(h.KeyTestService)
@@ -58,7 +59,7 @@ func (h *ExampleHandler) HelloWorld(c *fiber.Ctx) error {
 	// 获取TestService服务实例
 	if tss, ok := ts.(*service.TestService); ok {
 		// 成功的响应
-		return response.RespSuccess(tss.HelloWorld()).JsonWithCtx(providerctx.WithFiberContext(c))
+		return response.RespSuccess(tss.HelloWorld()).JsonWithCtx(fiberhouse.CoreContext(c), http.StatusOK)
 	}
 
 	// 类型断言失败响应

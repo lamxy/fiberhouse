@@ -16,7 +16,7 @@ import (
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component/jsonconvert"
 	"github.com/lamxy/fiberhouse/constant"
-	providerCtx "github.com/lamxy/fiberhouse/provider/context"
+	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"io"
 	"net/http"
 	"runtime"
@@ -45,7 +45,7 @@ func (r *RecoverCatchGin) GetContext() IApplicationContext {
 }
 
 // DefaultStackTraceHandler 记录请求上下文信息 + panic信息 + 堆栈信息
-func (r *RecoverCatchGin) DefaultStackTraceHandler(ctx providerCtx.ICoreContext, e interface{}) {
+func (r *RecoverCatchGin) DefaultStackTraceHandler(ctx providerctx.ICoreContext, e interface{}) {
 	// 从配置文件获取调试相关参数和请求ID参数的配置值
 	cfg := r.GetContext().GetConfig()
 	recoverConfig := cfg.GetRecover()
@@ -289,7 +289,7 @@ func (r *RecoverCatchGin) DefaultStackTraceHandler(ctx providerCtx.ICoreContext,
 }
 
 // ErrorHandler 用于gin全局错误处理器中间件，处理业务级错误
-func (r *RecoverCatchGin) ErrorHandler(c providerCtx.ICoreContext, err error) error {
+func (r *RecoverCatchGin) ErrorHandler(c providerctx.ICoreContext, err error) error {
 	// 记录日志 & 堆栈
 	r.DefaultStackTraceHandler(c, err)
 
@@ -472,7 +472,6 @@ func RequestBodyCacheMiddleware() gin.HandlerFunc {
 	}
 }
 
-
 // New creates a recover middleware error handler for Gin framework.
 func NewGinHandler(config ...Config) gin.HandlerFunc {
 	// Set default config
@@ -481,14 +480,14 @@ func NewGinHandler(config ...Config) gin.HandlerFunc {
 	// Return new handler
 	return func(c *gin.Context) {
 		// Don't execute middleware if Cfg Next returns true
-		if cfg.Next != nil && cfg.Next(providerCtx.WithGinContext(c)) {
+		if cfg.Next != nil && cfg.Next(providerctx.WithGinContext(c)) {
 			c.Next()
 		}
 
 		// Catch panics
 		defer func(c *gin.Context) {
 			if r := recover(); r != nil {
-				pCtx := providerCtx.WithGinContext(c)
+				pCtx := providerctx.WithGinContext(c)
 				if cfg.EnableStackTrace {
 					cfg.StackTraceHandler(pCtx, r)
 				}
