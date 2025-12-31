@@ -123,6 +123,28 @@ func GetErrOrNoDocuments(err error) error {
 	return err
 }
 
+// RecoverMiddleware 尝试将任意类型断言为指定类型 T，若成功则返回该类型实例，否则返回错误
+func RecoverMiddleware[T any](fn any) (T, error) {
+	var zero T
+	if fn == nil {
+		return zero, fmt.Errorf("recovery function cannot be nil")
+	}
+	if f, ok := fn.(T); ok {
+		return f, nil
+	}
+	return zero, fmt.Errorf("assertion failure for type of function instance")
+}
+
+// MustRecoverMiddleware 尝试将任意类型断言为指定类型 T，若失败则 panic
+func MustRecoverMiddleware[T any](fn any) T {
+	f, err := RecoverMiddleware[T](fn)
+	if err != nil {
+		panic(err)
+	}
+	return f
+}
+
+// TODO 全局缓存对象设计
 type GlobalEntry struct{}
 
 var (
@@ -140,20 +162,3 @@ func (g *GlobalEntry) Global() *GlobalEntry {
 func (g *GlobalEntry) Container() *globalmanager.GlobalManager {
 	return globalmanager.NewGlobalManagerOnce()
 }
-
-//
-//func (g *GlobalEntry) AppConfig() appconfig.IAppConfig {
-//	return bootstrap.NewConfigOnce()
-//}
-//
-//func (g *GlobalEntry) Logger() bootstrap.LoggerWrapper {
-//	return bootstrap.NewLoggerOnce(g.AppConfig())
-//}
-//
-//func (g *GlobalEntry) AppContext() IApplicationContext {
-//	appCtx := NewAppContextOnce(g.AppConfig(), g.Logger())
-//	if !appCtx.GetAppState() {
-//		panic(errors.New("application context is not initialized. Please initialize application context first"))
-//	}
-//	return appCtx
-//}

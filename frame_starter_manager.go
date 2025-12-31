@@ -3,6 +3,7 @@ package fiberhouse
 import (
 	"errors"
 	"fmt"
+	"github.com/lamxy/fiberhouse/constant"
 )
 
 // FrameDefaultPManager 框架默认(框架启动器)提供者管理器
@@ -45,7 +46,7 @@ func (m *FrameDefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, 
 	bootCfg := m.GetContext().(IApplicationContext).GetBootConfig()
 	defaultFrame := bootCfg.FrameType
 	if defaultFrame == "" {
-		defaultFrame = "defaultFrame"
+		defaultFrame = constant.FrameTypeWithDefaultFrameStarter
 	}
 
 	for _, provider := range m.List() {

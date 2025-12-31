@@ -15,7 +15,7 @@ func NewFrameDefaultProvider() *FrameDefaultProvider {
 	son := &FrameDefaultProvider{
 		IProvider: NewProvider().
 			SetName("FrameDefaultProvider").
-			SetTarget(constant.ProviderTypeDefaultFrameStarter).
+			SetTarget(constant.FrameTypeWithDefaultFrameStarter).
 			SetType(ProviderTypeDefault().GroupFrameStarterChoose),
 	}
 	// 将子提供者挂载到父提供者上

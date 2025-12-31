@@ -9,7 +9,7 @@ package fiberhouse
 import (
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
-	fhAdaptor "github.com/lamxy/fiberhouse/provider/adaptor"
+	"github.com/lamxy/fiberhouse/provider/adaptor"
 	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
@@ -50,7 +50,7 @@ func (cf *CoreWithFiber) GetCoreApp() interface{} {
 }
 
 // InitCoreApp 初始化应用核心（框架应用基于 fiber.App）
-func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...IProviderManager) {
+func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManager) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
@@ -72,15 +72,24 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...
 		jOk  bool
 	)
 
-	if len(jsonCodecManagerOrMore) == 0 {
+	if len(managers) == 0 {
 		// 默认编解码器实例
 		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec.")
 		json = GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultJsonCodecKey())
 	} else {
-		jsonCodecManager := jsonCodecManagerOrMore[0]
+		var jsonCodecManager IProviderManager
+		for _, manager := range managers {
+			if manager.Type().GetTypeID() == ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() {
+				jsonCodecManager = manager
+				break
+			}
+		}
 
-		if jsonCodecManager.Type().GetTypeID() != ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() {
-			panic("json codec manager type mismatch")
+		if jsonCodecManager == nil {
+			msg := "No JSON codec manager found in provided managers, using default JSON codec."
+			cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+				Msg(msg)
+			panic(msg)
 		}
 
 		jcodec, err := jsonCodecManager.LoadProvider()
@@ -98,8 +107,9 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...
 		}
 	}
 
-	// IRecover接口实例
-	rc := NewRecoverCatch(cf.GetAppContext())
+	// IErrorHandler接口实例
+	eh := NewErrorHandlerOnce(cf.GetAppContext())
+
 	// 默认核心配置
 	cf.coreApp = fiber.New(fiber.Config{
 		// 设置应用名称
@@ -111,7 +121,7 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...
 		ServerHeader: cfg.String("application.server.appServerHeader"),
 		// 设置自定义错误处理函数
 		// 该函数会在请求处理过程中发生错误时被调用
-		ErrorHandler: fhAdaptor.FiberErrorHandler(rc.ErrorHandler),
+		ErrorHandler: adaptor.FiberErrorHandler(eh.ErrorHandler),
 		// 设置并发处理请求的数量
 		Concurrency: cfg.Int("application.server.appConcurrency"),
 		// 设置是否启用长连接
@@ -151,18 +161,24 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IPro
 	}
 	cf.GetAppContext().GetLogger().Info(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware")
 	debugMode := cf.GetAppContext().GetConfig().GetRecover().DebugMode
-	// IRecover接口实例
-	rc := NewRecoverCatch(cf.GetAppContext())
 
-	// 注册核心应用(coreApp/fiber App)全局错误捕获中间件
-	cf.coreApp.Use(NewFiberHandler(Config{
+	// 遍历管理器切片，筛选类型为GroupRecoverMiddlewareChoose管理器，然后加载对应的恢复中间件提供者
+	//或者，直接从NewErrorHandlerOnce单例获取恢复中间件
+
+	// IErrorHandler接口实例
+	eh := NewErrorHandlerOnce(cf.GetAppContext())
+
+	recoverHandler := eh.RecoverMiddleware(Config{
 		AppCtx:            cf.GetAppContext(),
 		EnableStackTrace:  true,
-		StackTraceHandler: rc.DefaultStackTraceHandler,
+		StackTraceHandler: eh.DefaultStackTraceHandler,
 		Logger:            cf.GetAppContext().GetLogger(),
 		Stdout:            false,
 		DebugMode:         debugMode, // true开启调试模式，将详细错误信息显示给客户端，否则隐藏细节，只能通过日志文件查看。生产环境关闭该调式模式。
-	}))
+	})
+
+	// 注册核心应用(coreApp/fiber App)全局错误捕获中间件
+	cf.coreApp.Use(MustRecoverMiddleware[fiber.Handler](recoverHandler))
 
 	// 注册核心应用(coreApp/fiber App)http请求日志中间件
 	cf.coreApp.Use(fiberzerolog.New(fiberzerolog.Config{
@@ -193,8 +209,6 @@ func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter, managers ...I
 		return
 	}
 	if fs.GetModule() != nil {
-		// 注册模块/子系统中间件
-		fs.GetModule().RegisterModuleMiddleware(cf)
 		// 注册模块/子系统路由处理器
 		fs.GetModule().RegisterModuleRouteHandlers(cf)
 	}

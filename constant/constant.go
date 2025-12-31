@@ -55,5 +55,10 @@ const (
 	DefaultPageSize = 20
 
 	// 默认框架启动器提供者类型标识
-	ProviderTypeDefaultFrameStarter = "DefaultFrameStarter"
+	FrameTypeWithDefaultFrameStarter = "DefaultFrameStarter"
+	CoreTypeWithFiber                = "fiber"
+	CoreTypeWithGin                  = "gin"
+	JsonCodecWithStd                 = "std_json_codec"
+	JsonCodecWithSonic               = "sonic_json_codec"
+	JsonCodecWithGoJson              = "go_json_codec"
 )

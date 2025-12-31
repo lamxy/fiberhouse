@@ -143,8 +143,8 @@ func (ik *InstanceKey) String() globalmanager.KeyName {
 	return string(*ik)
 }
 
-// PrefixString 带前缀的实例Key字符串，用于容器注册
-func (ik *InstanceKey) PrefixString() globalmanager.KeyName {
+// KeyString 带默认前缀的实例Key字符串，用于容器注册
+func (ik *InstanceKey) KeyString() globalmanager.KeyName {
 	return constant.RegisterKeyPrefix + string(*ik)
 }
 
@@ -159,22 +159,25 @@ func (ik *InstanceKey) StringWithPrefix(pfx string) globalmanager.KeyName {
 // 以便在应用启动器启动阶段，注册和初始化这些全局对象实例，完成框架的启动流程
 type IApplication interface {
 	GetDBKey() globalmanager.KeyName               // 定义数据库实例key
+	GetCacheKey() globalmanager.KeyName            // 定义缓存实例的key，
 	GetDBMongoKey() globalmanager.KeyName          // 定义mongodb实例的key，应用启动器用到
 	GetDBMysqlKey() globalmanager.KeyName          // 定义mysql实例的key，应用启动器用到
 	GetRedisKey() globalmanager.KeyName            // 定义redis实例key，应用启动器异步任务注册用到
 	GetFastJsonCodecKey() globalmanager.KeyName    // 定义快速的json编解码器，应用启动器用到
 	GetDefaultJsonCodecKey() globalmanager.KeyName // 定义默认的json编解码器，应用启动器用到
-	GetTaskDispatcherKey() globalmanager.KeyName   // 定义异步任务客户端实例的key
-	GetCacheKey() globalmanager.KeyName            // 定义缓存实例的key，
-	GetTaskServerKey() globalmanager.KeyName       // 定义异步任务服务端实例的key
 	GetLocalCacheKey() globalmanager.KeyName       // 定义本地缓存实例的key
 	GetRemoteCacheKey() globalmanager.KeyName      // 定义远程缓存实例的key
 	GetLevel2CacheKey() globalmanager.KeyName      // 定义二级缓存实例的key
+	GetTaskDispatcherKey() globalmanager.KeyName   // 定义异步任务客户端实例的key
+	GetTaskServerKey() globalmanager.KeyName       // 定义异步任务服务端实例的key
 
 	// more keys...
 
-	// GetInstanceKey 自定义全局对象实例key的通用获取方法，获取框架上述预定义外的实例key
-	GetInstanceKey(flag InstanceKeyFlag) InstanceKey // 按预定义flag获取全局对象实例key
+	// GetKey 预定义更多的全局对象实例key的通用获取方法，获取框架上述预定义外的额外预定义实例key
+	// 预定义映射为: map[InstanceKeyFlag]InstanceKey，推荐预定义映射，不支持运行时写入仅运行时读取映射字段
+	// key1 := xxx.GetKey("MyDBTest").KeyString()  key2 := xxx.GetKey("MyDBTest2").StringWithPrefix("__custom_prefix_")
+	GetKey(InstanceKeyFlag) (InstanceKey, error) // 按预定义key flag获取全局对象实例key
+	GetMustKey(InstanceKeyFlag) InstanceKey      // 按预定义key flag获取全局对象实例key，未找到则panic
 }
 
 // ApplicationRegister 应用注册器
@@ -216,7 +219,8 @@ type ModuleRegister interface {
 	GetContext() IApplicationContext
 
 	// RegisterModuleMiddleware 注册模块级别/子系统中间件
-	RegisterModuleMiddleware(cs CoreStarter)
+	// RegisterModuleMiddleware(cs CoreStarter)
+
 	// RegisterModuleRouteHandlers 注册模块级别/子系统路由处理器
 	RegisterModuleRouteHandlers(cs CoreStarter)
 	// RegisterSwagger 注册swagger

@@ -126,11 +126,13 @@ func (m *ProviderManager) Location() IProviderLocation {
 	return m.location
 }
 
-// SetOrBindToLocation 设置管理器执行位置点标识
+// SetOrBindToLocation 设置管理器执行位置点标识，如果传入 bind 参数且为 true，则将管理器绑定（添加）到该位置点的管理器列表中
 func (m *ProviderManager) SetOrBindToLocation(l IProviderLocation, bind ...bool) IProviderManager {
 	m.location = l
-	// 绑定管理器到执行位点对象
-	_ = l.Bind(m)
+	if len(bind) > 0 && bind[0] {
+		// 绑定管理器到执行位点对象
+		_ = l.Bind(m)
+	}
 	return m
 }
 

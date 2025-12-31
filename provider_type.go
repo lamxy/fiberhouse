@@ -67,6 +67,7 @@ type DefaultPType struct {
 	GroupCoreContextChoose          IProviderType // 核心上下文选择组，该类型提供者中仅选择一个进行核心上下文处理
 	GroupFrameStarterOptsInitUnique IProviderType // 框架启动器选项初始化唯一组，该类型提供者中仅唯一绑定一个管理器，并由该唯一的提供者进行处理
 	GroupCoreStarterOptsInitUnique  IProviderType // 核心启动器选项初始化唯一组，该类型提供者中仅唯一绑定一个管理器，并由该唯一的提供者进行处理
+	GroupRecoverMiddlewareChoose    IProviderType // 恢复中间件选择组，该类型提供者中仅选择一个进行恢复中间件处理（根据核心类型选择）
 }
 
 var (
@@ -91,6 +92,7 @@ func ProviderTypeDefault() *DefaultPType {
 			GroupCoreContextChoose:          registry.MustDefault("CoreContextChoose"),
 			GroupFrameStarterOptsInitUnique: registry.MustDefault("FrameStarterOptsInitUnique"),
 			GroupCoreStarterOptsInitUnique:  registry.MustDefault("CoreStarterOptsInitUnique"),
+			GroupRecoverMiddlewareChoose:    registry.MustDefault("RecoverMiddlewareChoose"),
 		}
 	})
 	return providerTypeInstance

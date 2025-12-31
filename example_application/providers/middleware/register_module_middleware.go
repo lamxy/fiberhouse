@@ -1,14 +1,16 @@
-package api
+package middleware
 
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/csrf"
 	"github.com/gofiber/fiber/v2/middleware/pprof"
+	"github.com/lamxy/fiberhouse"
 	"time"
 )
 
 // RegisterMiddleware 注册中间件
-func RegisterMiddleware(app fiber.Router) fiber.Router {
+func RegisterModuleMiddleware(cs fiberhouse.CoreStarter) fiber.Router {
+	app := cs.GetCoreApp().(*fiber.App)
 	// Pprof中间件 /monitor/debug/pprof/
 	app.Use(pprof.New(pprof.Config{
 		Next: func(c *fiber.Ctx) bool {

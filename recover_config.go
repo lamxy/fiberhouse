@@ -39,7 +39,7 @@ Config 结构体包含以下配置选项：
 package fiberhouse
 
 import (
-	providerCtx "github.com/lamxy/fiberhouse/provider/context"
+	providerctx "github.com/lamxy/fiberhouse/provider/context"
 )
 
 // Config 结构体用于定义 recover 中间件的配置项。
@@ -47,7 +47,7 @@ type Config struct {
 	// Next 定义了一个函数，当返回 true 时跳过该中间件。
 	//
 	// 可选。 默认: nil
-	Next func(c providerCtx.ICoreContext) bool
+	Next func(c providerctx.ICoreContext) bool
 
 	// AppCtx 提供应用框架上下文
 	AppCtx IApplicationContext
@@ -60,7 +60,7 @@ type Config struct {
 	// StackTraceHandler 定义了一个处理堆栈跟踪的函数
 	//
 	// 可选配置。默认值：defaultStackTraceHandler
-	StackTraceHandler func(c providerCtx.ICoreContext, e interface{})
+	StackTraceHandler func(c providerctx.ICoreContext, e interface{})
 
 	// Logger for record messages
 	Logger interface{}
@@ -75,7 +75,7 @@ type Config struct {
 var ConfigDefault = Config{
 	Next:              nil,
 	EnableStackTrace:  false,
-	StackTraceHandler: func(c providerCtx.ICoreContext, e interface{}) {},
+	StackTraceHandler: func(c providerctx.ICoreContext, e interface{}) {},
 	Logger:            nil,
 	Stdout:            true,
 	DebugMode:         false,

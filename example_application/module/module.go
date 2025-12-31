@@ -1,9 +1,7 @@
 package module
 
 import (
-	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse"
-	moduleApi "github.com/lamxy/fiberhouse/example_application/module/api"
 )
 
 // Module struct
@@ -34,20 +32,14 @@ func (m *Module) GetContext() fiberhouse.IApplicationContext {
 	return m.Ctx
 }
 
-// RegisterModuleMiddleware 注册模块(子系统)级中间件
-func (m *Module) RegisterModuleMiddleware(cs fiberhouse.CoreStarter) {
-	// 注册模块(子系统)级中间件
-	moduleApi.RegisterMiddleware(cs.GetCoreApp().(*fiber.App))
-}
-
 // RegisterModuleRouteHandlers 注册模块(子系统)级路由处理器
 func (m *Module) RegisterModuleRouteHandlers(cs fiberhouse.CoreStarter) {
-	// 注册各模块中间件和路由处理器
-	RegisterRouteHandlers(m.Ctx, cs.GetCoreApp().(*fiber.App))
+	// 注册各模块中间件和路由处理器 // TODO 路由注册提供者
+	RegisterRouteHandlers(m.Ctx, cs)
 }
 
 // RegisterSwagger 注册swagger
 func (m *Module) RegisterSwagger(cs fiberhouse.CoreStarter) {
-	// 注册swagger
-	RegisterSwagger(m.Ctx, cs.GetCoreApp().(*fiber.App))
+	// 注册swagger  // TODO swagger注册提供者
+	RegisterSwagger(m.Ctx, cs)
 }

@@ -46,7 +46,7 @@ func NewCoreWithGin(ctx IApplicationContext, opts ...CoreStarterOption) CoreStar
 }
 
 // InitCoreApp 初始化应用核心
-func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...IProviderManager) {
+func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager) {
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -67,16 +67,26 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...IP
 	cg.coreApp = gin.New(cg.OptionFuncList...)
 
 	// 配置JSON序列化器
-	if len(jsonCodecManagerOrMore) == 0 {
+	if len(managers) == 0 {
 		// 使用默认的JSON编解码提供者
 		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec")
 		ginJson.API = GetMustInstance[ginJson.Core](fs.GetApplication().GetDefaultJsonCodecKey())
 	} else {
-		jsonCodecManager := jsonCodecManagerOrMore[0]
+		var jsonCodecManager IProviderManager
 
-		if jsonCodecManager.Type().GetTypeID() != ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() {
-			panic("json codec manager type mismatch")
+		for _, manager := range managers {
+			if manager.Type().GetTypeID() == ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() {
+				jsonCodecManager = manager
+				break
+			}
 		}
+
+		if jsonCodecManager == nil {
+			msg := "No JSON codec manager provided, using default JSON codec"
+			cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Msg(msg)
+			panic(msg)
+		}
+
 		_, err := jsonCodecManager.LoadProvider()
 
 		if err != nil {
@@ -118,62 +128,31 @@ func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProvi
 
 	debugMode := cg.GetAppContext().GetConfig().GetRecover().DebugMode
 
+	// 遍历管理器切片，筛选类型为GroupRecoverMiddlewareChoose管理器，然后加载对应的恢复中间件提供者
+	//或者，直接从NewErrorHandlerOnce单例获取恢复中间件
+
+	// IErrorHandler接口实例
+	eh := NewErrorHandlerOnce(cg.GetAppContext())
+
+	recoverHandler := eh.RecoverMiddleware(Config{
+		AppCtx:            cg.GetAppContext(),
+		EnableStackTrace:  true,
+		StackTraceHandler: eh.DefaultStackTraceHandler,
+		Logger:            cg.GetAppContext().GetLogger(),
+		Stdout:            false,
+		DebugMode:         debugMode, // true开启调试模式，将详细错误信息显示给客户端，否则隐藏细节，只能通过日志文件查看。生产环境关闭该调式模式。
+	})
+
 	// 注册错误恢复中间件
-	cg.coreApp.Use(cg.recoverMiddleware(debugMode))
+	cg.coreApp.Use(MustRecoverMiddleware[gin.HandlerFunc](recoverHandler))
 
 	// 注册HTTP请求日志中间件
 	cg.coreApp.Use(cg.loggerMiddleware())
 
 	// 注册项目应用注册器全局中间件
 	if fs.GetApplication() != nil {
-		// TODO: 需要适配ApplicationRegister接口,创建Gin版本的RegisterAppMiddleware
-		// 当前ApplicationRegister.RegisterAppMiddleware接受*fiber.App参数
-		// 需要改造为泛型接口或创建GinApplicationRegister接口
-		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
-			Msg("TODO: Adapt ApplicationRegister.RegisterAppMiddleware(*fiber.App) to support *gin.Engine")
-
-		// 临时方案:如果应用注册器实现了特定接口,可以调用
-		// if ginRegister, ok := fs.GetApplication().(GinApplicationRegister); ok {
-		//     ginRegister.RegisterGinAppMiddleware(cg.coreApp)
-		// }
-	}
-}
-
-// recoverMiddleware 错误恢复中间件
-func (cg *CoreWithGin) recoverMiddleware(debugMode bool) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		defer func() {
-			if err := recover(); err != nil {
-				// TODO: 完整集成frame/middleware/recover包的RecoverCatch逻辑
-				// 当前RecoverCatch依赖*fiber.Ctx,需要适配到*gin.Context
-				//rc := frameRecover.NewRecoverCatch(cg.GetAppContext())
-
-				cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginCoreHttp()).
-					Interface("panic", err).
-					Str("method", c.Request.Method).
-					Str("path", c.Request.URL.Path).
-					Str("ip", c.ClientIP()).
-					Msg("Panic recovered")
-
-				// TODO: 使用frame/response包统一响应格式
-				// 需要创建Gin版本的响应包装器
-				if debugMode {
-					c.JSON(http.StatusInternalServerError, gin.H{
-						"code":    http.StatusInternalServerError,
-						"message": "Internal Server Error",
-						"error":   fmt.Sprintf("%v", err),
-					})
-				} else {
-					c.JSON(http.StatusInternalServerError, gin.H{
-						"code":    http.StatusInternalServerError,
-						"message": "Internal Server Error",
-					})
-				}
-
-				c.Abort()
-			}
-		}()
-		c.Next()
+		// 注册项目应用注册器全局中间件
+		fs.GetApplication().(ApplicationRegister).RegisterAppMiddleware(cg)
 	}
 }
 
@@ -223,18 +202,8 @@ func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter, managers ...IPr
 		return
 	}
 	if fs.GetModule() != nil {
-		// TODO: 适配ModuleRegister接口到Gin
-		// 当前ModuleRegister方法接受*fiber.App参数
-		// 方案1: 创建GinModuleRegister接口
-		// 方案2: 将ModuleRegister改造为泛型接口
-		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
-			Msg("TODO: Adapt ModuleRegister interface methods to support *gin.Engine")
-
-		// 临时方案:
-		// if ginModule, ok := fs.GetModule().(GinModuleRegister); ok {
-		//     ginModule.RegisterGinModuleMiddleware(cg.coreApp)
-		//     ginModule.RegisterGinModuleRouteHandlers(cg.coreApp)
-		// }
+		// 注册模块/子系统路由处理器
+		fs.GetModule().RegisterModuleRouteHandlers(cg)
 	}
 }
 
@@ -246,12 +215,8 @@ func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter, managers ...IProvi
 	registerOrNot := cg.GetAppContext().GetConfig().Bool("application.swagger.enable")
 	if registerOrNot {
 		if fs.GetModule() != nil {
-			// TODO: 集成gin-swagger
-			// import ginSwagger "github.com/swaggo/gin-swagger"
-			// import "github.com/swaggo/files"
-			// cg.coreApp.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-			cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
-				Msg("TODO: Integrate gin-swagger package for API documentation")
+			// 注册模块系统的swagger
+			fs.GetModule().RegisterSwagger(cg)
 		}
 	}
 }
@@ -264,10 +229,7 @@ func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderMa
 
 	// 注册应用注册器的钩子函数
 	if fs.GetApplication() != nil {
-		// TODO: ApplicationRegister.RegisterCoreHook接受*fiber.App参数
-		// 需要适配到*gin.Engine或创建通用钩子接口
-		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
-			Msg("TODO: Adapt ApplicationRegister.RegisterCoreHook to support Gin")
+		fs.GetApplication().(ApplicationRegister).RegisterCoreHook(cg)
 	}
 }
 

@@ -19,15 +19,15 @@ type WebApplication struct {
 func RunApplicationStarter(starter ApplicationStarter, managers ...IProviderManager) {
 	// 应用启动流程，保持执行顺序
 	starter.RegisterToCtx(starter)
-	starter.RegisterApplicationGlobals(managers...)
-	starter.InitCoreApp(starter.GetFrameApp(), managers...)
-	starter.RegisterAppHooks(starter.GetFrameApp(), managers...)
-	starter.RegisterAppMiddleware(starter.GetFrameApp(), managers...)
-	starter.RegisterModuleInitialize(starter.GetFrameApp(), managers...)
-	starter.RegisterModuleSwagger(starter.GetFrameApp(), managers...)
-	starter.RegisterTaskServer(managers...)
-	starter.RegisterGlobalsKeepalive(managers...)
-	starter.AppCoreRun(managers...)
+	starter.RegisterApplicationGlobals(managers...)                      // 内部筛选出符合当前执行位点的管理器，按需执行加载
+	starter.InitCoreApp(starter.GetFrameApp(), managers...)              // 同上
+	starter.RegisterAppHooks(starter.GetFrameApp(), managers...)         // 同上
+	starter.RegisterAppMiddleware(starter.GetFrameApp(), managers...)    // 同上
+	starter.RegisterModuleInitialize(starter.GetFrameApp(), managers...) // 同上
+	starter.RegisterModuleSwagger(starter.GetFrameApp(), managers...)    // 同上
+	starter.RegisterTaskServer(managers...)                              // 同上
+	starter.RegisterGlobalsKeepalive(managers...)                        // 同上
+	starter.AppCoreRun(managers...)                                      // 同上
 }
 
 // BootConfig 启动配置
@@ -166,7 +166,7 @@ func Default(opts ...BootConfigOption) *FiberHouse {
 		AppName:    "FiberHouse Application",
 		Version:    "1.0.0",
 		Date:       "",
-		FrameType:  constant.ProviderTypeDefaultFrameStarter,
+		FrameType:  constant.FrameTypeWithDefaultFrameStarter, // TODO 追加默认配置项的常量声明
 		CoreType:   "fiber",
 		JsonCodec:  "sonic_json_codec",
 		ConfigPath: "./config",
@@ -275,7 +275,8 @@ func (fh *FiberHouse) WithPManagers(managers ...IProviderManager) *FiberHouse {
 	return fh
 }
 
-// RunServer 运行应用服务器 TODO 记录已收集的提供者和已加载和未加载的提供者日志: pending、loaded、skipped、failed
+// RunServer 运行应用服务器
+// TODO 记录已收集的提供者和已加载和未加载的提供者日志: pending、loaded、skipped、failed
 func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	// 引导配置完成位置点，获取该位点的提供者管理器列表并加载提供者
 	ms := ProviderLocationDefault().LocationBootStrapConfig.GetManagers()
@@ -341,7 +342,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	// 加载所有管理器中的提供者，排除已绑定到特定位置点的管理器，这些管理器将在对应位置点被单独加载
 	if len(fh.managers) > 0 {
 		for _, mgr := range fh.managers {
-			// 未设置位点的管理器直接加载
+			// 排除已设置位点的管理器，未设置位点的管理器直接加载
 			if mgr.Location().GetLocationID() == ProviderLocationDefault().ZeroLocation.GetLocationID() {
 				_, _ = mgr.LoadProvider()
 			}
@@ -461,7 +462,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		for _, m := range beforeRuns {
 			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
 				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
-					return appStarter, nil
+					return appStarter, nil // 向当前管理器加载提供者函数中注入当前执行位点的应用启动器实例
 				})
 				break
 			}
@@ -482,7 +483,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		for _, m := range afterRun {
 			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
 				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
-					return appStarter, nil
+					return appStarter, nil // 向当前管理器加载提供者函数中注入当前执行位点的应用启动器实例
 				})
 				break
 			}

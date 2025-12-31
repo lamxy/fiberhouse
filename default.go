@@ -37,6 +37,8 @@ func DefaultProviders() *DefaultProviderCollection {
 			NewSonicJCodecGinProvider(),   // Sonic编解码Gin提供者
 			NewCtxFiberProvider(),         // 上下文Fiber适配器提供者
 			NewCtxGinProvider(),           // 上下文Gin适配器提供者
+			NewFiberRecoveryProvider(),    // Fiber恢复提供者
+			NewGinRecoveryProvider(),      // Gin恢复提供者
 			// more...
 		)
 	})
@@ -63,6 +65,33 @@ func (c *DefaultProviderCollection) Add(providers ...IProvider) *DefaultProvider
 	defer c.mu.Unlock()
 
 	c.providers = append(c.providers, providers...)
+	return c
+}
+
+// Except 排除指定名称的提供者，返回自身以支持链式调用
+func (c *DefaultProviderCollection) Except(names ...string) *DefaultProviderCollection {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(names) == 0 {
+		return c
+	}
+
+	// 构建排除名称集合
+	excludeSet := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		excludeSet[name] = struct{}{}
+	}
+
+	// 过滤提供者
+	filtered := make([]IProvider, 0, len(c.providers))
+	for _, provider := range c.providers {
+		if _, excluded := excludeSet[provider.Name()]; !excluded {
+			filtered = append(filtered, provider)
+		}
+	}
+
+	c.providers = filtered
 	return c
 }
 
@@ -115,6 +144,8 @@ func DefaultPManagers(ctx IApplicationContext) *DefaultPManagerCollection {
 			NewJsonCodecPManager(ctx).MountToParent(),
 			// 核心上下文适配器管理器
 			NewCoreCtxPManager(ctx),
+			// 恢复惊慌管理器
+			NewRecoveryManagerOnce(ctx),
 			// more...
 		)
 	})
@@ -135,12 +166,39 @@ func (c *DefaultPManagerCollection) List() []IProviderManager {
 	return result
 }
 
-// Add 添加默认提供者管理器到集合
+// Add 添加默认提供者管理器到集合， 返回自身以支持链式调用
 func (c *DefaultPManagerCollection) Add(managers ...IProviderManager) *DefaultPManagerCollection {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.managers = append(c.managers, managers...)
+	return c
+}
+
+// Except 排除指定名称的提供者管理器，返回自身以支持链式调用
+func (c *DefaultPManagerCollection) Except(names ...string) *DefaultPManagerCollection {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(names) == 0 {
+		return c
+	}
+
+	// 构建排除名称集合
+	excludeSet := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		excludeSet[name] = struct{}{}
+	}
+
+	// 过滤管理器
+	filtered := make([]IProviderManager, 0, len(c.managers))
+	for _, manager := range c.managers {
+		if _, excluded := excludeSet[manager.Name()]; !excluded {
+			filtered = append(filtered, manager)
+		}
+	}
+
+	c.managers = filtered
 	return c
 }
 
