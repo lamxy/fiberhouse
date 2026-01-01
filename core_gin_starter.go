@@ -12,6 +12,7 @@ import (
 	"fmt"
 	ginJson "github.com/gin-gonic/gin/codec/json"
 	"github.com/lamxy/fiberhouse/appconfig"
+	"github.com/lamxy/fiberhouse/provider/adaptor"
 	"net/http"
 	"os"
 	"os/signal"
@@ -143,8 +144,11 @@ func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProvi
 		DebugMode:         debugMode, // true开启调试模式，将详细错误信息显示给客户端，否则隐藏细节，只能通过日志文件查看。生产环境关闭该调式模式。
 	})
 
-	// 注册错误恢复中间件
+	// 注册panic恢复中间件
 	cg.coreApp.Use(MustRecoverMiddleware[gin.HandlerFunc](recoverHandler))
+
+	// 注册错误处理器中间件
+	cg.coreApp.Use(adaptor.GinErrorHandler(eh.ErrorHandler))
 
 	// 注册HTTP请求日志中间件
 	cg.coreApp.Use(cg.loggerMiddleware())
