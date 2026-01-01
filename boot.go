@@ -45,8 +45,8 @@ type BootConfig struct {
 	FrameType string
 	// CoreType 核心启动器的类型标识，由提供者的target属性区分，如FiberHouse提供的"fiber"、"gin"、其他选择
 	CoreType string
-	// JsonCodec json编解码器类型标识，由提供者的name属性区分，如"json_codec"、"sonic_json_codec"、"go_json_codec"、其他选择
-	JsonCodec string
+	// TrafficCodec 传输编解码器类型标识，由提供者的name属性区分，如"std_json_codec"、"sonic_json_codec"、"go_json_codec"、其他选择如protobuf等
+	TrafficCodec string
 	// ConfigPath 全局应用配置文件的路径
 	ConfigPath string
 	// LogPath 全局应用日志文件的路径
@@ -162,15 +162,15 @@ func New(cfg *BootConfig) *FiberHouse {
 func Default(opts ...BootConfigOption) *FiberHouse {
 	// 默认启动配置
 	cfg := &BootConfig{
-		AppId:      "",
-		AppName:    "FiberHouse Application",
-		Version:    "1.0.0",
-		Date:       "",
-		FrameType:  constant.FrameTypeWithDefaultFrameStarter, // TODO 追加默认配置项的常量声明
-		CoreType:   "fiber",
-		JsonCodec:  "sonic_json_codec",
-		ConfigPath: "./config",
-		LogPath:    "./logs",
+		AppId:        "",
+		AppName:      "FiberHouse Application",
+		Version:      "1.0.0",
+		Date:         "",
+		FrameType:    constant.FrameTypeWithDefaultFrameStarter, // TODO 追加默认配置项的常量声明
+		CoreType:     "fiber",
+		TrafficCodec: "sonic_json_codec",
+		ConfigPath:   "./config",
+		LogPath:      "./logs",
 	}
 
 	// 应用函数选项
@@ -223,10 +223,10 @@ func WithCoreType(coreType string) BootConfigOption {
 	}
 }
 
-// WithJsonCodec 设置JSON编解码器类型
-func WithJsonCodec(jsonCodec string) BootConfigOption {
+// WithTrafficCodec 设置JSON编解码器类型
+func WithTrafficCodec(codec string) BootConfigOption {
 	return func(boot *BootConfig) {
-		boot.JsonCodec = jsonCodec
+		boot.TrafficCodec = codec
 	}
 }
 
@@ -432,16 +432,16 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 
 	// 应用启动流程，保持执行顺序
 	appStarter.RegisterToCtx(appStarter)
-	// 注册全局应用对象位置点
+	// 注册全局应用对象执行位置点
 	appStarter.RegisterApplicationGlobals(ProviderLocationDefault().LocationGlobalInit.GetManagers()...)
-	// 初始化应用核心位置点
+	// 初始化应用核心执行位置点
 	appStarter.InitCoreApp(appStarter.GetFrameApp(), ProviderLocationDefault().LocationCoreEngineInit.GetManagers()...)
-	// 应用钩子函数注册位置点
+	// 应用钩子函数注册执行位置点
 	appStarter.RegisterAppHooks(appStarter.GetFrameApp(), ProviderLocationDefault().LocationCoreHookInit.GetManagers()...)
-	// 应用中间件注册位置点
+	// 应用中间件注册执行位置点
 	appStarter.RegisterAppMiddleware(appStarter.GetFrameApp(), ProviderLocationDefault().LocationAppMiddlewareInit.GetManagers()...)
 
-	// 模块初始化位置点，合并模块中间件初始化和路由注册位置点的管理器列表
+	// 模块初始化执行位置点，合并模块中间件初始化和路由注册位置点的管理器列表
 	moduleMS := ProviderLocationDefault().LocationModuleMiddlewareInit.GetManagers()
 	routeMS := ProviderLocationDefault().LocationRouteRegisterInit.GetManagers()
 	ms = make([]IProviderManager, 0, len(moduleMS)+len(routeMS))
@@ -449,14 +449,14 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	ms = append(ms, routeMS...)
 	appStarter.RegisterModuleInitialize(appStarter.GetFrameApp(), ms...)
 
-	// Swagger模块初始化位置点
+	// Swagger模块初始化执行位置点
 	appStarter.RegisterModuleSwagger(appStarter.GetFrameApp(), ProviderLocationDefault().LocationModuleSwaggerInit.GetManagers()...)
-	// 异步任务服务器注册位置点
+	// 异步任务服务器注册执行位置点
 	appStarter.RegisterTaskServer(ProviderLocationDefault().LocationTaskServerInit.GetManagers()...)
-	// 全局对象保活注册位置点
+	// 全局对象保活注册执行位置点
 	appStarter.RegisterGlobalsKeepalive(ProviderLocationDefault().LocationGlobalKeepaliveInit.GetManagers()...)
 
-	// 运行前位置点
+	// 运行前执行位置点
 	beforeRuns := ProviderLocationDefault().LocationServerRunBefore.GetManagers()
 	if len(beforeRuns) > 0 {
 		for _, m := range beforeRuns {
@@ -469,7 +469,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		}
 	}
 
-	// 应用核心运行位置点
+	// 应用核心运行时执行位置点
 	runMS := ProviderLocationDefault().LocationServerRun.GetManagers()
 	shutdownMS := ProviderLocationDefault().LocationServerShutdown.GetManagers()
 	ms = make([]IProviderManager, 0, len(runMS)+len(shutdownMS))
@@ -477,7 +477,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	ms = append(ms, shutdownMS...)
 	appStarter.AppCoreRun(ms...)
 
-	// 运行后位置点
+	// 运行后执行位置点
 	afterRun := ProviderLocationDefault().LocationServerRunAfter.GetManagers()
 	if len(afterRun) > 0 {
 		for _, m := range afterRun {

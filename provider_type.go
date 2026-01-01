@@ -57,10 +57,11 @@ const (
 type DefaultPType struct {
 	ZeroType                        IProviderType // 默认零值类型
 	GroupDefaultManagerType         IProviderType // 默认管理器类型组，该类型提供者都注册进默认管理器进行处理
-	GroupJsonCodecChoose            IProviderType // JSON编解码器选择组，该类型提供者中仅选择一个进行JSON编解码处理
+	GroupTrafficCodecChoose         IProviderType // 传输编解码器选择组，该类型提供者中仅选择一个进行流量编解码处理
 	GroupCoreEngineChoose           IProviderType // 核心引擎选择组，该类型提供者中仅选择一个进行核心引擎处理
 	GroupMiddlewareRegisterType     IProviderType // 中间件注册类型组，该类型提供者都注册进中间件链进行处理
 	GroupRouteRegisterType          IProviderType // 路由注册类型组，该类型提供者都注册进路由表进行处理
+	GroupCoreHookChoose             IProviderType // 核心钩子选择组，该类型提供者中仅选择一个进行核心钩子处理
 	GroupFrameStarterChoose         IProviderType // 框架启动器选择组，该类型提供者中仅选择一个进行框架启动处理
 	GroupCoreStarterChoose          IProviderType // 核心启动器选择组，该类型提供者中仅选择一个进行核心启动处理
 	GroupProviderAutoRun            IProviderType // 提供者自动运行组，该类型提供者都自动运行一次进行处理
@@ -82,10 +83,11 @@ func ProviderTypeDefault() *DefaultPType {
 		providerTypeInstance = &DefaultPType{
 			ZeroType:                        registry.MustDefault("__ZERO__"),
 			GroupDefaultManagerType:         registry.MustDefault("DefaultManagerType"),
-			GroupJsonCodecChoose:            registry.MustDefault("JsonCodecChoose"),
+			GroupTrafficCodecChoose:         registry.MustDefault("TrafficCodecChoose"),
 			GroupCoreEngineChoose:           registry.MustDefault("CoreEngineChoose"),
 			GroupMiddlewareRegisterType:     registry.MustDefault("MiddlewareRegisterType"),
 			GroupRouteRegisterType:          registry.MustDefault("RouteRegisterType"),
+			GroupCoreHookChoose:             registry.MustDefault("CoreHookChoose"),
 			GroupFrameStarterChoose:         registry.MustDefault("FrameStarterChoose"),
 			GroupCoreStarterChoose:          registry.MustDefault("CoreStarterChoose"),
 			GroupProviderAutoRun:            registry.MustDefault("ProviderAutoRun"),

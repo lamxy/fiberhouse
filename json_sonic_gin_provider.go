@@ -11,7 +11,7 @@ type SonicJCodecGinProvider struct {
 // NewJCodecProvider 创建一个新的 JSON 编解码提供者
 func NewSonicJCodecGinProvider() *SonicJCodecGinProvider {
 	return &SonicJCodecGinProvider{
-		IProvider: NewProvider().SetName("sonic_json_codec").SetTarget("gin").SetType(ProviderTypeDefault().GroupJsonCodecChoose),
+		IProvider: NewProvider().SetName("sonic_json_codec").SetTarget("gin").SetType(ProviderTypeDefault().GroupTrafficCodecChoose),
 	}
 }
 
@@ -22,7 +22,7 @@ func (j *SonicJCodecGinProvider) Initialize(ctx IContext, fn ...ProviderInitFunc
 		return nil, nil
 	}
 	// 实现 JSON 编解码器的注册逻辑
-	jcodec, err := GetInstance[ginJson.Core](ctx.GetStarter().GetApplication().GetDefaultJsonCodecKey())
+	jcodec, err := GetInstance[ginJson.Core](ctx.GetStarter().GetApplication().GetDefaultTrafficCodecKey())
 	if err != nil {
 		return nil, err
 	}

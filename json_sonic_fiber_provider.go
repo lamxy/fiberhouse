@@ -7,7 +7,7 @@ type SonicJCodecFiberProvider struct {
 // NewJCodecProvider 创建一个新的 JSON 编解码提供者
 func NewSonicJCodecFiberProvider() *SonicJCodecFiberProvider {
 	return &SonicJCodecFiberProvider{
-		IProvider: NewProvider().SetName("sonic_json_codec").SetTarget("fiber").SetType(ProviderTypeDefault().GroupJsonCodecChoose),
+		IProvider: NewProvider().SetName("sonic_json_codec").SetTarget("fiber").SetType(ProviderTypeDefault().GroupTrafficCodecChoose),
 	}
 }
 
@@ -18,7 +18,7 @@ func (j *SonicJCodecFiberProvider) Initialize(ctx IContext, fn ...ProviderInitFu
 		return nil, nil
 	}
 	// 实现 JSON 编解码器的注册逻辑
-	jcodec, err := GetInstance[JsonWrapper](ctx.GetStarter().GetApplication().GetDefaultJsonCodecKey())
+	jcodec, err := GetInstance[JsonWrapper](ctx.GetStarter().GetApplication().GetDefaultTrafficCodecKey())
 	if err != nil {
 		return nil, err
 	}

@@ -64,7 +64,7 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 
 	cfg := cf.GetAppContext().GetConfig()
 	// fiberhouse.JsonWrapper序列化反序列化接口，默认编解码器实例
-	//json := GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultJsonCodecKey())
+	//json := GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultTrafficCodecKey())
 
 	// 配置JSON序列化器
 	var (
@@ -75,11 +75,11 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 	if len(managers) == 0 {
 		// 默认编解码器实例
 		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec.")
-		json = GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultJsonCodecKey())
+		json = GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultTrafficCodecKey())
 	} else {
 		var jsonCodecManager IProviderManager
 		for _, manager := range managers {
-			if manager.Type().GetTypeID() == ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() {
+			if manager.Type().GetTypeID() == ProviderTypeDefault().GroupTrafficCodecChoose.GetTypeID() {
 				jsonCodecManager = manager
 				break
 			}

@@ -96,6 +96,7 @@ const (
 // 3. LocationXXXInit 在某个初始化阶段执行
 // 4. LocationXXXRun 在运行阶段执行
 // 5. LocationXXXCreate 在创建阶段执行
+// 6. 其他
 type DefaultPLocation struct {
 	ZeroLocation                   IProviderLocation // 初始化默认位点/零位点/保留为初始化状态
 	LocationAdaptCoreCtxChoose     IProviderLocation // 适配核心上下文选择位点（用于统一输出响应时屏蔽不同核心引擎上下文差异）

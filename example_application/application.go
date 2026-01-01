@@ -11,7 +11,6 @@ import (
 	"github.com/lamxy/fiberhouse/component/validate"
 	"github.com/lamxy/fiberhouse/database/dbmongo"
 	"github.com/lamxy/fiberhouse/database/dbmysql"
-	"github.com/lamxy/fiberhouse/example_application/providers"
 	"github.com/lamxy/fiberhouse/example_application/providers/exceptions"
 	"github.com/lamxy/fiberhouse/example_application/providers/validatecustom"
 	"github.com/lamxy/fiberhouse/globalmanager"
@@ -26,7 +25,7 @@ type Application struct {
 	KeyRedisTest   string
 }
 
-// NewApplication new项目应用
+// NewApplication New项目应用
 func NewApplication(ctx fiberhouse.IApplicationContext) fiberhouse.ApplicationRegister {
 	app := &Application{
 		name:           "application",
@@ -39,13 +38,10 @@ func NewApplication(ctx fiberhouse.IApplicationContext) fiberhouse.ApplicationRe
 
 // initKeyMap 初始化自定义的实例key映射
 func (app *Application) initKeyMap() {
-	cfmProvider := providers.NewCustomFlagMapProvider()
-	initFunc := func(iProvider fiberhouse.IProvider) (any, error) {
-		app.instanceKeyMap["__custom_flag_1"] = "__custom_instance_key_1"
-		app.instanceKeyMap["__custom_flag2"] = "__custom_instance_key_2"
-		return nil, nil
+	app.instanceKeyMap = map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey{
+		"__custom_flag_1": "__custom_instance_key_1",
+		"__custom_flag_2": "__custom_instance_key_2",
 	}
-	_, _ = cfmProvider.Initialize(app.Ctx, initFunc)
 }
 
 // GetName 获取应用名称
@@ -107,7 +103,8 @@ func (app *Application) ConfigGlobalInitializers() globalmanager.InitializerMap 
 	}
 }
 
-// ConfigRequiredGlobalKeys 配置并返回全局管理容器中在启动时必须初始化的key // TODO 全局对象初始化提供者
+// ConfigRequiredGlobalKeys 配置并返回全局管理容器中在启动时必须初始化的key
+// 可交给全局对象初始化提供者
 func (app *Application) ConfigRequiredGlobalKeys() []globalmanager.KeyName {
 	return []string{KEY_MONGODB, KEY_REDIS, KEY_JSON_SONIC_ESCAPE, KEY_JSON_SONIC_FAST, KEY_MYSQL}
 }
@@ -143,7 +140,8 @@ func (app *Application) RegisterAppMiddleware(cs fiberhouse.CoreStarter) {
 	}
 }
 
-// 统一定义"获取部分必要对象在全局管理容器中的实例Key"   // TODO 全局实例Key提供者
+// 统一定义"获取部分必要对象在全局管理容器中的实例Key"
+//可交给全局实例Key提供者
 
 func (app *Application) GetDBKey() string {
 	return KEY_MONGODB
@@ -160,10 +158,10 @@ func (app *Application) GetDBMysqlKey() string {
 func (app *Application) GetRedisKey() string {
 	return KEY_REDIS
 }
-func (app *Application) GetFastJsonCodecKey() string {
+func (app *Application) GetFastTrafficCodecKey() string {
 	return KEY_JSON_SONIC_FAST
 }
-func (app *Application) GetDefaultJsonCodecKey() string {
+func (app *Application) GetDefaultTrafficCodecKey() string {
 	return KEY_JSON_SONIC_ESCAPE
 }
 func (app *Application) GetLocalCacheKey() string {
@@ -205,7 +203,23 @@ func (app *Application) GetXxxCustomKey() globalmanager.KeyName {
 	return "__key_custom_example" // 注意：这里是示例key
 }
 
-// RegisterCoreHook 注册核心应用的生命周期钩子函数 // TODO 核心应用钩子提供者
+// RegisterCoreHook 注册核心应用的生命周期钩子函数
 func (app *Application) RegisterCoreHook(cs fiberhouse.CoreStarter) {
-	providers.RegisterAppCoreHook(app.Ctx, cs)
+	// 核心应用钩子提供者
+	managers := fiberhouse.ProviderLocationDefault().LocationCoreHookInit.GetManagers()
+	if len(managers) > 0 {
+		for _, manager := range managers {
+			if manager.Type().GetTypeID() == fiberhouse.ProviderTypeDefault().GroupCoreHookChoose.GetTypeID() {
+				_, err := manager.LoadProvider(func(manager fiberhouse.IProviderManager) (any, error) {
+					return cs, nil
+				})
+				if err != nil {
+					app.GetContext().GetLogger().WarnWith(app.GetContext().GetConfig().LogOriginFrame()).
+						Str("applicationStarter", "RegisterCoreHook").
+						Err(err).
+						Msg("Failed to load core hook providers")
+				}
+			}
+		}
+	}
 }

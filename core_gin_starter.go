@@ -70,12 +70,12 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 	if len(managers) == 0 {
 		// 使用默认的JSON编解码提供者
 		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec")
-		ginJson.API = GetMustInstance[ginJson.Core](fs.GetApplication().GetDefaultJsonCodecKey())
+		ginJson.API = GetMustInstance[ginJson.Core](fs.GetApplication().GetDefaultTrafficCodecKey())
 	} else {
 		var jsonCodecManager IProviderManager
 
 		for _, manager := range managers {
-			if manager.Type().GetTypeID() == ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() {
+			if manager.Type().GetTypeID() == ProviderTypeDefault().GroupTrafficCodecChoose.GetTypeID() {
 				jsonCodecManager = manager
 				break
 			}

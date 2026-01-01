@@ -84,7 +84,7 @@ type CoreStarter interface {
 
 	// InitCoreApp 初始化核心应用
 	// 创建并配置底层HTTP服务实例（如Fiber应用）
-	InitCoreApp(fs FrameStarter, jsonCodecManagerOrMore ...IProviderManager)
+	InitCoreApp(fs FrameStarter, managers ...IProviderManager)
 
 	// RegisterAppMiddleware 注册应用级中间件
 	// 注册应用级别的中间件，如错误恢复、请求日志、CORS等全局中间件
@@ -158,18 +158,18 @@ func (ik *InstanceKey) StringWithPrefix(pfx string) globalmanager.KeyName {
 // 框架启动器通过这些预定义方法，获取必要的全局对象实例key，
 // 以便在应用启动器启动阶段，注册和初始化这些全局对象实例，完成框架的启动流程
 type IApplication interface {
-	GetDBKey() globalmanager.KeyName               // 定义数据库实例key
-	GetCacheKey() globalmanager.KeyName            // 定义缓存实例的key，
-	GetDBMongoKey() globalmanager.KeyName          // 定义mongodb实例的key，应用启动器用到
-	GetDBMysqlKey() globalmanager.KeyName          // 定义mysql实例的key，应用启动器用到
-	GetRedisKey() globalmanager.KeyName            // 定义redis实例key，应用启动器异步任务注册用到
-	GetFastJsonCodecKey() globalmanager.KeyName    // 定义快速的json编解码器，应用启动器用到
-	GetDefaultJsonCodecKey() globalmanager.KeyName // 定义默认的json编解码器，应用启动器用到
-	GetLocalCacheKey() globalmanager.KeyName       // 定义本地缓存实例的key
-	GetRemoteCacheKey() globalmanager.KeyName      // 定义远程缓存实例的key
-	GetLevel2CacheKey() globalmanager.KeyName      // 定义二级缓存实例的key
-	GetTaskDispatcherKey() globalmanager.KeyName   // 定义异步任务客户端实例的key
-	GetTaskServerKey() globalmanager.KeyName       // 定义异步任务服务端实例的key
+	GetDBKey() globalmanager.KeyName                  // 定义数据库实例key
+	GetCacheKey() globalmanager.KeyName               // 定义缓存实例的key，
+	GetDBMongoKey() globalmanager.KeyName             // 定义mongodb实例的key，应用启动器用到
+	GetDBMysqlKey() globalmanager.KeyName             // 定义mysql实例的key，应用启动器用到
+	GetRedisKey() globalmanager.KeyName               // 定义redis实例key，应用启动器异步任务注册用到
+	GetFastTrafficCodecKey() globalmanager.KeyName    // 定义快速的传输编解码器，应用启动器用到
+	GetDefaultTrafficCodecKey() globalmanager.KeyName // 定义默认的传输编解码器，应用启动器用到
+	GetLocalCacheKey() globalmanager.KeyName          // 定义本地缓存实例的key
+	GetRemoteCacheKey() globalmanager.KeyName         // 定义远程缓存实例的key
+	GetLevel2CacheKey() globalmanager.KeyName         // 定义二级缓存实例的key
+	GetTaskDispatcherKey() globalmanager.KeyName      // 定义异步任务客户端实例的key
+	GetTaskServerKey() globalmanager.KeyName          // 定义异步任务服务端实例的key
 
 	// more keys...
 

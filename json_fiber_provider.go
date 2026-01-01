@@ -2,6 +2,7 @@ package fiberhouse
 
 import (
 	"github.com/lamxy/fiberhouse/component/jsoncodec"
+	"github.com/lamxy/fiberhouse/constant"
 )
 
 type JsonJCodecFiberProvider struct {
@@ -11,7 +12,7 @@ type JsonJCodecFiberProvider struct {
 // NewJsonJCodecFiberProvider 创建一个新的 JSON 编解码提供者
 func NewJsonJCodecFiberProvider() *JsonJCodecFiberProvider {
 	return &JsonJCodecFiberProvider{
-		IProvider: NewProvider().SetName("json_codec").SetTarget("Fiber").SetType(ProviderTypeDefault().GroupJsonCodecChoose),
+		IProvider: NewProvider().SetName(constant.TrafficCodecWithStd).SetTarget(constant.CoreTypeWithFiber).SetType(ProviderTypeDefault().GroupTrafficCodecChoose),
 	}
 }
 

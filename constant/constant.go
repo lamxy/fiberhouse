@@ -58,7 +58,7 @@ const (
 	FrameTypeWithDefaultFrameStarter = "DefaultFrameStarter"
 	CoreTypeWithFiber                = "fiber"
 	CoreTypeWithGin                  = "gin"
-	JsonCodecWithStd                 = "std_json_codec"
-	JsonCodecWithSonic               = "sonic_json_codec"
-	JsonCodecWithGoJson              = "go_json_codec"
+	TrafficCodecWithStd              = "std_json_codec"
+	TrafficCodecWithSonic            = "sonic_json_codec"
+	TrafficCodecWithGoJson           = "go_json_codec"
 )

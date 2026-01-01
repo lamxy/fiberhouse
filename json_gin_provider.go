@@ -3,6 +3,7 @@ package fiberhouse
 import (
 	ginJson "github.com/gin-gonic/gin/codec/json"
 	"github.com/lamxy/fiberhouse/component/jsoncodec"
+	"github.com/lamxy/fiberhouse/constant"
 )
 
 type JsonJCodecGinProvider struct {
@@ -12,7 +13,7 @@ type JsonJCodecGinProvider struct {
 // NewJsonJCodecGinProvider 创建一个新的 JSON 编解码提供者
 func NewJsonJCodecGinProvider() *JsonJCodecGinProvider {
 	return &JsonJCodecGinProvider{
-		IProvider: NewProvider().SetName("json_codec").SetTarget("gin").SetType(ProviderTypeDefault().GroupJsonCodecChoose),
+		IProvider: NewProvider().SetName(constant.TrafficCodecWithStd).SetTarget(constant.CoreTypeWithGin).SetType(ProviderTypeDefault().GroupTrafficCodecChoose),
 	}
 }
 

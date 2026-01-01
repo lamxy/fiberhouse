@@ -7,7 +7,7 @@ import (
 )
 
 // RegisterSwagger 注册Swagger UI route
-func RegisterSwagger(ctx fiberhouse.IApplicationContext, cs fiberhouse.CoreStarter) {
+func RegisterFiberSwagger(ctx fiberhouse.IApplicationContext, cs fiberhouse.CoreStarter) {
 	app := cs.GetCoreApp().(*fiber.App)
 	registerOrNot := ctx.GetConfig().Bool("application.swagger.enable")
 	if registerOrNot {

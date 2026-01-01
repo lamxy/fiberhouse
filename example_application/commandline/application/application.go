@@ -173,10 +173,10 @@ func (app *Application) GetCacheKey() string {
 func (app *Application) GetRedisKey() string {
 	return example_application.KEY_REDIS
 }
-func (app *Application) GetFastJsonCodecKey() string {
+func (app *Application) GetFastTrafficCodecKey() string {
 	return example_application.KEY_JSON_SONIC_FAST
 }
-func (app *Application) GetDefaultJsonCodecKey() string {
+func (app *Application) GetDefaultTrafficCodecKey() string {
 	return example_application.KEY_JSON_SONIC_ESCAPE
 }
 func (app *Application) GetTaskDispatcherKey() string {

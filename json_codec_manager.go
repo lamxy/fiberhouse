@@ -14,7 +14,7 @@ func NewJsonCodecPManager(ctx IApplicationContext) *JsonCodecPManager {
 	son := &JsonCodecPManager{
 		IProviderManager: NewProviderManager(ctx).
 			SetName("JsonCodecPManager").
-			SetType(ProviderTypeDefault().GroupJsonCodecChoose).
+			SetType(ProviderTypeDefault().GroupTrafficCodecChoose).
 			SetOrBindToLocation(ProviderLocationDefault().LocationCoreEngineInit, true), // 设置并绑定到核心引擎初始化位置点
 	}
 	// 将子管理器挂载到父管理器
@@ -37,8 +37,8 @@ func (m *JsonCodecPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, err
 	)
 
 	for _, provider := range m.List() {
-		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupJsonCodecChoose.GetTypeID() &&
-			provider.Name() == bootCfg.JsonCodec &&
+		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupTrafficCodecChoose.GetTypeID() &&
+			provider.Name() == bootCfg.TrafficCodec &&
 			provider.Target() == bootCfg.CoreType {
 			finalProvider = provider
 			break

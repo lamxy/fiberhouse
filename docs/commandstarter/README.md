@@ -56,7 +56,7 @@
 				// 创建并返回 MySQL 数据库连接实例
 			},
 			// JSON 编解码器
-			app.GetFastJsonCodecKey(): func() (interface{}, error) {
+			app.GetFastTrafficCodecKey(): func() (interface{}, error) {
 				// 创建并返回 JSON 编解码器实例
 			},
 		}
@@ -65,7 +65,7 @@
 		// 预先初始化必要的全局对象
 		requiredKeys := []globalmanager.KeyName{
 			app.GetDBMysqlKey(),
-			app.GetFastJsonCodecKey(),
+			app.GetFastTrafficCodecKey(),
 		}
 		for _, key := range requiredKeys {
 			if _, err := app.GetContext().GetContainer().Get(key); err != nil {

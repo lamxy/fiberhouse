@@ -1,4 +1,4 @@
-package providers
+package apphook
 
 import (
 	"github.com/gofiber/fiber/v2"
@@ -6,7 +6,7 @@ import (
 )
 
 // RegisterAppCoreHook 注册应用钩子函数
-func RegisterAppCoreHook(appCtx fiberhouse.IApplicationContext, cs fiberhouse.CoreStarter) {
+func RegisterFiberAppCoreHook(appCtx fiberhouse.IApplicationContext, cs fiberhouse.CoreStarter) {
 	coreApp := cs.GetCoreApp().(*fiber.App)
 	coreApp.Hooks().OnGroup(func(group fiber.Group) error {
 		appCtx.GetLogger().InfoWith(appCtx.GetConfig().LogOriginFrame()).Str("ApplicationRegister", "Application").Msg("ApplicationRegister OnGroup...")

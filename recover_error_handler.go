@@ -128,15 +128,15 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx providerctx.ICoreContext, e 
 
 	var jsonEnCoder func(interface{}) ([]byte, error)
 	// json编码器
-	jsonEnc, errJec := r.GetContext().GetContainer().Get(r.GetContext().GetStarter().GetApplication().GetFastJsonCodecKey())
+	jsonEnc, errJec := r.GetContext().GetContainer().Get(r.GetContext().GetStarter().GetApplication().GetFastTrafficCodecKey())
 	if errJec != nil {
-		logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Err(errJec).Msg("GetFastJsonCodecKey get json encoder from container failed")
+		logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Err(errJec).Msg("GetFastTrafficCodecKey get json encoder from container failed")
 		return
 	} else {
 		if jsonTmp, ok := jsonEnc.(JsonWrapper); ok {
 			jsonEnCoder = jsonTmp.Marshal
 		} else {
-			logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Msg("GetFastJsonCodecKey json encoder from container type assert to JsonWrapper failed")
+			logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Msg("GetFastTrafficCodecKey json encoder from container type assert to JsonWrapper failed")
 			return
 		}
 	}
