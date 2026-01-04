@@ -1,5 +1,7 @@
 package fiberhouse
 
+import "github.com/lamxy/fiberhouse/constant"
+
 type SonicJCodecFiberProvider struct {
 	IProvider
 }
@@ -7,7 +9,11 @@ type SonicJCodecFiberProvider struct {
 // NewJCodecProvider 创建一个新的 JSON 编解码提供者
 func NewSonicJCodecFiberProvider() *SonicJCodecFiberProvider {
 	return &SonicJCodecFiberProvider{
-		IProvider: NewProvider().SetName("sonic_json_codec").SetTarget("fiber").SetType(ProviderTypeDefault().GroupTrafficCodecChoose),
+		IProvider: NewProvider().
+			SetName("SonicJCodecFiberProvider").
+			SetVersion(constant.TrafficCodecWithSonic).
+			SetTarget(constant.CoreTypeWithFiber).
+			SetType(ProviderTypeDefault().GroupTrafficCodecChoose),
 	}
 }
 

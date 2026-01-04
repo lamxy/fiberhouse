@@ -55,7 +55,8 @@ func (c *ContextCore) Release() {
 	contextCorePool.Put(c)
 }
 
-// CoreContext 全局函数，接收任意类型参数，返回核心上下文接口，内部核心上下文提供者管理器自动依据启动配置的核心参数CoreType决定返回哪种核心上下文实现JSON响应
+// CoreContext 全局函数，接收任意类型参数(不同框架的上下文)，返回核心上下文接口
+// 内部核心上下文提供者管理器自动依据启动配置的核心参数CoreType决定返回哪种核心上下文实现JSON响应
 func CoreContext(c any) providerCtx.ICoreContext {
 	// 获取核心上下文管理器单例
 	manager := NewCoreCtxPManagerParentOnce()

@@ -13,7 +13,11 @@ type JsonJCodecGinProvider struct {
 // NewJsonJCodecGinProvider 创建一个新的 JSON 编解码提供者
 func NewJsonJCodecGinProvider() *JsonJCodecGinProvider {
 	return &JsonJCodecGinProvider{
-		IProvider: NewProvider().SetName(constant.TrafficCodecWithStd).SetTarget(constant.CoreTypeWithGin).SetType(ProviderTypeDefault().GroupTrafficCodecChoose),
+		IProvider: NewProvider().
+			SetName("JsonJCodecGinProvider").
+			SetVersion(constant.TrafficCodecWithStd).
+			SetTarget(constant.CoreTypeWithGin).
+			SetType(ProviderTypeDefault().GroupTrafficCodecChoose),
 	}
 }
 

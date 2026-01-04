@@ -145,7 +145,7 @@ func DefaultPManagers(ctx IApplicationContext) *DefaultPManagerCollection {
 			// 核心上下文适配器管理器
 			NewCoreCtxPManager(ctx),
 			// 恢复惊慌管理器
-			NewRecoveryManagerOnce(ctx),
+			NewRecoveryPManagerOnce(ctx),
 			// more...
 		)
 	})

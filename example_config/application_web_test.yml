@@ -23,6 +23,8 @@ application:
       type: "default"                       # 引擎类型，默认default(fiber)、gin、other
       servers:
         gin:                                # gin框架的基础配置
+          host: 0.0.0.0
+          port: 8080
           readBufferSize: 4096              # 读取缓冲区大小
           writeBufferSize: 4096             # 写入缓冲区大小
           bodyLimit: 4096                    # 单位B，body最大限制

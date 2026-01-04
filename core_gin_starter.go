@@ -105,16 +105,16 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 
 // initHttpServer 初始化HTTP服务器
 func (cg *CoreWithGin) initHttpServer(cfg appconfig.IAppConfig) {
-	host := cfg.String("application.plugins.server.gin.host")
-	port := cfg.String("application.plugins.server.gin.port")
+	host := cfg.String("application.plugins.engine.servers.gin.host")
+	port := cfg.String("application.plugins.engine.servers.gin.port")
 
 	cg.httpServer = &http.Server{
 		Addr:           host + ":" + port,
 		Handler:        cg.coreApp,
-		ReadTimeout:    cfg.Duration("application.plugins.server.gin.readTimeout", 30) * time.Second,
-		WriteTimeout:   cfg.Duration("application.plugins.server.gin.writeTimeout", 30) * time.Second,
-		IdleTimeout:    cfg.Duration("application.plugins.server.gin.idleTimeout", 60) * time.Second,
-		MaxHeaderBytes: cfg.Int("application.plugins.server.gin.bodyLimit", 4096) * 1024,
+		ReadTimeout:    cfg.Duration("application.plugins.engine.servers.gin.readTimeout", 30) * time.Second,
+		WriteTimeout:   cfg.Duration("application.plugins.engine.servers.gin.writeTimeout", 30) * time.Second,
+		IdleTimeout:    cfg.Duration("application.plugins.engine.servers.gin.idleTimeout", 60) * time.Second,
+		MaxHeaderBytes: cfg.Int("application.plugins.engine.servers.gin.bodyLimit", 4096) * 1024,
 	}
 }
 
@@ -145,7 +145,8 @@ func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProvi
 	})
 
 	// 注册panic恢复中间件
-	cg.coreApp.Use(MustRecoverMiddleware[gin.HandlerFunc](recoverHandler))
+	//cg.coreApp.Use(recoverHandler.(func(ctx *gin.Context)))
+	cg.coreApp.Use(MustRecoverMiddleware[func(ctx *gin.Context)](recoverHandler))
 
 	// 注册错误处理器中间件
 	cg.coreApp.Use(adaptor.GinErrorHandler(eh.ErrorHandler))

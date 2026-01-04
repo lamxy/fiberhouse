@@ -164,13 +164,13 @@ func Default(opts ...BootConfigOption) *FiberHouse {
 	cfg := &BootConfig{
 		AppId:        "",
 		AppName:      "FiberHouse Application",
-		Version:      "1.0.0",
+		Version:      "0.0.1",
 		Date:         "",
-		FrameType:    constant.FrameTypeWithDefaultFrameStarter, // TODO 追加默认配置项的常量声明
-		CoreType:     "fiber",
-		TrafficCodec: "sonic_json_codec",
-		ConfigPath:   "./config",
-		LogPath:      "./logs",
+		FrameType:    constant.FrameTypeWithDefaultFrameStarter,
+		CoreType:     constant.CoreTypeWithFiber,
+		TrafficCodec: constant.TrafficCodecWithSonic,
+		ConfigPath:   "./",
+		LogPath:      "./",
 	}
 
 	// 应用函数选项

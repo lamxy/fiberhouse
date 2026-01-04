@@ -57,7 +57,7 @@ func main() {
 		AppName:      "Default FiberHouse Application",          // 应用名称
 		Version:      Version,                                   // 应用版本
 		FrameType:    constant.FrameTypeWithDefaultFrameStarter, // 默认提供的框架启动器标识: DefaultFrameStarter
-		CoreType:     constant.CoreTypeWithFiber,                // fiber | gin | ...
+		CoreType:     constant.CoreTypeWithGin,                  // fiber | gin | ...
 		TrafficCodec: constant.TrafficCodecWithSonic,            // 传输流量的编解码器: sonic_json_codec|std_json_codec|go_json_codec|pb...
 		ConfigPath:   "./example_config",                        // 应用全局配置路径
 		LogPath:      "./example_main/logs",                     // 日志文件路径
@@ -75,13 +75,14 @@ func main() {
 		middleware.NewFiberAppMiddlewareProvider(),
 		middleware.NewFiberModuleMiddlewareProvider(),
 		// 其他可切换的框架相关中间件提供者
-		// ...
+		middleware.NewGinAppMiddlewareProvider(),
 
 		// fiber模块路由和swagger注册提供者
 		module.NewFiberRouteRegisterProvider(),
 		module.NewFiberSwaggerRegisterProvider(),
 		// gin模块路由和swagger注册提供者
-		// ...
+		module.NewGinRouteRegisterProvider(),
+		module.NewGinSwaggerRegisterProvider(),
 	)
 	managers := fiberhouse.DefaultPManagers(fh.AppCtx).AndMore(
 		// 框架选项初始化管理器

@@ -1,7 +1,7 @@
 package fiberhouse
 
 import (
-	"errors"
+	"fmt"
 )
 
 // JsonCodecPManager JSON 编解码提供者管理器
@@ -29,7 +29,7 @@ func (m *JsonCodecPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, err
 		return loadFunc[0](m)
 	}
 	if len(m.List()) == 0 {
-		return nil, errors.New("no json codec provider found")
+		return nil, fmt.Errorf("manager '%s': no json codec provider found", m.Name())
 	}
 	var (
 		finalProvider IProvider
@@ -38,14 +38,14 @@ func (m *JsonCodecPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, err
 
 	for _, provider := range m.List() {
 		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupTrafficCodecChoose.GetTypeID() &&
-			provider.Name() == bootCfg.TrafficCodec &&
+			provider.Version() == bootCfg.TrafficCodec &&
 			provider.Target() == bootCfg.CoreType {
 			finalProvider = provider
 			break
 		}
 	}
 	if finalProvider == nil {
-		return nil, errors.New("no matching json codec provider found")
+		return nil, fmt.Errorf("manager '%s': no matching json codec provider found", m.Name())
 	}
 	return finalProvider.Initialize(m.GetContext())
 }

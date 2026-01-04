@@ -50,27 +50,27 @@ func NewGinRecoveryProvider() *GinRecoveryProvider {
 // Initialize 重载gin提供者初始化方法
 func (p *GinRecoveryProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
 	p.Check()
-	p.SetStatus(StateLoaded)
+	defer p.SetStatus(StateLoaded)
 	return NewGinRecovery(ctx.(IApplicationContext)), nil
 }
 
 //-----------------------------------------------------------------------------------
 
-// RecoveryManager 恢复惊慌管理器
-type RecoveryManager struct {
+// RecoveryPManager 恢复惊慌管理器
+type RecoveryPManager struct {
 	IProviderManager
 }
 
 var (
-	recoveryManagerInstance *RecoveryManager
+	recoveryManagerInstance *RecoveryPManager
 	recoveryManagerOnce     sync.Once
 )
 
 // NewRecoveryManager 创建恢复惊慌管理器
-func NewRecoveryManager(ctx IContext) *RecoveryManager {
-	m := &RecoveryManager{
+func NewRecoveryPManager(ctx IContext) *RecoveryPManager {
+	m := &RecoveryPManager{
 		IProviderManager: NewProviderManager(ctx).
-			SetName("RecoveryManager").
+			SetName("RecoveryPManager").
 			SetType(ProviderTypeDefault().GroupRecoverMiddlewareChoose).
 			SetOrBindToLocation(ProviderLocationDefault().LocationAppMiddlewareInit, true),
 	}
@@ -78,16 +78,16 @@ func NewRecoveryManager(ctx IContext) *RecoveryManager {
 	return m
 }
 
-// NewRecoveryManagerOnce 获取恢复惊慌管理器单例
-func NewRecoveryManagerOnce(ctx IContext) *RecoveryManager {
+// NewRecoveryPManagerOnce 获取恢复惊慌管理器单例
+func NewRecoveryPManagerOnce(ctx IContext) *RecoveryPManager {
 	recoveryManagerOnce.Do(func() {
-		recoveryManagerInstance = NewRecoveryManager(ctx)
+		recoveryManagerInstance = NewRecoveryPManager(ctx)
 	})
 	return recoveryManagerInstance
 }
 
 // LoadProvider 根据 CoreType 加载对应的恢复惊慌提供者
-func (m *RecoveryManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
+func (m *RecoveryPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
 	appCtx, ok := m.GetContext().(IApplicationContext)
 	if !ok {
 		return nil, fmt.Errorf("context is not IApplicationContext")
@@ -105,6 +105,7 @@ func (m *RecoveryManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 			if recovery, ok := result.(IRecover); ok {
 				return recovery, nil
 			}
+			return nil, fmt.Errorf("provider %s is not recoverable", provider.Name())
 		}
 	}
 
@@ -112,7 +113,7 @@ func (m *RecoveryManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 }
 
 // MountToParent 挂载到父级管理器
-func (m *RecoveryManager) MountToParent(son ...IProviderManager) IProviderManager {
+func (m *RecoveryPManager) MountToParent(son ...IProviderManager) IProviderManager {
 	if len(son) > 0 {
 		m.IProviderManager.MountToParent(son[0])
 		return m
