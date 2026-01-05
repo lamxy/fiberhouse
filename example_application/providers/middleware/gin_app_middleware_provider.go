@@ -54,14 +54,7 @@ func (g *GinAppMiddlewareProvider) Initialize(ctx fiberhouse.IContext, initFunc 
 		"admin": "admin123",
 	}))
 
-	// 注册 CSRF 中间件
-	//app.Use(csrf.Middleware(csrf.Options{
-	//	Secret: "csrf-secret-key-32bytes-long!!!",
-	//	ErrorFunc: func(c *gin.Context) {
-	//		_ = c.Error(errors.New( "CSRF token mismatch"))
-	//		c.Abort()
-	//	},
-	//}))
+	// 其他中间件...
 
 	g.SetStatus(fiberhouse.StateLoaded)
 	return app, nil

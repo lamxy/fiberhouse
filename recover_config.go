@@ -5,7 +5,7 @@
 // GitHub: https://github.com/lamxy
 
 /*
-Package recover 的配置模块，定义中间件的配置结构和默认值。
+recover 的配置模块，定义中间件的配置结构和默认值。
 
 该文件包含 recover 中间件的所有配置选项定义，支持灵活的自定义配置，
 包括堆栈跟踪、调试模式、日志记录等功能的开关控制。
@@ -20,6 +20,7 @@ Config 结构体包含以下配置选项：
   - Logger: 日志记录器接口
   - AppContext: 应用框架上下文
   - Stdout: 标准输出开关
+  - JsonCodec: JSON 编码函数
   - DebugMode: 调试模式开关
 
 # 使用示例
@@ -36,6 +37,7 @@ Config 结构体包含以下配置选项：
 		StackTraceHandler: customHandler,
 	}))
 */
+
 package fiberhouse
 
 import (
@@ -43,7 +45,7 @@ import (
 )
 
 // Config 结构体用于定义 recover 中间件的配置项。
-type Config struct {
+type RecoverConfig struct {
 	// Next 定义了一个函数，当返回 true 时跳过该中间件。
 	//
 	// 可选。 默认: nil
@@ -65,6 +67,9 @@ type Config struct {
 	// Logger for record messages
 	Logger interface{}
 
+	// Json Codec 用于将数据编码为 JSON 格式的函数
+	JsonCodec func(interface{}) ([]byte, error)
+
 	// 默认输出目标是 os.Stdout
 	Stdout bool
 	// 调试模式：true 将详细错误信息响应给客户端，否则仅记入日志
@@ -72,7 +77,7 @@ type Config struct {
 }
 
 // ConfigDefault 默认配置
-var ConfigDefault = Config{
+var RecoverConfigDefault = RecoverConfig{
 	Next:              nil,
 	EnableStackTrace:  false,
 	StackTraceHandler: func(c providerctx.ICoreContext, e interface{}) {},
@@ -82,13 +87,13 @@ var ConfigDefault = Config{
 }
 
 // ConfigConfigured Configured 已配置
-var ConfigConfigured Config
+var ConfigConfigured RecoverConfig
 
 // 辅助函数，用于设置默认配置值
-func configDefault(config ...Config) Config {
+func configDefault(config ...RecoverConfig) RecoverConfig {
 	// 如果未提供任何配置，则返回默认配置
 	if len(config) < 1 {
-		ConfigConfigured = ConfigDefault
+		ConfigConfigured = RecoverConfigDefault
 		return ConfigConfigured
 	}
 
@@ -96,7 +101,7 @@ func configDefault(config ...Config) Config {
 	ConfigConfigured = config[0]
 
 	if ConfigConfigured.EnableStackTrace && ConfigConfigured.StackTraceHandler == nil {
-		ConfigConfigured.StackTraceHandler = ConfigDefault.StackTraceHandler
+		ConfigConfigured.StackTraceHandler = RecoverConfigDefault.StackTraceHandler
 	}
 
 	return ConfigConfigured

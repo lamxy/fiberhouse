@@ -2,7 +2,7 @@ package service
 
 import (
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/example_application/api-vo/example/requestvo"
+	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
 )

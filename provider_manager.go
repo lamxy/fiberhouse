@@ -5,66 +5,6 @@ import (
 	"sync"
 )
 
-// 定义状态变量
-var (
-	StateUnload = new(State).Set(0, "unload")
-	StateLoaded = new(State).Set(1, "loaded")
-)
-
-// State 提供者的状态结构体，实现状态器接口
-type State struct {
-	id   uint8
-	name string
-	lock sync.RWMutex
-}
-
-// Id 状态Id
-func (s *State) Id() uint8 {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.id
-}
-
-// Name 状态名称
-func (s *State) Name() string {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.name
-}
-
-// Set 设置状态Id和名称
-func (s *State) Set(id uint8, name string) IState {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	s.id = id
-	s.name = name
-	return s
-}
-
-// SetState 从另一个状态器设置状态
-func (s *State) SetState(state IState) IState {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.id = state.Id()
-	s.name = state.Name()
-	return s
-}
-
-// 定义提供者错误类型
-var (
-	ErrProviderAlreadyExists = &ProviderError{msg: "provider already exists"}
-	ErrProviderNotFound      = &ProviderError{msg: "provider not found"}
-)
-
-type ProviderError struct {
-	msg string
-}
-
-func (e *ProviderError) Error() string {
-	return e.msg
-}
-
 // ProviderManager 提供者管理器接口的基类实现，通过组合模式支持子类扩展，子类只需重载所需方法即可实现多态行为
 // 注意：在调用提供者管理器接口的一些特性方法前，子类实例应通过 MountToParent 方法将子类实例挂载到该基类的 sonManager 字段，以确保多态行为的正确实现
 // 如LoadProvider()方法

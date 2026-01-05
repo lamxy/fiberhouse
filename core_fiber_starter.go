@@ -22,6 +22,7 @@ type CoreWithFiber struct {
 	ctx     IApplicationContext
 	CoreCfg *fiber.Config
 	coreApp *fiber.App
+	json    JsonWrapper
 }
 
 // NewCoreWithFiber 创建一个应用核心启动器对象
@@ -106,6 +107,7 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 			panic("Loaded JSON codec provider does not implement JsonWrapper interface")
 		}
 	}
+	cf.json = json
 
 	// IErrorHandler接口实例
 	eh := NewErrorHandlerOnce(cf.GetAppContext())
@@ -168,12 +170,13 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IPro
 	// IErrorHandler接口实例
 	eh := NewErrorHandlerOnce(cf.GetAppContext())
 
-	recoverHandler := eh.RecoverMiddleware(Config{
+	recoverHandler := eh.RecoverMiddleware(RecoverConfig{
 		AppCtx:            cf.GetAppContext(),
 		EnableStackTrace:  true,
 		StackTraceHandler: eh.DefaultStackTraceHandler,
 		Logger:            cf.GetAppContext().GetLogger(),
 		Stdout:            false,
+		JsonCodec:         cf.json.Marshal,
 		DebugMode:         debugMode, // true开启调试模式，将详细错误信息显示给客户端，否则隐藏细节，只能通过日志文件查看。生产环境关闭该调式模式。
 	})
 

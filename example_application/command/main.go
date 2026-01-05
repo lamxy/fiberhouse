@@ -4,7 +4,7 @@ import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/commandstarter"
-	"github.com/lamxy/fiberhouse/example_application/commandline/application"
+	"github.com/lamxy/fiberhouse/example_application/command/application"
 	"github.com/lamxy/fiberhouse/option"
 )
 

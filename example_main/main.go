@@ -66,32 +66,34 @@ func main() {
 	// 收集提供者和管理器
 	providers := fiberhouse.DefaultProviders().AndMore(
 		// 框架启动器和核心启动器的选项参数初始化提供者，
-		//注意：由于选项初始化管理器New时已唯一绑定对应的提供者，此处提供者可以无需收集
+		//注意：由于选项初始化管理器New时已唯一绑定对应的提供者，此处提供者可以无需新建和收集
 		//见NewFrameOptionInitPManager()函数
 		//optioninit.NewFrameOptionInitProvider(),
 		//optioninit.NewCoreOptionInitProvider(),
 
-		//中间件注册提供者
+		//基于Fiber的中间件注册提供者
 		middleware.NewFiberAppMiddlewareProvider(),
 		middleware.NewFiberModuleMiddlewareProvider(),
-		// 其他可切换的框架相关中间件提供者
+		// 基于Gin的中间件注册提供者
 		middleware.NewGinAppMiddlewareProvider(),
+		// 其他可切换的框架相关中间件提供者
+		// ...
 
 		// fiber模块路由和swagger注册提供者
 		module.NewFiberRouteRegisterProvider(),
-		module.NewFiberSwaggerRegisterProvider(),
 		// gin模块路由和swagger注册提供者
 		module.NewGinRouteRegisterProvider(),
-		module.NewGinSwaggerRegisterProvider(),
+		// 更多基于其他核心框架的模块路由注册提供者
+		// ...
 	)
 	managers := fiberhouse.DefaultPManagers(fh.AppCtx).AndMore(
-		// 框架选项初始化管理器
+		// 框架选项初始化管理器，获取框架启动器初始化的选项函数列表
 		optioninit.NewFrameOptionInitPManager(fh.AppCtx),
-		// 核心选项初始化管理器
+		// 核心选项初始化管理器，获取核心启动器初始化的选项函数列表
 		optioninit.NewCoreOptionInitPManager(fh.AppCtx).MountToParent(),
-		// 应用中间件管理器
+		// 应用中间件管理器，注册应用级中间件到核心应用实例
 		middleware.NewAppMiddlewarePManager(fh.AppCtx),
-		// 模块路由注册管理器
+		// 模块路由注册管理器，注册模块路由到核心应用实例
 		module.NewRouteRegisterPManager(fh.AppCtx),
 	)
 

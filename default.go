@@ -1,6 +1,6 @@
 package fiberhouse
 
-// TODO 提供一种方式，收集默认提供者、提供者管理器列表，同时支持追加更多的自定义的提供者、提供者管理器的列表，组合起来方便使用.
+// 提问AI: 提供一种方式，收集默认提供者、提供者管理器列表，同时支持追加更多的自定义的提供者、提供者管理器的列表，组合起来方便使用.
 //  参考的调用形式为：fiberhouse.DefaultProviders().AndMore([]IProvider{}...)、fiberhouse.DefaultPManagers().AndMore([]IProviderManager{}...)
 //  DefaultProviders()返回一个对象，对象内的默认列表可以手动列出，该对象有一个方法AndMore([]IProvider{})，该方法将默认提供者和传入的自定义提供者合并返回一个新的提供者切片列表。
 //  DefaultPManagers()同理。
@@ -37,8 +37,8 @@ func DefaultProviders() *DefaultProviderCollection {
 			NewSonicJCodecGinProvider(),   // Sonic编解码Gin提供者
 			NewCtxFiberProvider(),         // 上下文Fiber适配器提供者
 			NewCtxGinProvider(),           // 上下文Gin适配器提供者
-			NewFiberRecoveryProvider(),    // Fiber恢复提供者
-			NewGinRecoveryProvider(),      // Gin恢复提供者
+			NewFiberRecoveryProvider(),    // Fiber恢复提供者（框架默认提供）
+			NewGinRecoveryProvider(),      // Gin恢复提供者（框架默认提供）、及其他更多的基于自定义框架的恢复提供者
 			// more...
 		)
 	})

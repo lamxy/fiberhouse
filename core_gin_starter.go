@@ -8,11 +8,13 @@ package fiberhouse
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	ginJson "github.com/gin-gonic/gin/codec/json"
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/provider/adaptor"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -105,16 +107,89 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 
 // initHttpServer 初始化HTTP服务器
 func (cg *CoreWithGin) initHttpServer(cfg appconfig.IAppConfig) {
-	host := cfg.String("application.plugins.engine.servers.gin.host")
-	port := cfg.String("application.plugins.engine.servers.gin.port")
+	// NewCoreWithGin的选项参数已初始化httpServer,此处无需重复初始化
+	if cg.httpServer != nil {
+		return
+	}
+
+	host := cfg.String("application.plugins.engine.servers.gin.host", "0.0.0.0")
+	port := cfg.String("application.plugins.engine.servers.gin.port", "8080")
 
 	cg.httpServer = &http.Server{
-		Addr:           host + ":" + port,
-		Handler:        cg.coreApp,
-		ReadTimeout:    cfg.Duration("application.plugins.engine.servers.gin.readTimeout", 30) * time.Second,
-		WriteTimeout:   cfg.Duration("application.plugins.engine.servers.gin.writeTimeout", 30) * time.Second,
-		IdleTimeout:    cfg.Duration("application.plugins.engine.servers.gin.idleTimeout", 60) * time.Second,
-		MaxHeaderBytes: cfg.Int("application.plugins.engine.servers.gin.bodyLimit", 4096) * 1024,
+		Addr:    host + ":" + port,
+		Handler: cg.coreApp,
+
+		// 读取超时时间（默认30秒）
+		ReadTimeout: cfg.Duration("application.plugins.engine.servers.gin.readTimeout", 30) * time.Second,
+
+		// 写入超时时间（默认30秒）
+		WriteTimeout: cfg.Duration("application.plugins.engine.servers.gin.writeTimeout", 30) * time.Second,
+
+		// 空闲超时时间（默认120秒）
+		IdleTimeout: cfg.Duration("application.plugins.engine.servers.gin.idleTimeout", 120) * time.Second,
+
+		// 请求头最大字节数（默认1MB）
+		MaxHeaderBytes: cfg.Int("application.plugins.engine.servers.gin.maxHeaderBytes", 1024) * 1024,
+
+		// 读取请求头超时时间（默认10秒）
+		ReadHeaderTimeout: cfg.Duration("application.plugins.engine.servers.gin.readHeaderTimeout", 10) * time.Second,
+
+		// TLS配置（如果启用HTTPS）
+		TLSConfig: nil, // 可通过配置或选项函数设置
+
+		// 错误日志记录器（使用应用的日志记录器）
+		ErrorLog: nil, // 可通过选项函数自定义
+
+		// 连接状态回调函数
+		ConnState: nil, // 可通过选项函数自定义
+
+		// 连接上下文函数
+		ConnContext: nil, // 可通过选项函数自定义
+
+		// 基础上下文函数
+		BaseContext: func(listener net.Listener) context.Context {
+			return context.Background()
+		},
+	}
+
+	// 配置TLS/HTTPS（如果启用）
+	if cg.httpServer.TLSConfig == nil && cfg.Bool("application.plugins.engine.servers.gin.tls.enable") {
+		// 如果配置了HTTPS相关参数，则启用TLS
+		certFile := cfg.String("application.plugins.engine.servers.gin.tls.certFile", "")
+		keyFile := cfg.String("application.plugins.engine.servers.gin.tls.keyFile", "")
+
+		if certFile != "" && keyFile != "" {
+			msg := fmt.Sprintf("Enabling TLS/HTTPS with certFile: %s and keyFile: %s", certFile, keyFile)
+			cg.GetAppContext().GetLogger().InfoWith(cfg.LogOriginFrame()).
+				Str("applicationStarter", "GinApplication").
+				Msg(msg)
+			panic(msg)
+		}
+		// 加载TLS证书配置
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			cg.GetAppContext().GetLogger().ErrorWith(cfg.LogOriginFrame()).
+				Str("applicationStarter", "GinApplication").
+				Err(err).
+				Msg("Failed to load TLS certificates")
+		} else {
+			cg.httpServer.TLSConfig = &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				// 最小TLS版本（默认TLS 1.2）
+				MinVersion: tls.VersionTLS12,
+				// 密码套件配置
+				CipherSuites: []uint16{
+					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				},
+			}
+
+			cg.GetAppContext().GetLogger().InfoWith(cfg.LogOriginFrame()).
+				Str("applicationStarter", "GinApplication").
+				Msg("TLS/HTTPS enabled")
+		}
 	}
 }
 
@@ -135,12 +210,13 @@ func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProvi
 	// IErrorHandler接口实例
 	eh := NewErrorHandlerOnce(cg.GetAppContext())
 
-	recoverHandler := eh.RecoverMiddleware(Config{
+	recoverHandler := eh.RecoverMiddleware(RecoverConfig{
 		AppCtx:            cg.GetAppContext(),
 		EnableStackTrace:  true,
 		StackTraceHandler: eh.DefaultStackTraceHandler,
 		Logger:            cg.GetAppContext().GetLogger(),
 		Stdout:            false,
+		JsonCodec:         ginJson.API.Marshal,
 		DebugMode:         debugMode, // true开启调试模式，将详细错误信息显示给客户端，否则隐藏细节，只能通过日志文件查看。生产环境关闭该调式模式。
 	})
 

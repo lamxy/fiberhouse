@@ -39,6 +39,9 @@ func (p *GinRouteRegisterProvider) Initialize(ctx fiberhouse.IContext, initFunc 
 	// 注册路由
 	RegisterGinRouteHandlers(ctx.(fiberhouse.IApplicationContext), cs)
 
+	// 注册 Swagger 路由
+	RegisterGinSwagger(ctx.(fiberhouse.IApplicationContext), cs)
+
 	// 设置提供者状态为已加载
 	p.SetStatus(fiberhouse.StateLoaded)
 

@@ -13,7 +13,6 @@ import (
 	"github.com/lamxy/fiberhouse/globalmanager"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"strings"
-	"sync"
 )
 
 // RegisterKeyName 定义和拼接全局对象注册带命名空间的key，并返回注册key的名称
@@ -142,23 +141,4 @@ func MustRecoverMiddleware[T any](fn any) T {
 		panic(err)
 	}
 	return f
-}
-
-// TODO 全局缓存对象设计
-type GlobalEntry struct{}
-
-var (
-	globalEntry *GlobalEntry
-	globalOnce  sync.Once
-)
-
-func (g *GlobalEntry) Global() *GlobalEntry {
-	globalOnce.Do(func() {
-		globalEntry = &GlobalEntry{}
-	})
-	return globalEntry
-}
-
-func (g *GlobalEntry) Container() *globalmanager.GlobalManager {
-	return globalmanager.NewGlobalManagerOnce()
 }

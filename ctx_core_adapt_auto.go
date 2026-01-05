@@ -69,7 +69,7 @@ func CoreContext(c any) providerCtx.ICoreContext {
 	}
 	coreCtx, ok := ctx.(providerCtx.ICoreContext)
 	if !ok {
-		panic("loaded core context provider is not ICoreContext")
+		panic("manager '" + manager.Name() + "' : loaded core context provider is not ICoreContext")
 	}
 	return coreCtx
 }

@@ -21,6 +21,58 @@
     "host": "localhost:8080",
     "basePath": "/",
     "paths": {
+        "/create": {
+            "post": {
+                "description": "create a new Example Object",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "example"
+                ],
+                "summary": "create A Example",
+                "parameters": [
+                    {
+                        "description": "Example Request",
+                        "name": "example",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/requestvo.ExampleReqVo"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    }
+                }
+            }
+        },
         "/example/get/{id}": {
             "get": {
                 "description": "get Example Object by ID",
@@ -120,9 +172,102 @@
                     }
                 }
             }
+        },
+        "/list": {
+            "get": {
+                "description": "get paginated list of Example objects",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "example"
+                ],
+                "summary": "get Examples with pagination",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "p",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 20,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Page size",
+                        "name": "s",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "requestvo.ExampleReqVo": {
+            "type": "object",
+            "required": [
+                "courses",
+                "exam_name",
+                "profile"
+            ],
+            "properties": {
+                "courses": {
+                    "description": "自定义tag标签",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "exam_age": {
+                    "description": "可选字段，存在则验证后续tag",
+                    "type": "integer",
+                    "maximum": 60,
+                    "minimum": 16
+                },
+                "exam_name": {
+                    "description": "Required field, min 5 char long max 20",
+                    "type": "string",
+                    "maxLength": 20,
+                    "minLength": 5
+                },
+                "profile": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
         "response.RespInfo": {
             "type": "object",
             "properties": {

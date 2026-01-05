@@ -1308,8 +1308,8 @@ cache:
 - 更多配置按需自定义
 
 - 完整配置示例参考：
-  - 测试环境配置: [example_config/application_web_test.yml](./example_config/application_web_test.yml)
-  - 命令行测试环境配置: [application_cmd_test.yml](./example_config/application_cmd_test.yml)
+  - 测试环境配置: [example_config/application_test.yml](./example_config/application_test.yml)
+  - 命令行测试环境配置: [application_test.yml](./example_config/application_test.yml)
 
 
 ## 🤝 贡献指南

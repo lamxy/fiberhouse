@@ -39,6 +39,9 @@ func (p *FiberRouteRegisterProvider) Initialize(ctx fiberhouse.IContext, initFun
 	// 注册路由
 	RegisterFiberRouteHandlers(ctx.(fiberhouse.IApplicationContext), cs)
 
+	// 注册 Swagger 路由
+	RegisterFiberSwagger(ctx.(fiberhouse.IApplicationContext), cs)
+
 	// 设置提供者状态为已加载
 	p.SetStatus(fiberhouse.StateLoaded)
 

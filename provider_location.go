@@ -6,8 +6,8 @@ import (
 	"sync"
 )
 
-// IProviderLocation 提供者位点接口，用于标识提供者的执行位置，应用启动流程或生命周期的相关阶段，以及其他自定义执行点
-// 位置点对象可以收集绑定到该位置点的提供者管理器，并按顺序执行这些管理器中的提供者，实现灵活地扩展和定制化行为
+// IProviderLocation 提供者位点接口，用于标识提供者管理器的执行位置，应用启动流程或生命周期的相关阶段，以及其他自定义执行点
+// 位置点对象可以收集绑定到该位置点的提供者管理器，并按顺序加载和执行这些管理器中的提供者，实现灵活地扩展和定制化行为
 type IProviderLocation interface {
 	// GetLocationID 获取位点序号
 	GetLocationID() uint8
@@ -94,8 +94,8 @@ const (
 // 1. LocationXXXBefore 在某个阶段之前执行
 // 2. LocationXXXAfter 在某个阶段之后执行
 // 3. LocationXXXInit 在某个初始化阶段执行
-// 4. LocationXXXRun 在运行阶段执行
-// 5. LocationXXXCreate 在创建阶段执行
+// 4. LocationXXXRun 在XXX运行阶段执行
+// 5. LocationXXXCreate 在XXX创建阶段执行
 // 6. 其他
 type DefaultPLocation struct {
 	ZeroLocation                   IProviderLocation // 初始化默认位点/零位点/保留为初始化状态

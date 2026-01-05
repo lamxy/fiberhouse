@@ -1310,8 +1310,8 @@ cache:
 - More configurations can be customized as needed
 
 - Complete configuration examples reference:
-    - Test environment configuration: [example_config/application_web_test.yml](../example_config/application_web_test.yml)
-    - Command line test environment configuration: [application_cmd_test.yml](../example_config/application_cmd_test.yml)
+    - Test environment configuration: [example_config/application_test.yml](../example_config/application_test.yml)
+    - Command line test environment configuration: [application_test.yml](../example_config/application_test.yml)
 
 ## 🤝 Contribution Guidelines
 

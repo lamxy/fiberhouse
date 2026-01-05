@@ -5,6 +5,68 @@ import (
 	"sync"
 )
 
+// 状态变量 pending、loaded、skipped、failed
+var (
+	StatePending = new(State).Set(0, "pending")
+	StateLoaded  = new(State).Set(1, "loaded")
+	StateSkipped = new(State).Set(1, "skipped")
+	StateFailed  = new(State).Set(1, "failed")
+)
+
+// State 提供者的状态结构体，实现状态器接口
+type State struct {
+	id   uint8
+	name string
+	lock sync.RWMutex
+}
+
+// Id 状态Id
+func (s *State) Id() uint8 {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.id
+}
+
+// Name 状态名称
+func (s *State) Name() string {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.name
+}
+
+// Set 设置状态Id和名称
+func (s *State) Set(id uint8, name string) IState {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.id = id
+	s.name = name
+	return s
+}
+
+// SetState 从另一个状态器设置状态
+func (s *State) SetState(state IState) IState {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.id = state.Id()
+	s.name = state.Name()
+	return s
+}
+
+// 定义提供者错误类型
+var (
+	ErrProviderAlreadyExists = &ProviderError{msg: "provider already exists"}
+	ErrProviderNotFound      = &ProviderError{msg: "provider not found"}
+)
+
+type ProviderError struct {
+	msg string
+}
+
+func (e *ProviderError) Error() string {
+	return e.msg
+}
+
 // Provider 提供者接口的基类实现，通过组合模式支持子类扩展，子类只需重载所需方法即可实现多态行为
 // 注意：在调用提供者接口的一些特性方法前，子类实例应通过 MountToParent 方法将子类实例挂载到该基类的 sonProvider 字段，以确保多态行为的正确实现
 // 如Initialize、RegisterTo、BindToUniqueManagerIfSingleton
@@ -22,7 +84,7 @@ type Provider struct {
 // NewProvider 创建一个基础提供者
 func NewProvider() *Provider {
 	return &Provider{
-		status: StateUnload,
+		status: StatePending,                   // 默认状态为待定
 		pType:  ProviderTypeDefault().ZeroType, // 默认零值类型
 	}
 }
@@ -116,7 +178,7 @@ func (p *Provider) SetType(typ IProviderType) IProvider {
 }
 
 // RegisterTo 将提供者注册到管理器
-// 注意：此方法会注册 sonProvider 字段指向的实例，子类型应通过 MountToParent 设置该字段，否则避免该基类方法
+// 注意：此方法会注册 sonProvider 字段指向的实例，子类型应通过 MountToParent 设置该字段，否则避免使用该基类方法
 func (p *Provider) RegisterTo(m IProviderManager) error {
 	if err := p.checkSonProvider(); err != nil {
 		return err

@@ -64,7 +64,7 @@ func (r *ErrorHandler) SetRecoverManager(manager IProviderManager) {
 
 // RecoverMiddleware 返回恢复中间件函数，根据核心类型返回对应的中间件
 // 通过恢复中间件管理器依据启动配置选择相应的提供者自动返回对应的恢复中间件
-func (r *ErrorHandler) RecoverMiddleware(config ...Config) any {
+func (r *ErrorHandler) RecoverMiddleware(config ...RecoverConfig) any {
 	// 如果管理器未设置，尝试从位置点获取
 	if r.recoverManager == nil {
 		msg := "Recovery: recover manager is not set"

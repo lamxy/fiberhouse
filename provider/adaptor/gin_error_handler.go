@@ -16,7 +16,7 @@ func GinErrorHandler(fn func(providerCtx.ICoreContext, error) error) gin.Handler
 			}
 			return
 		}
-		if err, ok := c.Get("error"); ok {
+		if err, ok := c.Get("error"); ok { // 自定义错误处理
 			if errObj, isErr := err.(error); isErr {
 				err := fn(providerCtx.WithGinContext(c), errObj)
 				if err != nil {

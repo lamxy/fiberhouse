@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
-	ginJson "github.com/gin-gonic/gin/codec/json"
 	"github.com/lamxy/fiberhouse/component/jsonconvert"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/exception"
@@ -18,6 +17,12 @@ import (
 	providerctx "github.com/lamxy/fiberhouse/provider/context"
 )
 
+var (
+	debugFlag      = "X-your-custom-debug-flag"             // 自定义debug标记key，由后端recover配置定义覆盖
+	debugFlagValue = "f0dc4970-ed31-4598-acd8-b5c5fd66c12e" // 自定义debug标记值，由后端recover配置定义覆盖
+	requestID      = "traceId"                              // 请求ID字段名称，由后端trace配置定义覆盖
+)
+
 // ErrorStack 获取当前的堆栈信息字符串
 func ErrorStack(debugStack ...bool) string {
 	//if len(debugStack) > 0 && debugStack[0] {
@@ -26,6 +31,7 @@ func ErrorStack(debugStack ...bool) string {
 	return frameUtils.CaptureStack()
 }
 
+// GetJsonIndent 从堆栈字符串获取堆栈行并转换为JSON缩进格式字节切片
 func GetJsonIndent(appCtx IApplicationContext, s string, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
 	if len(s) == 0 {
 		return nil
@@ -41,12 +47,6 @@ func GetJsonIndent(appCtx IApplicationContext, s string, log bootstrap.LoggerWra
 	}
 	return j
 }
-
-var (
-	debugFlag      = "X-your-custom-debug-flag"             // 自定义debug标记key，由后端recover配置定义覆盖
-	debugFlagValue = "f0dc4970-ed31-4598-acd8-b5c5fd66c12e" // 自定义debug标记值，由后端recover配置定义覆盖
-	requestID      = "traceId"                              // 请求ID字段名称，由后端trace配置定义覆盖
-)
 
 // FiberRecovery Fiber 框架的请求数据实现
 type FiberRecovery struct {
@@ -111,7 +111,7 @@ func (f *FiberRecovery) GetHeader(ctx providerctx.ICoreContext, key string) stri
 	return c.Get(key)
 }
 
-func (f *FiberRecovery) RecoverPanic(config ...Config) any {
+func (f *FiberRecovery) RecoverPanic(config ...RecoverConfig) any {
 	// 使用恢复中间件提供者来返回相关核心引擎的恢复中间件函数，
 	//通过恢复中间件管理器依据核心类型配置选择相应的提供者自动返回对应的恢复中间件，返回一个any
 	//同时结合全局的泛型方法获取指定核心的恢复函数
@@ -135,7 +135,7 @@ func (f *FiberRecovery) RecoverPanic(config ...Config) any {
 	}
 }
 
-func (f *FiberRecovery) TranceID(ctx providerctx.ICoreContext, flag ...string) string {
+func (f *FiberRecovery) TraceID(ctx providerctx.ICoreContext, flag ...string) string {
 	// 原生上下文
 	var (
 		c  *fiber.Ctx
@@ -272,7 +272,7 @@ func (g *GinRecovery) GetHeader(ctx providerctx.ICoreContext, key string) string
 	return c.GetHeader(key)
 }
 
-func (g *GinRecovery) RecoverPanic(config ...Config) any {
+func (g *GinRecovery) RecoverPanic(config ...RecoverConfig) any {
 	// 使用恢复中间件提供者来创建和返回相应核心的恢复中间件函数，
 	//通过恢复中间件管理器内部依据核心类型自动返回相应的恢复中间件，返回一个any，同时结合泛型方法
 	// Set default config
@@ -293,7 +293,7 @@ func (g *GinRecovery) RecoverPanic(config ...Config) any {
 	}
 }
 
-func (g *GinRecovery) TranceID(ctx providerctx.ICoreContext, flag ...string) string {
+func (g *GinRecovery) TraceID(ctx providerctx.ICoreContext, flag ...string) string {
 	// 原生上下文
 	var (
 		c  *gin.Context
@@ -307,7 +307,7 @@ func (g *GinRecovery) TranceID(ctx providerctx.ICoreContext, flag ...string) str
 }
 
 // RecoverPanicInternal 全局恢复panic函数，用于defer fn()
-func RecoverPanicInternal(pCtx providerctx.ICoreContext, cfg Config) {
+func RecoverPanicInternal(pCtx providerctx.ICoreContext, cfg RecoverConfig) {
 	if r := recover(); r != nil {
 		if cfg.EnableStackTrace {
 			cfg.StackTraceHandler(pCtx, r)
@@ -327,7 +327,7 @@ func RecoverPanicInternal(pCtx providerctx.ICoreContext, cfg Config) {
 		case runtime.Error:
 			if debugMode {
 				// panic(re)
-				_ = exception.New(constant.UnknownErrCode, "RuntimeError", re.Error()).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+				_ = exception.New(constant.UnknownErrCode, "RuntimeError", re.Error()).JsonWithCtx(pCtx, http.StatusInternalServerError)
 				return
 			}
 			var msg string
@@ -336,14 +336,14 @@ func RecoverPanicInternal(pCtx providerctx.ICoreContext, cfg Config) {
 			} else {
 				msg = "UnknownRTException"
 			}
-			_ = exception.New(constant.UnknownErrCode, msg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+			_ = exception.New(constant.UnknownErrCode, msg).JsonWithCtx(pCtx, http.StatusInternalServerError)
 			return
 		case error:
 			if debugMode {
-				_ = exception.New(constant.UnknownErrCode, re.Error()).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+				_ = exception.New(constant.UnknownErrCode, re.Error()).JsonWithCtx(pCtx, http.StatusInternalServerError)
 				return
 			}
-			_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+			_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, http.StatusInternalServerError)
 			return
 		default:
 			if debugMode {
@@ -351,20 +351,20 @@ func RecoverPanicInternal(pCtx providerctx.ICoreContext, cfg Config) {
 				defer dw.Release()
 				if dw.CanJSONSerializable() {
 					var out interface{}
-					jsonRet, _ := dw.GetJson(ginJson.API.Marshal) // ignore error
+					jsonRet, _ := dw.GetJson(cfg.JsonCodec) // ignore error
 					if jsonRet == nil {
 						out = ""
 					} else {
 						out = frameUtils.UnsafeString(jsonRet)
 					}
-					_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, out).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+					_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, out).JsonWithCtx(pCtx, http.StatusInternalServerError)
 					return
 				} else {
-					_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, dw.GetString()).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+					_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, dw.GetString()).JsonWithCtx(pCtx, http.StatusInternalServerError)
 					return
 				}
 			}
-			_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, fiber.StatusInternalServerError)
+			_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, http.StatusInternalServerError)
 			return
 		}
 	}

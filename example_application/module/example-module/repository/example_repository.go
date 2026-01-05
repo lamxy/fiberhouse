@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/example_application/api-vo/example/requestvo"
+	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/module/common-module/fields"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/entity"

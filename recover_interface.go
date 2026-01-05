@@ -10,7 +10,7 @@ type IErrorHandler interface {
 	DefaultStackTraceHandler(providerctx.ICoreContext, interface{})
 	ErrorHandler(providerctx.ICoreContext, error) error
 	GetContext() IApplicationContext
-	RecoverMiddleware(...Config) any
+	RecoverMiddleware(...RecoverConfig) any
 }
 
 // IRecover 恢复惊慌接口，用于获取不同框架的请求上下文中的参数、查询参数、获取tranceID以及定义恢复中间件方法
@@ -23,7 +23,7 @@ type IRecover interface {
 	GetHeadersJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte
 	// RecoverPanic 返回恢复中间件函数，根据核心类型（如 fiber、gin）返回对应的中间件
 	// 通过恢复中间件管理器依据启动配置选择相应的提供者自动返回对应的恢复中间件
-	RecoverPanic(...Config) any
-	TranceID(ctx providerctx.ICoreContext, flag ...string) string
+	RecoverPanic(...RecoverConfig) any
+	TraceID(ctx providerctx.ICoreContext, flag ...string) string
 	GetHeader(ctx providerctx.ICoreContext, key string) string
 }

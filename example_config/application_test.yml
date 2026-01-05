@@ -1,0 +1,184 @@
+application:
+  appId: ""                                  # 应用ID，可选
+  appName: "XYZ Tech APP"                    # 应用名称
+  version: "v0.1.0"                          # 应用版本
+  env: "test"                                # 当前环境，支持 dev、test、prod
+  server:                                    # 默认服务配置：fiber引擎
+    appServerHeader: "XYZ Tech Server"       # 服务标头
+    host: 0.0.0.0                            # 监听地址
+    port: 8080                               # 监听端口
+    appConcurrency: 524288                   # 512 * 1024
+    proxyHeader: "X-Forwarded-For"           # 代理头部字段
+    enablePrintRoutes: false                  # 是否打印所有注册的路由
+    readBufferSize: 4096                     # 读取缓冲区大小
+    writeBufferSize: 4096                    # 写入缓冲区大小
+    bodyLimit: 4096                          # 单位B，body最大限制
+    disableKeepalive: false                  # 是否启用长连接
+    idleTimeout: 60                          # 单位s，连接空闲超时时间
+    readTimeout: 30                          # 单位s，读取超时时间
+    writeTimeout: 30                         # 单位s，写入超时时间
+  plugins:
+    engine:
+      type: "default"                       # 引擎类型，默认default(fiber)、gin、other
+      servers:
+        gin:                                # gin框架的基础配置
+          host: 0.0.0.0
+          port: 8080
+          bodyLimit: 4096                    # 单位B，body最大限制
+          idleTimeout: 60                    # 单位s，连接空闲超时时间
+          readTimeout: 30                    # 单位s，读取超时时间
+          writeTimeout: 30                   # 单位s，写入超时时间
+          maxHeaderBytes: 1048576            # 最大头部字节数 1MB
+          readHeaderTimeout: 10              # 单位s，读取头部超时时间
+          disableKeepAlives: false            # 是否启用长连接
+          tls:
+            enable: false                     # 是否启用TLS
+            certFile: ""                      # 证书文件路径
+            keyFile: ""                       # 密钥文件路径
+  appLog:
+    filename: "app.log"                      # 日志文件名
+    enableConsole: true                      # 增加控制台输出
+    consoleJSON: true                        # 控制台输出json格式
+    enableFile: true                         # 增加输出到日志文件
+    enableMetrics: false                     # TODO 指标开关
+    enableAlertHook: false                   # TODO 告警钩子设置
+    level: debug                             # 日志级别: trace、debug、info、warn、error、fatal、panic
+    asyncConf:                               # 异步日志相关配置
+      enable: false                           # 是否启用异步日志
+      type: "diode"                          # 异步日志类型，支持chan、diode
+      chanConf:                              # 通道相关配置
+        chanSize: 8                          # 通道数
+        bufferSize: 8192                     # buffer缓冲 8k
+      diodeConf:                             # 二极管
+        size: 33554432                       # 二极管大小 32M
+        bufferSize: 4096                     # buffer缓冲 4k
+        flushInterval: 1000                  # 毫秒
+    rollConf:                                # 日志滚动相关配置
+      maxSize: 5                             # megabytes
+      maxBackups: 5                          # 最大备份文件数
+      maxAge: 7                              # days
+      compress: false                        # disabled by default
+    logOriginEnum:                           # 预定义日志来源字段标识，对日志记录标记不同的来源
+      coreHttp: WebHttpLog
+      frame: Frame
+      web: Web
+      recover: Recover
+      cmd: CMD
+      task: Task
+      cache: Cache
+      database: Database
+      mq: MqMiddleware
+      mongodb: Mongodb
+      mysql: Mysql
+      test: Test
+  recover:                                   # 全局异常捕获配置
+    debugFlag: X-your-custom-debug-flag
+    debugFlagValue: f0dc4970-ed31-4598-acd8-b5c5fd66c12e
+    enableDebugFlag: false                   # true，表示请求头部字段debugFlag配置生效，当其值等于debugFlagValue时，不论环境及enablePrintStack影响，都在服务端打印日志栈信息
+    enablePrintStack: true                   # true，表示启动打印栈信息，对于当前环境为非调式模式的生产环境时，false可关闭生产环境服务端的日志栈信息打印，节省服务器资源
+    debugMode: true                          # true，表示更详细的接口异常响应信息、且不受限制地在服务端打印日志栈信息以及在接口响应中显示详细的错误信息，生产环境该配置务必设置为false
+  trace:
+    requestID: traceId                       # 请求ID头部字段
+  task:
+    enableServer: true                       # 是否启用任务调度服务
+  swagger:
+    type: 1                                  # swagger方式1: 注释
+    enable: true                             # 是否启用swagger
+  middleware:
+    coreHttp: true                           # 开启fiber http请求日志
+    swaggerRegister: true                    # 开启swagger路由注册
+    basicAuth: true                          # 开启http请求基本认证
+    requestId: true                          # 开启requestId链路追踪
+    monitor: true                            # 开启指标监控
+  globalManage:                              # 全局对象管理
+    keepAlive: true                          # 全局对象保活
+    interval: 300                            # 单位s，间隔xx秒进行健康检查
+  validate:                                  # 验证器，默认支持：zh-CN、zh-TW、en，更多语言支持见官方库: https://github.com/go-playground/validator
+    langFlags:                               # 设置验证器启用的语言列表
+      - zh-CN
+      - zh-TW
+      - en
+cache:
+  local:                                     # 本地缓存配置
+    numCounters: 1000000                     # 100万个计数器
+    maxCost: 134217728                       # 最大缓存128M
+    bufferItems: 64                          # 每个缓存分区的缓冲区大小
+    metrics: true                            # 是否启用缓存指标
+    IgnoreInternalCost: false                # 是否忽略内部开销
+  redis:                                     # remote 远程缓存配置
+    host: 127.0.0.1                          # Redis 服务器地址
+    port: 6379                               # Redis 服务器端口
+    password: ""                             # Redis 服务器密码
+    db: 0                                    # 使用的数据库编号
+    poolSize: 50                             # 连接池大小
+    minIdleConns: 10                         # 最小空闲连接数
+    dialTimeout: 5                           # 连接建立超时时间
+    readTimeout: 3                           # 读操作超时时间
+    writeTimeout: 3                          # 写操作超时时间
+    poolTimeout: 4                           # 连接池最大等待时间
+    idleTimeout: 1800                        # 空闲连接超时时间
+    pingTry: true                            # 启动时ping尝试连接
+    protection:                              # 缓存保护措施配置
+      enable: true                           # 开启缓存保护措施
+      type:                                  # 已选中的保护类型，默认支持 shardedBloomFilter、wrapCircuitBreaker；第三方需自定义扩展
+        bloomFilter:
+          selected: shardedBloomFilter       # 默认选择：shardedBloomFilter
+        circuitBreaker:
+          selected: wrapCircuitBreaker       # 默认选择：wrapCircuitBreaker
+      shardedBloomFilter:
+        shards: 16                           # 分片数量，必须为2的幂次方
+        estPerShard: 1000000                 # 容量: 100w
+        fpRate: 0.01                         # 误报率，百分比，如0.01为 1%
+      wrapCircuitBreaker:
+        name: "cacheCircuitBreaker"          # 熔断器名称
+        maxRequests: 3                       # 最大请求数
+        interval: 30                         # 间隔时间，单位秒
+        timeout: 15                          # 超时时间，单位秒
+        bucketPeriod: 10                     # 桶周期，单位秒
+  asyncPool:                               # 启用二级缓存时的异步goroutine池配置，用于处理缓存更新和同步策略
+    ants:                                  # ants异步goroutine池配置
+      local:
+        size: 248                          # 本地缓存异步goroutine池大小
+        expiryDuration: 5                  # 单位秒，空闲goroutine超时时间
+        preAlloc: false                    # 不预分配
+        maxBlockingTasks: 512              # 最大阻塞任务数
+        nonblocking: false                 # 允许阻塞
+      remote:
+        size: 124                          # 远程缓存异步goroutine池大小
+        expiryDuration: 15                 # 单位秒，更长的空闲超时
+        preAlloc: false                    # 不预分配
+        maxBlockingTasks: 256              # 最大阻塞任务数
+        nonblocking: false                 # 允许阻塞
+database:
+  mongodb:
+    applyURI: mongodb://admin:admin@127.0.0.1:27037/?authSource=admin
+    maxPoolSize: 100                         # 设置连接池最大连接数
+    minPoolSize: 10                          # 设置连接池最小连接数
+    maxConnIdleTime: 600                     # 设置最大空闲连接时间
+    connectTimeout: 10                       # 接超时时间
+    clientTimeout: 5                         # 客户端套接字超时时间
+    heartbeatInterval: 10                    # 心跳间隔时间
+    pingTry: false                           # 启动时ping尝试连接
+  mysql:
+    dsn: "root:root@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=True&loc=Local&timeout=10s"
+#    dsn: "root:root@tcp(127.0.0.1:3306)/?charset=utf8mb4&parseTime=True&loc=Local&timeout=10s"
+    gorm:
+      maxIdleConns: 10                       # 最大空闲连接数
+      maxOpenConns: 100                      # 最大打开连接数
+      connMaxLifetime: 3600                  # 连接最大生命周期，单位秒
+      connMaxIdleTime: 300                   # 连接最大空闲时间，单位秒
+      logger:
+          level: info                        # 日志级别: silent、error、warn、info
+          slowThreshold: 200 * time.Millisecond # 慢SQL阈值，建议 200 * time.Millisecond，根据实际业务调整
+          colorful: false                    # 是否彩色输出
+          enable: true                       # 是否启用日志记录
+          skipDefaultFields: true            # 跳过默认字段
+    pingTry: false
+mq:
+rpc:
+command:                                     # 命令行应用的配置
+  name: XYZTechCmd
+  usage: XYZTechCmd [command]
+  version: v0.1.0
+  sortFlagsByName: true
+  sortCommandsByName: true

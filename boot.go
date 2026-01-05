@@ -276,7 +276,7 @@ func (fh *FiberHouse) WithPManagers(managers ...IProviderManager) *FiberHouse {
 }
 
 // RunServer 运行应用服务器
-// TODO 记录已收集的提供者和已加载和未加载的提供者日志: pending、loaded、skipped、failed
+// TODO 记录提供者状态日志: pending、loaded、skipped、failed
 func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	// 引导配置完成位置点，获取该位点的提供者管理器列表并加载提供者
 	ms := ProviderLocationDefault().LocationBootStrapConfig.GetManagers()
