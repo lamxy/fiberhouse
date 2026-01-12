@@ -51,7 +51,7 @@ func (r *ExampleRepository) GetExampleById(id string) (*entity.Example, error) {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, exception.GetNotFoundDocument() // 返回error
 		}
-		exception.GetInternalError().RespError(err.Error()).Panic() // 直接panic
+		exception.GetInternalError().RespData(err.Error()).Panic() // 直接panic
 	}
 	return result, nil
 }
@@ -75,7 +75,7 @@ func (r *ExampleRepository) CreateExample(req *requestvo.ExampleReqVo) (string, 
 		return "", err
 	}
 	if insertID == bson.NilObjectID {
-		return "", exception.GetInternalError().RespError("insert example failed")
+		return "", exception.GetInternalError().RespData("insert example failed")
 	}
 	return insertID.Hex(), nil
 }

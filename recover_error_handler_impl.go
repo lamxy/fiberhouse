@@ -311,7 +311,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx providerctx.ICoreContext, e 
 	}
 }
 
-// ErrorHandler 用于fiber.New配置全局错误处理器，处理业务级错误
+// ErrorHandler 处理错误并返回对应的HTTP响应
 func (r *ErrorHandler) ErrorHandler(ctx providerctx.ICoreContext, err error) error {
 	// 记录日志 & 堆栈
 	r.DefaultStackTraceHandler(ctx, err)
@@ -319,25 +319,26 @@ func (r *ErrorHandler) ErrorHandler(ctx providerctx.ICoreContext, err error) err
 	// ValidateException
 	var (
 		debugMode = r.GetContext().GetConfig().GetRecover().DebugMode
-		eve       *exception.ValidateException
+		eve       = ValidateException()
 	)
 	okVe := errors.As(err, &eve)
 	if okVe {
 		// 验证器错误，响应完整错误信息到客户端
-		return eve.RespError().JsonWithCtx(ctx, http.StatusBadRequest)
+		//return eve.RespData().JsonWithCtx(ctx, http.StatusBadRequest)
+		return Response().From(eve, true).SendWithCtx(ctx, http.StatusBadRequest)
 	}
 	// Exception
-	var ee *exception.Exception
+	var ee = Exception()
 	okEe := errors.As(err, &ee)
 	if okEe {
 		if debugMode {
-			return ee.RespError().JsonWithCtx(ctx, http.StatusBadRequest)
+			return Response().From(ee, true).SendWithCtx(ctx, http.StatusBadRequest)
 		}
-		return ee.RespError(nil).JsonWithCtx(ctx, http.StatusBadRequest)
+		return Response().From(ee.RespData(nil), true).SendWithCtx(ctx, http.StatusBadRequest)
 	}
 	// default
 	if debugMode {
-		return exception.GetUnknownError().RespError(err.Error()).JsonWithCtx(ctx, http.StatusInternalServerError)
+		return Response().From(exception.GetUnknownError().RespData(err.Error()), true).SendWithCtx(ctx, http.StatusInternalServerError)
 	}
-	return exception.GetUnknownError().JsonWithCtx(ctx, http.StatusInternalServerError)
+	return Response().From(exception.GetUnknownError(), true).SendWithCtx(ctx, http.StatusInternalServerError)
 }

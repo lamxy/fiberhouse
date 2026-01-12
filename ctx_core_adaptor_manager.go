@@ -1,3 +1,9 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 import (
@@ -24,7 +30,7 @@ func NewCoreCtxPManager(appCtx IApplicationContext) *CoreCtxPManager {
 		IProviderManager: NewProviderManager(appCtx).
 			SetName("CoreCtxPManager").
 			SetType(ProviderTypeDefault().GroupCoreContextChoose).
-			SetOrBindToLocation(ProviderLocationDefault().LocationAdaptCoreCtxChoose, true),
+			SetOrBindToLocation(ProviderLocationDefault().LocationAdaptCoreCtxChoose, true), // 绑定到核心适配器核心上下文选择位置点
 	}
 	// 挂载子实例到父实例的sonManager字段
 	son.MountToParent(son)

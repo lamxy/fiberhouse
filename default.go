@@ -1,3 +1,9 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 // 提问AI: 提供一种方式，收集默认提供者、提供者管理器列表，同时支持追加更多的自定义的提供者、提供者管理器的列表，组合起来方便使用.
@@ -29,16 +35,18 @@ func DefaultProviders() *DefaultProviderCollection {
 		// 在此处添加默认的提供者，实例化后挂载到基类字段
 		defaultProvidersInstance.providers = append(defaultProvidersInstance.providers,
 			NewFrameDefaultProvider(),     // 默认框架启动器提供者
-			NewCoreFiberProvider(),        // 核心Fiber提供者
-			NewCoreGinProvider(),          // 核心Gin提供者
+			NewCoreStarterFiberProvider(), // 核心启动器Fiber提供者
+			NewCoreStarterGinProvider(),   // 核心启动器Gin提供者
 			NewJsonJCodecFiberProvider(),  // JSON编解码Fiber提供者
 			NewJsonJCodecGinProvider(),    // JSON编解码Gin提供者
 			NewSonicJCodecFiberProvider(), // Sonic编解码Fiber提供者
 			NewSonicJCodecGinProvider(),   // Sonic编解码Gin提供者
-			NewCtxFiberProvider(),         // 上下文Fiber适配器提供者
-			NewCtxGinProvider(),           // 上下文Gin适配器提供者
+			NewCoreCtxFiberProvider(),     // 核心上下文Fiber适配器提供者
+			NewCoreCtxGinProvider(),       // 核心上下文Gin适配器提供者
 			NewFiberRecoveryProvider(),    // Fiber恢复提供者（框架默认提供）
 			NewGinRecoveryProvider(),      // Gin恢复提供者（框架默认提供）、及其他更多的基于自定义框架的恢复提供者
+			NewRespInfoProtobufProvider(), // Protobuf响应编解码提供者
+			NewRespInfoMsgpackProvider(),  // Msgpack响应编解码提供者
 			// more...
 		)
 	})
@@ -144,8 +152,10 @@ func DefaultPManagers(ctx IApplicationContext) *DefaultPManagerCollection {
 			NewJsonCodecPManager(ctx).MountToParent(),
 			// 核心上下文适配器管理器
 			NewCoreCtxPManager(ctx),
-			// 恢复惊慌管理器
+			// 恢复惊慌管理器单例（性能需要）
 			NewRecoveryPManagerOnce(ctx),
+			// 响应编解码管理器
+			NewRespInfoPManager(ctx),
 			// more...
 		)
 	})

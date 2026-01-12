@@ -54,13 +54,14 @@ func main() {
 
 	// 创建 FiberHouse 应用运行实例
 	fh := fiberhouse.New(&fiberhouse.BootConfig{
-		AppName:      "Default FiberHouse Application",          // 应用名称
-		Version:      Version,                                   // 应用版本
-		FrameType:    constant.FrameTypeWithDefaultFrameStarter, // 默认提供的框架启动器标识: DefaultFrameStarter
-		CoreType:     constant.CoreTypeWithGin,                  // fiber | gin | ...
-		TrafficCodec: constant.TrafficCodecWithSonic,            // 传输流量的编解码器: sonic_json_codec|std_json_codec|go_json_codec|pb...
-		ConfigPath:   "./example_config",                        // 应用全局配置路径
-		LogPath:      "./example_main/logs",                     // 日志文件路径
+		AppName:                     "Default FiberHouse Application",          // 应用名称
+		Version:                     Version,                                   // 应用版本
+		FrameType:                   constant.FrameTypeWithDefaultFrameStarter, // 默认提供的框架启动器标识: DefaultFrameStarter
+		CoreType:                    constant.CoreTypeWithFiber,                // fiber | gin | ...
+		TrafficCodec:                constant.TrafficCodecWithSonic,            // 传输流量的编解码器: sonic_json_codec|std_json_codec|go_json_codec|pb...
+		EnableBinaryProtocolSupport: true,                                      // 是否启用二进制协议支持，如Protobuf等
+		ConfigPath:                  "./example_config",                        // 应用全局配置路径
+		LogPath:                     "./example_main/logs",                     // 日志文件路径
 	})
 
 	// 收集提供者和管理器

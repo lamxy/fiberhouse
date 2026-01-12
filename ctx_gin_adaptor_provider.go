@@ -1,23 +1,29 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
-	providerCtx "github.com/lamxy/fiberhouse/provider/context"
+	providerctx "github.com/lamxy/fiberhouse/provider/context"
 )
 
-// CtxGinProvider Gin 框架上下文提供者
-type CtxGinProvider struct {
+// CoreCtxGinProvider Gin 框架上下文提供者
+type CoreCtxGinProvider struct {
 	IProvider
 }
 
-func NewCtxGinProvider() *CtxGinProvider {
-	return &CtxGinProvider{
+func NewCoreCtxGinProvider() *CoreCtxGinProvider {
+	return &CoreCtxGinProvider{
 		IProvider: NewProvider().SetName("CtxGinProvider").SetTarget("gin").SetType(ProviderTypeDefault().GroupCoreContextChoose),
 	}
 }
 
-func (p *CtxGinProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
+func (p *CoreCtxGinProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
 	p.Check()
 	if len(initFunc) == 0 {
 		return nil, fmt.Errorf("provider '%s' Initialize: no initFunc provided", p.Name())
@@ -38,5 +44,5 @@ func (p *CtxGinProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) 
 		return nil, fmt.Errorf("provider '%s' Initialize: invalid core context type: expected *gin.Context, got %T", p.Name(), ginCtx)
 	}
 
-	return providerCtx.WithGinContext(ginCtx), nil
+	return providerctx.WithGinContext(ginCtx), nil
 }

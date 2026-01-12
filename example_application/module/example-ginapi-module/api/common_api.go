@@ -9,7 +9,6 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	providerctx "github.com/lamxy/fiberhouse/provider/context"
-	"github.com/lamxy/fiberhouse/response"
 )
 
 // CommonHandler 示例公共处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
@@ -43,11 +42,11 @@ func (h *CommonHandler) TestGetInstance(c *gin.Context) {
 	}
 
 	if ts, ok := testService.(*service.TestService); ok {
-		_ = response.RespSuccess(t+":"+ts.HelloWorld()).JsonWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+		_ = fiberhouse.Response().SuccessWithData(t+":"+ts.HelloWorld()).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
 		return
 	}
 
-	_ = response.RespSuccess(t).JsonWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(t).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
 }
 
 // TestGetMustInstance 测试获取注册实例，通过 fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例，无需编译阶段的wire依赖注入
@@ -57,7 +56,7 @@ func (h *CommonHandler) TestGetMustInstance(c *gin.Context) {
 	// 通过fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例
 	testService := fiberhouse.GetMustInstance[*service.TestService](h.KeyTestService)
 
-	_ = response.RespSuccess(t+testService.HelloWorld()).JsonWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(t+testService.HelloWorld()).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
 }
 
 // TestGetMustInstanceFailed 测试获取注册实例失败，通过 fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例，无需编译阶段的wire依赖注入
@@ -73,5 +72,5 @@ func (h *CommonHandler) TestGetMustInstanceFailed(c *gin.Context) {
 	// 通过fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例
 	testService := fiberhouse.GetMustInstance[service.TestService](h.KeyTestService)
 
-	_ = response.RespSuccess(t+testService.HelloWorld()).JsonWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(t+testService.HelloWorld()).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
 }

@@ -1,3 +1,9 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 // ProviderInitFunc 提供者初始化函数类型
@@ -6,7 +12,7 @@ type ProviderInitFunc func(IProvider) (any, error)
 // ProviderLoadFunc 提供者加载函数类型
 type ProviderLoadFunc func(manager IProviderManager) (any, error)
 
-// Provider 提供者接口
+// IProvider 提供者接口
 type IProvider interface {
 	// Name 返回提供者名称
 	Name() string
@@ -40,11 +46,11 @@ type IProvider interface {
 	// 返回提供者自身以支持链式调用
 	// 生效条件：1. 传入的管理器对象是单例实现；2. 子类提供者重载该方法且子类实例本身调用该方法；3. 需要将子类实例反向挂载到父类属性上
 	BindToUniqueManagerIfSingleton(IProviderManager) IProvider
-	// 将当前提供者挂载到父级提供者中
+	// MountToParent 将当前提供者挂载到父级提供者中
 	MountToParent(son ...IProvider) IProvider
 }
 
-// Manager 提供者管理器接口
+// IProviderManager 提供者管理器接口
 type IProviderManager interface {
 	// Name 返回提供者管理器名称
 	Name() string
@@ -54,9 +60,9 @@ type IProviderManager interface {
 	Type() IProviderType
 	// SetType 设置提供者类型，仅允许设置一次
 	SetType(IProviderType) IProviderManager
-	// 获取管理器的执行位置点
+	// Location 获取管理器的执行位置点
 	Location() IProviderLocation
-	// 设置管理器的执行位置点，仅允许设置一次
+	// SetOrBindToLocation 设置管理器的执行位置点，仅允许设置一次
 	SetOrBindToLocation(IProviderLocation, ...bool) IProviderManager
 	// GetContext 获取管理器关联的上下文对象
 	GetContext() IContext
@@ -68,6 +74,8 @@ type IProviderManager interface {
 	GetProvider(name string) (IProvider, error)
 	// List 列出管理器中所有注册的提供者
 	List() []IProvider
+	// Map 以名称为键，提供者实例为值，返回管理器中所有注册的提供者映射
+	Map() map[string]IProvider
 	// LoadProvider 加载提供者
 	LoadProvider(loadFunc ...ProviderLoadFunc) (any, error)
 	// Check 检查提供者管理器是否设置类型值

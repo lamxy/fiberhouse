@@ -1,3 +1,9 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 import (
@@ -120,6 +126,7 @@ type DefaultPLocation struct {
 	LocationServerShutdownBefore   IProviderLocation // 服务关闭前位点
 	LocationServerShutdown         IProviderLocation // 服务关闭位点
 	LocationServerShutdownAfter    IProviderLocation // 服务关闭后位点
+	LocationResponseInfoInit       IProviderLocation // 响应信息初始化位点
 }
 
 var (
@@ -154,6 +161,7 @@ func ProviderLocationDefault() *DefaultPLocation {
 			LocationServerShutdownBefore:   registry.MustDefault("ServerShutdownBefore"),   // 服务关闭前位点
 			LocationServerShutdown:         registry.MustDefault("ServerShutdown"),         // 服务关闭位点
 			LocationServerShutdownAfter:    registry.MustDefault("ServerShutdownAfter"),    // 服务关闭后位点
+			LocationResponseInfoInit:       registry.MustDefault("ResponseInfoInit"),       // 响应信息初始化位点
 		}
 	})
 	return providerLocationInstance

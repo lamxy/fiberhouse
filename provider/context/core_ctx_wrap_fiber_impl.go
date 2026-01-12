@@ -1,3 +1,9 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package context
 
 import (
@@ -31,13 +37,29 @@ func (f *FiberContext) Release() {
 	fiberContextPool.Put(f)
 }
 
+// GetCtx 获取原生上下文
+func (f *FiberContext) GetCtx() any {
+	return f.Ctx
+}
+
 // JSON 以 JSON 格式响应数据
 func (f *FiberContext) JSON(statusCode int, data interface{}) error {
 	defer f.Release()
 	return f.Ctx.Status(statusCode).JSON(data)
 }
 
-// GetCtx 获取原生上下文
-func (f *FiberContext) GetCtx() any {
-	return f.Ctx
+// Send 发送原始字节数据
+func (f *FiberContext) Send(statusCode int, body []byte) error {
+	defer f.Release()
+	return f.Ctx.Status(statusCode).Send(body)
+}
+
+// GetHeader 获取请求头
+func (f *FiberContext) GetHeader(key string) string {
+	return f.Ctx.Get(key)
+}
+
+// SetHeader 设置响应头
+func (f *FiberContext) SetHeader(key string, value string) {
+	f.Ctx.Set(key, value)
 }

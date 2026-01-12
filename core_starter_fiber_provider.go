@@ -1,22 +1,28 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 import (
 	"fmt"
 )
 
-// CoreFiberProvider 核心Fiber提供者
-type CoreFiberProvider struct {
+// CoreStarterFiberProvider 核心Fiber提供者
+type CoreStarterFiberProvider struct {
 	IProvider
 }
 
-func NewCoreFiberProvider() *CoreFiberProvider {
-	return &CoreFiberProvider{
+func NewCoreStarterFiberProvider() *CoreStarterFiberProvider {
+	return &CoreStarterFiberProvider{
 		IProvider: NewProvider().SetName("CoreFiberProvider").SetTarget("fiber").SetType(ProviderTypeDefault().GroupCoreStarterChoose),
 	}
 }
 
 // Initialize 重载初始化核心Fiber提供者
-func (p *CoreFiberProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
+func (p *CoreStarterFiberProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
 	p.Check()
 	if len(initFunc) == 0 {
 		return NewCoreWithFiber(ctx.(IApplicationContext)), nil

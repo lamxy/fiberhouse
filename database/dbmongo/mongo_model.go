@@ -110,7 +110,7 @@ func (mo *MongoModel) SetName(name string) fiberhouse.Locator {
 // GetDatabase 获取默认的库
 func (mo *MongoModel) GetDatabase(opts ...options.Lister[options.DatabaseOptions]) *mongo.Database {
 	if mo.dbName == "" {
-		exception.GetInternalError().RespError("Unknown database name").Panic()
+		exception.GetInternalError().RespData("Unknown database name").Panic()
 	}
 	return mo.Db.Client.Database(mo.dbName, opts...)
 }
@@ -125,10 +125,10 @@ func (mo *MongoModel) GetClientDatabase(dbName string, opts ...options.Lister[op
 // 可临时修改读主，一般用于重要业务时，实时读取最新数据
 func (mo *MongoModel) GetCollection(coll string, opts ...options.Lister[options.CollectionOptions]) *mongo.Collection {
 	if mo.dbName == "" {
-		exception.GetInternalError().RespError("Unknown database name").Panic()
+		exception.GetInternalError().RespData("Unknown database name").Panic()
 	}
 	if coll == "" {
-		exception.GetInternalError().RespError("Unknown database table name").Panic()
+		exception.GetInternalError().RespData("Unknown database table name").Panic()
 	}
 	return mo.Db.Client.Database(mo.dbName).Collection(coll, opts...)
 }

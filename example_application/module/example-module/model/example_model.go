@@ -43,7 +43,7 @@ func RegisterKeyExampleModel(ctx fiberhouse.IApplicationContext, ns ...string) s
 func (m *ExampleModel) GetExampleByID(ctx context.Context, oid string) (*entity.Example, error) {
 	_id, err := bson.ObjectIDFromHex(oid)
 	if err != nil {
-		exception.GetInputError().RespError(err.Error()).Panic()
+		exception.GetInputError().RespData(err.Error()).Panic()
 	}
 	filter := bson.D{{"_id", _id}}
 	opts := options.FindOne().SetProjection(bson.M{
@@ -72,7 +72,7 @@ func (m *ExampleModel) GetExamples(ctx context.Context, page, size int) ([]entit
 		_ = cursor.Close(ctx)
 	}()
 	if err != nil {
-		return nil, exception.GetInternalError().RespError(err)
+		return nil, exception.GetInternalError().RespData(err)
 	}
 	if errCur := cursor.All(m.ctx, &examples); errCur != nil {
 		return nil, errCur
@@ -93,7 +93,7 @@ func (m *ExampleModel) SaveExample(ctx context.Context, doc *entity.Example) (bs
 	}
 
 	if !result.Acknowledged {
-		return bson.NilObjectID, exception.GetInternalError().RespError("Insert not acknowledged")
+		return bson.NilObjectID, exception.GetInternalError().RespData("Insert not acknowledged")
 	}
 
 	return result.InsertedID.(bson.ObjectID), nil

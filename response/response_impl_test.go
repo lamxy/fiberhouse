@@ -41,8 +41,8 @@ func TestRespInfo_ObjectPool(t *testing.T) {
 
 	// 再次获取应该是同一个对象（被重置过）
 	resp2 := GetRespInfo()
-	if resp2.Code != 0 || resp2.Msg != "" || resp2.Data != nil {
-		t.Fatalf("对象池重置失败: code=%d, msg=%s, data=%v", resp2.Code, resp2.Msg, resp2.Data)
+	if resp2.GetCode() != 0 || resp2.GetMsg() != "" || resp2.GetData() != nil {
+		t.Fatalf("对象池重置失败: code=%d, msg=%s, data=%v", resp2.GetCode(), resp2.GetMsg(), resp2.GetData())
 	}
 	resp2.Release()
 }
@@ -57,15 +57,15 @@ func TestRespInfo_Reset(t *testing.T) {
 		t.Fatalf("Reset 应该返回同一个实例")
 	}
 
-	if resp.Code != 200 {
-		t.Fatalf("Reset后Code期望200，实际%d", resp.Code)
+	if resp.GetCode() != 200 {
+		t.Fatalf("Reset后Code期望200，实际%d", resp.GetCode())
 	}
-	if resp.Msg != "success" {
-		t.Fatalf("Reset后Msg期望success，实际%s", resp.Msg)
+	if resp.GetMsg() != "success" {
+		t.Fatalf("Reset后Msg期望success，实际%s", resp.GetMsg())
 	}
-	data, ok := resp.Data.(map[string]int)
+	data, ok := resp.GetData().(map[string]int)
 	if !ok || data["key"] != 42 {
-		t.Fatalf("Reset后Data不匹配: %v", resp.Data)
+		t.Fatalf("Reset后Data不匹配: %v", resp.GetData())
 	}
 }
 
@@ -75,30 +75,30 @@ func TestRespSuccess_WithPool(t *testing.T) {
 	// 无数据
 	resp1 := RespSuccess()
 	defer resp1.Release()
-	if resp1.Code != 0 || resp1.Msg != "ok" || resp1.Data != nil {
-		t.Fatalf("RespSuccess()期望(0,ok,nil)，实际(%d,%s,%v)", resp1.Code, resp1.Msg, resp1.Data)
+	if resp1.GetCode() != 0 || resp1.GetMsg() != "ok" || resp1.GetData() != nil {
+		t.Fatalf("RespSuccess()期望(0,ok,nil)，实际(%d,%s,%v)", resp1.GetCode(), resp1.GetMsg(), resp1.GetData())
 	}
 
 	// 有数据
 	testData := []string{"a", "b"}
 	resp2 := RespSuccess(testData)
 	defer resp2.Release()
-	if resp2.Code != 0 || resp2.Msg != "ok" {
+	if resp2.GetCode() != 0 || resp2.GetMsg() != "ok" {
 		t.Fatalf("RespSuccess(data)基础字段错误")
 	}
-	if data, ok := resp2.Data.([]string); !ok || len(data) != 2 || data[0] != "a" {
-		t.Fatalf("RespSuccess(data)数据不匹配: %v", resp2.Data)
+	if data, ok := resp2.GetData().([]string); !ok || len(data) != 2 || data[0] != "a" {
+		t.Fatalf("RespSuccess(data)数据不匹配: %v", resp2.GetData())
 	}
 }
 
 func TestRespSuccessWithoutPool(t *testing.T) {
 	resp := RespSuccessWithoutPool("test")
 	// 注意：这个函数实际实现有bug，应该传递data参数
-	if resp.Code != 0 || resp.Msg != "ok" {
+	if resp.GetCode() != 0 || resp.GetMsg() != "ok" {
 		t.Fatalf("RespSuccessWithoutPool基础字段错误")
 	}
-	if resp.Data != "test" {
-		t.Logf("RespSuccessWithoutPool data期望'test'，实际%v", resp.Data)
+	if resp.GetData() != "test" {
+		t.Logf("RespSuccessWithoutPool data期望'test'，实际%v", resp.GetData())
 	}
 }
 
@@ -108,20 +108,20 @@ func TestRespError_WithPool(t *testing.T) {
 	resp := RespError(40001, "参数错误")
 	defer resp.Release()
 
-	if resp.Code != 40001 {
-		t.Fatalf("错误码期望40001，实际%d", resp.Code)
+	if resp.GetCode() != 40001 {
+		t.Fatalf("错误码期望40001，实际%d", resp.GetCode())
 	}
-	if resp.Msg != "参数错误" {
-		t.Fatalf("错误消息期望'参数错误'，实际'%s'", resp.Msg)
+	if resp.GetMsg() != "参数错误" {
+		t.Fatalf("错误消息期望'参数错误'，实际'%s'", resp.GetMsg())
 	}
-	if resp.Data != nil {
-		t.Fatalf("错误响应Data应为nil，实际%v", resp.Data)
+	if resp.GetData() != nil {
+		t.Fatalf("错误响应Data应为nil，实际%v", resp.GetData())
 	}
 }
 
 func TestRespErrorWithoutPool(t *testing.T) {
 	resp := RespErrorWithoutPool(50001, "服务器错误")
-	if resp.Code != 50001 || resp.Msg != "服务器错误" || resp.Data != nil {
+	if resp.GetCode() != 50001 || resp.GetMsg() != "服务器错误" || resp.GetData() != nil {
 		t.Fatalf("RespErrorWithoutPool字段不匹配")
 	}
 }
@@ -132,27 +132,27 @@ func TestNewRespInfo_WithPool(t *testing.T) {
 	// 无data参数
 	resp1 := NewRespInfo(100, "info")
 	defer resp1.Release()
-	if resp1.Data != nil {
-		t.Fatalf("无data参数时应为nil，实际%v", resp1.Data)
+	if resp1.GetData() != nil {
+		t.Fatalf("无data参数时应为nil，实际%v", resp1.GetData())
 	}
 
 	// 有data参数
 	resp2 := NewRespInfo(200, "ok", map[string]bool{"success": true})
 	defer resp2.Release()
-	data, ok := resp2.Data.(map[string]bool)
+	data, ok := resp2.GetData().(map[string]bool)
 	if !ok || !data["success"] {
-		t.Fatalf("data参数设置失败: %v", resp2.Data)
+		t.Fatalf("data参数设置失败: %v", resp2.GetData())
 	}
 }
 
 func TestNewRespInfoWithoutPool(t *testing.T) {
 	resp := NewRespInfoWithoutPool(300, "custom", []int{1, 2, 3})
-	if resp.Code != 300 || resp.Msg != "custom" {
+	if resp.GetCode() != 300 || resp.GetMsg() != "custom" {
 		t.Fatalf("基础字段设置失败")
 	}
-	data, ok := resp.Data.([]int)
+	data, ok := resp.GetData().([]int)
 	if !ok || len(data) != 3 || data[1] != 2 {
-		t.Fatalf("data设置失败: %v", resp.Data)
+		t.Fatalf("data设置失败: %v", resp.GetData())
 	}
 }
 
@@ -161,7 +161,7 @@ func TestNewRespInfoWithoutPool(t *testing.T) {
 func TestNewExceptionResp(t *testing.T) {
 	resp := NewExceptionResp(50001, "异常", "错误详情")
 	defer resp.Release()
-	if resp.Code != 50001 || resp.Msg != "异常" || resp.Data != "错误详情" {
+	if resp.GetCode() != 50001 || resp.GetMsg() != "异常" || resp.GetData() != "错误详情" {
 		t.Fatalf("异常响应构造失败")
 	}
 }
@@ -169,12 +169,12 @@ func TestNewExceptionResp(t *testing.T) {
 func TestNewValidateExceptionResp(t *testing.T) {
 	resp := NewValidateExceptionResp(40001, "验证失败", []string{"字段1", "字段2"})
 	defer resp.Release()
-	if resp.Code != 40001 || resp.Msg != "验证失败" {
+	if resp.GetCode() != 40001 || resp.GetMsg() != "验证失败" {
 		t.Fatalf("验证异常响应基础字段失败")
 	}
-	data, ok := resp.Data.([]string)
+	data, ok := resp.GetData().([]string)
 	if !ok || len(data) != 2 {
-		t.Fatalf("验证异常响应data失败: %v", resp.Data)
+		t.Fatalf("验证异常响应data失败: %v", resp.GetData())
 	}
 }
 
@@ -204,12 +204,12 @@ func TestRespInfo_JSONSerialization(t *testing.T) {
 	// 反序列化验证
 	var decoded RespInfo
 	mustUnmarshal(t, jsonData, &decoded)
-	if decoded.Code != 0 || decoded.Msg != "success" {
+	if decoded.GetCode() != 0 || decoded.GetMsg() != "success" {
 		t.Fatalf("反序列化基础字段失败")
 	}
-	data, ok := decoded.Data.(map[string]interface{})
+	data, ok := decoded.GetData().(map[string]interface{})
 	if !ok {
-		t.Fatalf("反序列化data类型错误: %T", decoded.Data)
+		t.Fatalf("反序列化data类型错误: %T", decoded.GetData())
 	}
 	if data["name"] != "测试" {
 		t.Fatalf("反序列化中文内容失败: %v", data["name"])
@@ -233,7 +233,7 @@ func TestRespInfo_ConcurrentPoolUsage(t *testing.T) {
 				resp.Reset(id, "concurrent", j)
 
 				// 简单验证
-				if resp.Code != id {
+				if resp.GetCode() != id {
 					t.Errorf("并发测试code不匹配")
 				}
 
@@ -302,7 +302,7 @@ func TestRespInfo_LargeData(t *testing.T) {
 	// 验证可以正常反序列化
 	var decoded RespInfo
 	mustUnmarshal(t, jsonData, &decoded)
-	decodedData, ok := decoded.Data.([]interface{})
+	decodedData, ok := decoded.GetData().([]interface{})
 	if !ok || len(decodedData) != 1000 {
 		t.Fatalf("大数据反序列化失败")
 	}
@@ -329,11 +329,11 @@ func TestRespInfo_SpecialCharacters(t *testing.T) {
 	var decoded RespInfo
 	mustUnmarshal(t, jsonData, &decoded)
 
-	if decoded.Msg != specialMsg {
+	if decoded.GetMsg() != specialMsg {
 		t.Fatalf("特殊字符消息处理失败")
 	}
 
-	decodedData, ok := decoded.Data.(map[string]interface{})
+	decodedData, ok := decoded.GetData().(map[string]interface{})
 	if !ok {
 		t.Fatalf("特殊字符数据类型错误")
 	}
@@ -356,8 +356,8 @@ func TestRespInfo_NoMemoryLeak(t *testing.T) {
 	// 释放后，字段应该被清空
 	resp.Release()
 
-	if resp.Code != 0 || resp.Msg != "" || resp.Data != nil {
+	if resp.GetCode() != 0 || resp.GetMsg() != "" || resp.GetData() != nil {
 		t.Fatalf("Release后字段未正确清空: code=%d, msg=%s, data=%v",
-			resp.Code, resp.Msg, resp.Data)
+			resp.GetCode(), resp.GetMsg(), resp.GetData())
 	}
 }

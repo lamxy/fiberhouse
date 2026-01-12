@@ -6,7 +6,6 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	providerctx "github.com/lamxy/fiberhouse/provider/context"
-	"github.com/lamxy/fiberhouse/response"
 )
 
 // CommonHandler 示例公共处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
@@ -39,10 +38,10 @@ func (h *CommonHandler) TestGetInstance(c *fiber.Ctx) error {
 	}
 
 	if ts, ok := testService.(*service.TestService); ok {
-		return response.RespSuccess(t + ":" + ts.HelloWorld()).JsonWithCtx(providerctx.WithFiberContext(c))
+		return fiberhouse.Response().SuccessWithData(t + ":" + ts.HelloWorld()).JsonWithCtx(providerctx.WithFiberContext(c))
 	}
 
-	return response.RespSuccess(t).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(t).SendWithCtx(providerctx.WithFiberContext(c))
 }
 
 // TestGetMustInstance 测试获取注册实例，通过 fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例，无需编译阶段的wire依赖注入
@@ -52,7 +51,7 @@ func (h *CommonHandler) TestGetMustInstance(c *fiber.Ctx) error {
 	// 通过fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例
 	testService := fiberhouse.GetMustInstance[*service.TestService](h.KeyTestService)
 
-	return response.RespSuccess(t + testService.HelloWorld()).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(t + testService.HelloWorld()).SendWithCtx(providerctx.WithFiberContext(c))
 }
 
 // TestGetMustInstanceFailed 测试获取注册实例失败，通过 fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例，无需编译阶段的wire依赖注入
@@ -62,5 +61,5 @@ func (h *CommonHandler) TestGetMustInstanceFailed(c *fiber.Ctx) error {
 	// 通过fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例
 	testService := fiberhouse.GetMustInstance[service.TestService](h.KeyTestService)
 
-	return response.RespSuccess(t + testService.HelloWorld()).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(t + testService.HelloWorld()).SendWithCtx(providerctx.WithFiberContext(c))
 }

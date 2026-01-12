@@ -1,3 +1,9 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 import (
@@ -274,7 +280,7 @@ func (g *GinRecovery) GetHeader(ctx providerctx.ICoreContext, key string) string
 
 func (g *GinRecovery) RecoverPanic(config ...RecoverConfig) any {
 	// 使用恢复中间件提供者来创建和返回相应核心的恢复中间件函数，
-	//通过恢复中间件管理器内部依据核心类型自动返回相应的恢复中间件，返回一个any，同时结合泛型方法
+	//通过恢复中间件管理器内部，依据核心类型自动返回相应的恢复中间件的any类型
 	// Set default config
 	cfg := configDefault(config...)
 
@@ -315,19 +321,21 @@ func RecoverPanicInternal(pCtx providerctx.ICoreContext, cfg RecoverConfig) {
 		debugMode := cfg.DebugMode
 		switch re := r.(type) {
 		case *exception.ValidateException:
-			_ = re.RespError().JsonWithCtx(pCtx, http.StatusBadRequest)
+			_ = Response().From(re.RespData(), true).SendWithCtx(pCtx, http.StatusBadRequest)
 			return
 		case *exception.Exception:
 			if debugMode {
-				_ = re.RespError().JsonWithCtx(pCtx, http.StatusBadRequest)
+				//_ = re.RespData().JsonWithCtx(pCtx, http.StatusBadRequest)
+				_ = Response().From(re.RespData(), true).SendWithCtx(pCtx, http.StatusBadRequest)
 				return
 			}
-			_ = re.RespError(nil).JsonWithCtx(pCtx, http.StatusBadRequest)
+			//_ = re.RespData(nil).JsonWithCtx(pCtx, http.StatusBadRequest)
+			_ = Response().From(re.RespData(nil), true).SendWithCtx(pCtx, http.StatusBadRequest)
 			return
 		case runtime.Error:
 			if debugMode {
 				// panic(re)
-				_ = exception.New(constant.UnknownErrCode, "RuntimeError", re.Error()).JsonWithCtx(pCtx, http.StatusInternalServerError)
+				_ = Response().From(exception.New(constant.UnknownErrCode, "RuntimeError", re.Error()), true).SendWithCtx(pCtx, http.StatusInternalServerError)
 				return
 			}
 			var msg string
@@ -336,14 +344,14 @@ func RecoverPanicInternal(pCtx providerctx.ICoreContext, cfg RecoverConfig) {
 			} else {
 				msg = "UnknownRTException"
 			}
-			_ = exception.New(constant.UnknownErrCode, msg).JsonWithCtx(pCtx, http.StatusInternalServerError)
+			_ = Response().From(exception.New(constant.UnknownErrCode, msg), true).SendWithCtx(pCtx, http.StatusInternalServerError)
 			return
 		case error:
 			if debugMode {
-				_ = exception.New(constant.UnknownErrCode, re.Error()).JsonWithCtx(pCtx, http.StatusInternalServerError)
+				_ = Response().From(exception.New(constant.UnknownErrCode, re.Error()), true).SendWithCtx(pCtx, http.StatusInternalServerError)
 				return
 			}
-			_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, http.StatusInternalServerError)
+			_ = Response().From(exception.New(constant.UnknownErrCode, constant.UnknownErrMsg), true).SendWithCtx(pCtx, http.StatusInternalServerError)
 			return
 		default:
 			if debugMode {
@@ -357,14 +365,14 @@ func RecoverPanicInternal(pCtx providerctx.ICoreContext, cfg RecoverConfig) {
 					} else {
 						out = frameUtils.UnsafeString(jsonRet)
 					}
-					_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, out).JsonWithCtx(pCtx, http.StatusInternalServerError)
+					_ = Response().From(exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, out), true).SendWithCtx(pCtx, http.StatusInternalServerError)
 					return
 				} else {
-					_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, dw.GetString()).JsonWithCtx(pCtx, http.StatusInternalServerError)
+					_ = Response().From(exception.New(constant.UnknownErrCode, constant.UnknownErrMsg, dw.GetString()), true).SendWithCtx(pCtx, http.StatusInternalServerError)
 					return
 				}
 			}
-			_ = exception.New(constant.UnknownErrCode, constant.UnknownErrMsg).JsonWithCtx(pCtx, http.StatusInternalServerError)
+			_ = Response().From(exception.New(constant.UnknownErrCode, constant.UnknownErrMsg), true).SendWithCtx(pCtx, http.StatusInternalServerError)
 			return
 		}
 	}

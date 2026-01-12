@@ -1,3 +1,9 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 import (
@@ -8,12 +14,13 @@ import (
 // ProviderManager 提供者管理器接口的基类实现，通过组合模式支持子类扩展，子类只需重载所需方法即可实现多态行为
 // 注意：在调用提供者管理器接口的一些特性方法前，子类实例应通过 MountToParent 方法将子类实例挂载到该基类的 sonManager 字段，以确保多态行为的正确实现
 // 如LoadProvider()方法
+//
+// 注意：提供者管理器基类实现中未使用锁机制保护并发安全，仅在应用启动阶段初始化、写操作，运行时仅允许读取操作；否则子类应自行实现并发安全保护
 type ProviderManager struct {
 	name       string
 	sonManager IProviderManager
 	ctx        IContext
 	providers  map[string]IProvider
-	lock       sync.RWMutex
 	pType      IProviderType
 	pTypeOnce  sync.Once
 	location   IProviderLocation
@@ -70,7 +77,11 @@ func (m *ProviderManager) Location() IProviderLocation {
 func (m *ProviderManager) SetOrBindToLocation(l IProviderLocation, bind ...bool) IProviderManager {
 	m.location = l
 	if len(bind) > 0 && bind[0] {
-		// 绑定管理器到执行位点对象
+		// 绑定管理器到执行位点对象: 子实例存在绑定子实例，否则绑定父实例
+		if m.sonManager != nil {
+			_ = l.Bind(m.sonManager)
+			return m
+		}
 		_ = l.Bind(m)
 	}
 	return m
@@ -83,9 +94,6 @@ func (m *ProviderManager) GetContext() IContext {
 
 // Register 注册一个 provider
 func (m *ProviderManager) Register(provider IProvider) error {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
 	// 如果管理器处于唯一提供者模式,且已有提供者,则拒绝注册
 	if m.isUnique && len(m.providers) > 0 {
 		return fmt.Errorf("manager '%s' is in unique provider mode, cannot register another provider", m.name)
@@ -101,25 +109,23 @@ func (m *ProviderManager) Register(provider IProvider) error {
 
 // Unregister 注销一个 provider
 func (m *ProviderManager) Unregister(name string) error {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
-	if _, exists := m.providers[name]; !exists {
-		return ErrProviderNotFound
-	}
-
-	delete(m.providers, name)
+	//m.lock.Lock()
+	//defer m.lock.Unlock()
+	//
+	//if _, exists := m.providers[name]; !exists {
+	//	return ErrProviderNotFound
+	//}
+	//
+	//delete(m.providers, name)
+	//return nil
 	return nil
 }
 
 // GetProvider 获取指定名称的 provider
 func (m *ProviderManager) GetProvider(name string) (IProvider, error) {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
-
 	provider, exists := m.providers[name]
 	if !exists {
-		return nil, ErrProviderNotFound
+		return nil, fmt.Errorf("provider '%s' does not exist: %s", name, ErrProviderNotFound.Error())
 	}
 
 	return provider, nil
@@ -127,15 +133,17 @@ func (m *ProviderManager) GetProvider(name string) (IProvider, error) {
 
 // List 返回所有已注册的 providers
 func (m *ProviderManager) List() []IProvider {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
-
 	list := make([]IProvider, 0, len(m.providers))
 	for _, provider := range m.providers {
 		list = append(list, provider)
 	}
 
 	return list
+}
+
+// Map 返回所有已注册的 providers 映射
+func (m *ProviderManager) Map() map[string]IProvider {
+	return m.providers
 }
 
 // LoadProvider 加载 providers
@@ -152,8 +160,6 @@ func (m *ProviderManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 
 // IsUnique 返回管理器是否处于唯一提供者模式
 func (m *ProviderManager) IsUnique() bool {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
 	return m.isUnique
 }
 
@@ -163,9 +169,6 @@ func (m *ProviderManager) IsUnique() bool {
 // 如果已存在多个提供者，则 panic 错误
 // 返回管理器自身以支持链式调用
 func (m *ProviderManager) BindToUniqueProvider(provider IProvider) IProviderManager {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
 	providerCount := len(m.providers)
 
 	// 检查是否已存在多个提供者

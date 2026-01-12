@@ -1,3 +1,9 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 import (
@@ -47,6 +53,8 @@ type BootConfig struct {
 	CoreType string
 	// TrafficCodec 传输编解码器类型标识，由提供者的name属性区分，如"std_json_codec"、"sonic_json_codec"、"go_json_codec"、其他选择如protobuf等
 	TrafficCodec string
+	// 是否启用二进制协议支持，如Protobuf、MsgPack等
+	EnableBinaryProtocolSupport bool
 	// ConfigPath 全局应用配置文件的路径
 	ConfigPath string
 	// LogPath 全局应用日志文件的路径
@@ -169,8 +177,8 @@ func Default(opts ...BootConfigOption) *FiberHouse {
 		FrameType:    constant.FrameTypeWithDefaultFrameStarter,
 		CoreType:     constant.CoreTypeWithFiber,
 		TrafficCodec: constant.TrafficCodecWithSonic,
-		ConfigPath:   "./",
-		LogPath:      "./",
+		ConfigPath:   "./config",
+		LogPath:      "./logs",
 	}
 
 	// 应用函数选项
@@ -284,7 +292,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		for _, m := range ms {
 			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
 				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
-					return fh, nil
+					return fh, nil // 向当前管理器加载提供者函数中注入当前执行位点的FiberHouse实例
 				})
 			}
 			break

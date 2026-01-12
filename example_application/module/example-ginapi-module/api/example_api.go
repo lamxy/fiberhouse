@@ -112,14 +112,14 @@ func (h *ExampleHandler) GetExample(c *gin.Context) {
 	}
 
 	// 从服务层获取数据
-	resp, err := h.Service.GetExample(id)
+	exam, err := h.Service.GetExample(id)
 	if err != nil {
 		_ = c.Error(err)
 		return
 	}
 
 	// 返回成功响应
-	_ = response.RespSuccess(resp).JsonWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(exam).SendWithCtx(providerctx.WithGinContext(c))
 }
 
 // GetExampleWithTaskDispatcher godoc
@@ -168,7 +168,7 @@ func (h *ExampleHandler) GetExampleWithTaskDispatcher(c *gin.Context) {
 	}
 
 	// 返回成功响应
-	_ = response.RespSuccess(resp).JsonWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(resp).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
 }
 
 // CreateExample godoc
@@ -219,7 +219,7 @@ func (h *ExampleHandler) CreateExample(c *gin.Context) {
 	}
 
 	// 返回成功响应
-	_ = response.RespSuccess(resp).JsonWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(resp).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
 }
 
 // GetExamples godoc
@@ -275,5 +275,5 @@ func (h *ExampleHandler) GetExamples(c *gin.Context) {
 	}
 
 	// 返回成功响应
-	_ = response.RespSuccess(resp).JsonWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(resp).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
 }

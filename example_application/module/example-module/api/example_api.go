@@ -111,7 +111,8 @@ func (h *ExampleHandler) GetExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(resp).SendWithCtx(providerctx.WithFiberContext(c))
+	//return response.RespSuccess(resp).JsonWithCtx(providerctx.WithFiberContext(c))
 }
 
 // GetExampleWithTaskDispatcher godoc
@@ -155,7 +156,7 @@ func (h *ExampleHandler) GetExampleWithTaskDispatcher(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
 }
 
 // CreateExample godoc
@@ -200,7 +201,7 @@ func (h *ExampleHandler) CreateExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
 }
 
 // GetExamples godoc
@@ -250,5 +251,5 @@ func (h *ExampleHandler) GetExamples(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
 }

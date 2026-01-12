@@ -1,3 +1,9 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
 package fiberhouse
 
 import (
@@ -66,7 +72,7 @@ var (
 	recoveryManagerOnce     sync.Once
 )
 
-// NewRecoveryManager 创建恢复惊慌管理器
+// NewRecoveryPManager 创建恢复惊慌管理器
 func NewRecoveryPManager(ctx IContext) *RecoveryPManager {
 	m := &RecoveryPManager{
 		IProviderManager: NewProviderManager(ctx).
