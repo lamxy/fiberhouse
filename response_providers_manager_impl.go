@@ -60,9 +60,9 @@ func NewRespInfoPManager(ctx IContext) *RespInfoPManager {
 		IProviderManager: NewProviderManager(ctx).
 			SetName("RespInfoPManager").
 			SetType(ProviderTypeDefault().GroupResponseInfoChoose),
-		// .SetOrBindToLocation(ProviderLocationDefault().LocationResponseInfoInit, true),  // 绑定父实例到执行位点
+		// .SetOrBindToLocation(ProviderLocationDefault().LocationResponseInfoInit, true),  // 尚未挂载子实例到父属性，此处绑定内部将父实例绑定到执行位点
 	}
-	// 挂载子实例到父属性，设置并绑定子实例到执行位点
+	// 挂载子实例到父属性，设置并绑定子实例（当前实例）到执行位点
 	son.MountToParent(son).SetOrBindToLocation(ProviderLocationDefault().LocationResponseInfoInit, true)
 	return son
 }

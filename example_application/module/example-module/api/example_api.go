@@ -11,7 +11,6 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	providerctx "github.com/lamxy/fiberhouse/provider/context"
-	"github.com/lamxy/fiberhouse/response"
 	"net/http"
 	"strconv"
 )
@@ -59,7 +58,7 @@ func (h *ExampleHandler) HelloWorld(c *fiber.Ctx) error {
 	// 获取TestService服务实例
 	if tss, ok := ts.(*service.TestService); ok {
 		// 成功的响应
-		return response.RespSuccess(tss.HelloWorld()).JsonWithCtx(fiberhouse.CoreContext(c), http.StatusOK)
+		return fiberhouse.Response().SuccessWithData(tss.HelloWorld()).SendWithCtx(fiberhouse.CoreContext(c), http.StatusOK)
 	}
 
 	// 类型断言失败响应

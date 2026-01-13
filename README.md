@@ -10,11 +10,11 @@
 
 ## 🏠 关于 FiberHouse
 
-FiberHouse 是基于 Fiber 的高性能、可装配的 Go Web 框架，内置全局管理器、配置器、统一日志器、验证包装器以及数据库、缓存、中间件、统一异常处理等框架组件，开箱即用。
+FiberHouse 是默认基于 Fiber 核心的高性能、可装配、模块化设计的 Go Web & CMD 框架，内置全局管理器、配置器、统一日志器、验证包装器以及数据库、缓存、中间件、统一异常处理等框架组件，以及完整的命令行子框架的实现，开箱即用。
 
 - 提供了强大的全局管理容器，支持自定义组件一次注册到处使用的能力，方便开发者按需替换和功能扩展，
 - 在框架层面约定了应用启动器、全局上下文、业务分层等接口以及内置默认实现，支持自定义实现和模块化开发，
-- 使得 FiberHouse 像装配"家具"的"房子"一样可以按需构建灵活的、完整的 Go Web 应用。
+- 使得 FiberHouse 像装配"家具"的"房子"一样可以按需构建灵活的、完整的、可切换的 Go Web 和 CMD 应用。
 
 ### 🏆 开发方向 
 
@@ -37,112 +37,129 @@ FiberHouse 是基于 Fiber 的高性能、可装配的 Go Web 框架，内置全
 - **样例模板**: 提供完整的Web应用和CMD应用样例模板结构，涵盖了常见场景和最佳实践，开发者稍作修改即可直接套用
 - **更多**: 持续优化和更新中...
 
-## 🏗️ 架构说明
+## 🏗️ 架构概览与说明
+### 核心架构分层
 
 ```
-fiberhouse/                              # FiberHouse 框架核心
-├── 接口定义层
-│   ├── application_interface.go    # 应用启动器接口定义
-│   ├── command_interface.go        # 命令行应用接口定义  
-│   ├── context_interface.go        # 全局上下文接口定义
-│   ├── json_wraper_interface.go    # JSON 包装器接口定义
-│   ├── locator_interface.go        # 服务定位器接口定义
-│   └── model_interface.go          # 数据模型接口定义
+fiberhouse/  # FiberHouse 框架核心
+├── 核心接口定义层
+│   ├── `application_interface.go`         # 应用启动器接口,定义应用生命周期管理规范
+│   ├── `command_interface.go`             # 命令行应用接口,定义CLI命令注册和执行规范
+│   ├── `context_interface.go`             # 全局上下文接口,定义应用上下文的统一访问规范
+│   ├── `locator_interface.go`             # 服务定位器接口,定义服务查找和依赖解析规范
+│   ├── `model_interface.go`               # 数据模型接口,定义数据访问层的统一规范
+│   ├── `provider_interface.go`            # 提供者接口,定义组件注册和初始化规范
+│   └── `recover_interface.go`             # 恢复处理器接口,定义异常捕获和恢复机制规范
+├── 核心实现层
+│   ├── `application_impl.go`              # 应用启动器默认实现,提供标准的应用启动流程
+│   ├── `context_impl.go`                  # 全局上下文默认实现,管理配置、日志、容器等核心组件
+│   ├── `provider_impl.go`                 # 提供者基类实现,提供组件注册的基础能力
+│   ├── `provider_manager_impl.go`         # 提供者管理器实现,统一管理所有提供者的生命周期
+│   └── `service_impl.go`                  # 服务定位器实现,提供服务查找和依赖注入能力
+├── 提供者管理层
+│   ├── `provider_type.go`                 # 提供者类型分组,定义各类提供者的分类和标识
+│   ├── `provider_location.go`             # 提供者执行位置点,定义提供者在启动流程中的执行顺序
+│   └── `providers/`                       # 内置提供者集合,框架预置的核心组件提供者
+│       ├── `core_starter_fiber_provider.go`     # Fiber核心启动提供者
+│       ├── `core_starter_gin_provider.go`       # Gin核心启动提供者
+│       ├── `json_sonic_fiber_provider.go`       # Sonic JSON编解码器提供者
+│       └── `response_providers_manager_impl.go` # 响应处理提供者管理器
 ├── 应用启动层
-│   ├── applicationstarter/         # Web 应用启动器实现
-│   │   └── web_starter.go          # 基于 Fiber 的应用启动器
-│   ├── commandstarter/             # 命令行应用启动器实现
-│   │   └── cmdline_starter.go      # 命令行应用启动器
-│   └── bootstrap/                  # 应用引导程序
-│       └── bootstrap.go            # 统一引导入口
+│   ├── `boot.go`                          # 统一启动引导,提供一键启动能力和启动配置
+│   ├── `frame_starter_impl.go`            # 框架启动器实现,编排框架层面的启动流程
+│   ├── `frame_starter_manager.go`         # 框架启动器管理器,管理多种启动器的协同工作
+│   ├── `core_fiber_starter_impl.go`       # Fiber核心启动器,基于Fiber的HTTP服务启动
+│   ├── `core_gin_starter_impl.go`         # Gin核心启动器,基于Gin的HTTP服务启动
+│   └── `commandstarter/`                  # 命令行应用启动,CLI应用的启动和命令管理
+│       ├── `cmdline_starter.go`                 # 命令行启动器,管理CLI应用的启动流程
+│       └── `core_cmd_application.go`            # 核心命令应用,提供CLI框架的核心功能
 ├── 配置管理层
-│   └── appconfig/                  # 应用配置管理
-│       └── config.go               # 多格式配置文件加载和管理
+│   ├── `bootstrap/`
+│   │   └── `bootstrap.go`                 # 配置和日志初始化,应用启动前的基础设施准备
+│   └── `appconfig/`
+│       └── `config.go`                    # 多格式配置加载,支持YAML/JSON/环境变量等多源配置
 ├── 全局管理层
-│   ├── globalmanager/              # 全局对象容器管理
-│   │   ├── interface.go            # 全局管理器接口
-│   │   ├── manager.go              # 全局管理器实现
-│   │   └── types.go                # 全局管理器类型定义
-│   └── global_utility.go           # 全局工具函数
+│   ├── `globalmanager/`
+│   │   ├── `interface.go`                 # 管理器接口,定义全局对象管理的统一规范
+│   │   ├── `manager.go`                   # 管理器实现,提供无锁、延迟初始化的全局对象容器
+│   │   └── `types.go`                     # 类型定义,管理器相关的类型和常量定义
+│   └── `global_utility.go`                # 全局工具函数,提供注册、查找、命名空间等实用工具
 ├── 数据访问层
-│   └── database/                   # 数据库驱动支持
-│       ├── dbmysql/                # MySQL 数据库组件
-│       │   ├── interface.go        # MySQL 接口定义
-│       │   ├── mysql.go            # MySQL 连接实现
-│       │   └── mysql_model.go      # MySQL 模型基类
-│       └── dbmongo/                # MongoDB 数据库组件
-│           ├── interface.go        # MongoDB 接口定义
-│           ├── mongo.go            # MongoDB 连接实现
-│           └── mongo_model.go      # MongoDB 模型基类
+│   └── `database/`
+│       ├── `dbmysql/`
+│       │   ├── `interface.go`                   # MySQL数据库接口定义
+│       │   ├── `mysql.go`                       # MySQL连接管理和配置
+│       │   └── `mysql_model.go`                 # MySQL模型基类,提供GORM操作的基础能力
+│       └── `dbmongo/`
+│           ├── `interface.go`                   # MongoDB数据库接口定义
+│           ├── `mongo.go`                       # MongoDB连接管理和配置
+│           └── `mongo_model.go`                 # MongoDB模型基类,提供文档操作的基础能力
 ├── 缓存系统层
-│   └── cache/                      # 高性能缓存组件
-│       ├── cache_interface.go      # 缓存接口定义
-│       ├── cache_option.go         # 缓存配置选项
-│       ├── cache_utility.go        # 缓存工具函数
-│       ├── cache_errors.go         # 缓存错误定义
-│       ├── helper.go               # 缓存助手函数
-│       ├── cache2/                 # 二级缓存实现
-│       │   └── level2_cache.go     # 本地+远程二级缓存
-│       ├── cachelocal/             # 本地缓存实现
-│       │   ├── local_cache.go      # 内存缓存实现
-│       │   └── type.go             # 本地缓存类型
-│       └── cacheremote/            # 远程缓存实现
-│           ├── cache_model.go      # 远程缓存模型基类
-│           └── redis_cache.go      # Redis 缓存实现
-├── 组件库层
-│   └── component/                  # 框架核心组件
-│       ├── dig_container.go        # 基于dig依赖注入容器包装
-│       ├── jsoncodec/              # JSON 编解码器
-│       │   └── sonicjson.go        # 基于 Sonic 的高性能 JSON编解码器
-│       ├── jsonconvert/            # JSON 转换工具
-│       │   └── convert.go          # 转换核心实现
-│       ├── mongodecimal/           # MongoDB 十进制处理
-│       │   └── mongo_decimal.go    # MongoDB Decimal128 支持
-│       ├── validate/               # 参数验证组件
-│       │   ├── type_interface.go   # 验证器接口定义
-│       │   ├── validate_wrapper.go # 验证器包装实现
-│       │   ├── en.go               # 英文验证器实现
-│       │   ├── zh_cn.go            # 简体中文验证器实现
-│       │   ├── zh_tw.go            # 繁体中文验证器实现
-│       │   └── example/            # 注册示例
-│       ├── tasklog/                # 任务日志组件
-│       │   └── logger_adapter.go   # 日志适配器
-│       └── writer/                 # 日志写入器
-│           ├── async_channel_writer.go     # 异步通道写入器
-│           ├── async_diode_writer.go       # 异步二极管写入器
-│           ├── async_diode_writer_test.go  # 异步写入器测试
-│           └── sync_lumberjack_writer.go   # 同步滚动日志写入器
+│   └── `cache/`
+│       ├── `cache_interface.go`           # 缓存接口定义,统一的缓存操作规范
+│       ├── `cache_option.go`              # 缓存选项配置,提供灵活的缓存策略配置
+│       ├── `cache_utility.go`             # 缓存工具函数,提供缓存操作的便捷方法
+│       ├── `helper.go`                    # 缓存辅助函数,提供缓存键生成等辅助功能
+│       ├── `cache2/`
+│       │   └── `level2_cache.go`                # 二级缓存实现,本地+远程的组合缓存策略
+│       ├── `cachelocal/`
+│       │   ├── `local_cache.go`                 # 本地缓存实现,基于Ristretto的高性能内存缓存
+│       │   └── `type.go`                        # 本地缓存类型定义
+│       └── `cacheremote/`
+│           ├── `cache_model.go`                 # 远程缓存模型,提供缓存数据的序列化能力
+│           └── `redis_cache.go`                 # Redis缓存实现,基于Redis的分布式缓存
+├── 核心组件层
+│   └── `component/`
+│       ├── `dig_container.go`             # 依赖注入容器,基于Uber Dig的依赖管理
+│       ├── `jsoncodec/`
+│       │   └── `sonicjson.go`                   # Sonic JSON编解码器,高性能JSON处理
+│       ├── `validate/`
+│       │   ├── `type_interface.go`              # 验证器接口定义
+│       │   ├── `validate_wrapper.go`            # 验证器包装器,统一的参数验证能力
+│       │   ├── `en.go`                          # 英文验证消息翻译
+│       │   ├── `zh_cn.go`                       # 简体中文验证消息翻译
+│       │   └── `zh_tw.go`                       # 繁体中文验证消息翻译
+│       ├── `writer/`
+│       │   ├── `async_channel_writer.go`        # 基于Channel的异步日志写入器
+│       │   ├── `async_diode_writer.go`          # 基于Diode的异步日志写入器
+│       │   └── `sync_lumberjack_writer.go`      # 基于Lumberjack的同步日志轮转写入器
+│       └── `tasklog/`
+│           └── `logger_adapter.go`              # 任务日志适配器,为Asynq提供日志集成
 ├── 中间件层
-│   └── middleware/                 # HTTP 中间件
-│       └── recover/                # 异常恢复中间件
-│           ├── config.go           # 恢复中间件配置
-│           └── recover.go          # 恢复中间件实现
+│   └── `middleware/`
+│       ├── `recover_config.go`            # 恢复中间件配置,panic恢复的策略配置
+│       ├── `recover_error_handler_impl.go` # 恢复错误处理实现,统一的panic处理逻辑
+│       └── `recover_interface.go`         # 恢复中间件接口定义
 ├── 响应处理层
-│   └── response/                   # 统一响应处理
-│       └── response.go             # 响应对象池和序列化
+│   └── `response/`
+│       ├── `response_interface.go`        # 响应接口定义,统一的响应规范
+│       ├── `response_info_impl.go`        # 标准响应实现,JSON格式的统一响应结构
+│       ├── `response_proto_impl.go`       # Protobuf响应实现,二进制协议响应支持
+│       ├── `response_msgpack_impl.go`     # MessagePack响应实现,高效的二进制序列化
+│       └── `response.go`                  # 响应工具函数,提供快速响应的便捷方法
 ├── 异常处理层
-│   └── exception/                  # 统一异常处理
-│       ├── types.go                # 异常类型定义
-│       └── exception_error.go      # 异常错误实现
+│   └── `exception/`
+│       ├── `types.go`                     # 异常类型定义,业务异常的分类和错误码
+│       └── `exception_error.go`           # 异常错误实现,统一的异常处理和传播机制
 ├── 工具层
-│   ├── utils/                      # 通用工具函数
-│   │   └── common.go               # 通用工具实现
-│   └── constant/                   # 框架常量
-│       ├── constant.go             # 全局常量定义
-│       └── exception.go            # 异常常量定义
-├── 业务分层
-│   ├── api.go                      # API 层接口定义
-│   ├── service.go                  # 服务层接口定义
-│   ├── repository.go               # 仓储层接口定义
-│   └── task.go                     # 任务层接口定义
-└── 占位模块
-    ├── mq/                         # 消息队列（待实现）
-    ├── plugins/                    # 插件支持（待实现）
-    └── component/
-        ├── i18n/                   # 国际化（待实现）
-        └── rpc/                    # RPC 支持（待实现）
-        
+│   ├── `utils/`
+│   │   └── `common.go`                    # 通用工具函数,提供字符串、时间等常用工具
+│   └── `constant/`
+│       ├── `constant.go`                  # 常量定义,框架级别的常量声明
+│       └── `exception.go`                 # 异常常量定义,预定义的异常码和消息
+└── 业务分层接口
+    ├── `api_impl.go`                      # API层基类实现,提供控制器的基础能力
+    ├── `service_impl.go`                  # 服务层基类实现,提供业务逻辑层的基础能力
+    ├── `repository_impl.go`               # 仓储层基类实现,提供数据访问层的基础能力
+    └── `task.go`                          # 任务基类定义,提供异步任务的基础结构      
 ```
+
+### 架构设计理念
+
+- **接口驱动**: 核心功能均定义接口契约，支持灵活扩展
+- **提供者机制**: 通过Provider模式实现组件的注册和管理
+- **分层清晰**: 严格的分层架构，职责明确
+- **可插拔设计**: 支持核心框架(Fiber/Gin)和组件的自由切换
 
 ## 🚀 快速开始
 
@@ -186,44 +203,69 @@ go get github.com/lamxy/fiberhouse
 package main
 
 import (
-	"github.com/lamxy/fiberhouse/example_application"
-	"github.com/lamxy/fiberhouse/example_application/module"
-	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/applicationstarter"
-	"github.com/lamxy/fiberhouse/bootstrap"
+  "github.com/lamxy/fiberhouse"
+  "github.com/lamxy/fiberhouse/constant"
+  "github.com/lamxy/fiberhouse/example_application/providers/middleware"
+  "github.com/lamxy/fiberhouse/example_application/providers/module"
+  "github.com/lamxy/fiberhouse/example_application/providers/optioninit"
+  _ "github.com/lamxy/fiberhouse/example_main/docs" // swagger docs
+)
+
+// Version 版本信息，通过编译时 ldflags 注入
+// 使用方式: go build -ldflags "-X main.Version=v1.0.0"
+var (
+  Version string // version
 )
 
 func main() {
-	// bootstrap 初始化启动配置(全局配置、全局日志器)，配置目录默认为当前工作目录"."下的`example_config/`
-	// 可以指定绝对路径或基于工作目录的相对路径
-	cfg := bootstrap.NewConfigOnce("./example_config")
-	
-	// 日志目录默认为当前工作目录"."下的`example_main/logs`
-	// 可以指定绝对路径或基于工作目录的相对路径
-	logger := bootstrap.NewLoggerOnce(cfg, "./example_main/logs")
+	// 创建 FiberHouse 应用运行实例
+	fh := fiberhouse.New(&fiberhouse.BootConfig{
+		AppName:                     "Default FiberHouse Application",          // 应用名称
+		Version:                     Version,                                   // 应用版本
+		FrameType:                   constant.FrameTypeWithDefaultFrameStarter, // 默认提供的框架启动器标识: DefaultFrameStarter
+		CoreType:                    constant.CoreTypeWithFiber,                // fiber | gin | ...
+		TrafficCodec:                constant.TrafficCodecWithSonic,            // 传输流量的编解码器: sonic_json_codec|std_json_codec|go_json_codec|pb...
+		EnableBinaryProtocolSupport: true,                                      // 是否启用二进制协议支持，如Protobuf等
+		ConfigPath:                  "./example_config",                        // 应用全局配置路径
+		LogPath:                     "./example_main/logs",                     // 日志文件路径
+	})
 
-	// 初始化全局应用上下文
-	appContext := fiberhouse.NewAppContextOnce(cfg, logger)
+	// 收集提供者和管理器
+	providers := fiberhouse.DefaultProviders().AndMore(
+		// 框架启动器和核心启动器的选项参数初始化提供者，
+		//注意：由于选项初始化管理器New时已唯一绑定对应的提供者，此处提供者可以无需新建和收集
+		//见NewFrameOptionInitPManager()函数
+		//optioninit.NewFrameOptionInitProvider(),
+		//optioninit.NewCoreOptionInitProvider(),
 
-	// 初始化应用注册器、模块/子系统注册器和任务注册器对象，注入到应用启动器
-	appRegister := example_application.NewApplication(appContext)  // 需实现应用注册器接口，见fiberhouse.ApplicationRegisterer接口定义，参考example_application/application.go样例实现
-	moduleRegister := module.NewModule(appContext)  // 需实现模块注册器接口，见样例模块module/module.go的实现
-	taskRegister := module.NewTaskAsync(appContext)  // 需实现任务注册器接口，见样例任务module/task.go的实现
+		//基于Fiber的中间件注册提供者
+		middleware.NewFiberAppMiddlewareProvider(),
+		middleware.NewFiberModuleMiddlewareProvider(),
+		// 基于Gin的中间件注册提供者
+		middleware.NewGinAppMiddlewareProvider(),
+		// 其他可切换的框架相关中间件提供者
+		// ...
 
-        // 实例化 Web 应用启动器
-        webStarter := &applicationstarter.WebApplication{
-            // 实例化框架启动器
-            FrameStarter: applicationstarter.NewFrameApplication(appContext,
-              option.WithAppRegister(appRegister),
-              option.WithModuleRegister(moduleRegister),
-              option.WithTaskRegister(taskRegister),
-            ),
-            // 实例化核心应用启动器
-            CoreStarter: applicationstarter.NewCoreFiber(appContext),
-        }
-	
-	// 运行框架应用启动器
-	applicationstarter.RunApplicationStarter(webStarter)
+		// fiber模块路由和swagger注册提供者
+		module.NewFiberRouteRegisterProvider(),
+		// gin模块路由和swagger注册提供者
+		module.NewGinRouteRegisterProvider(),
+		// 更多基于其他核心框架的模块路由注册提供者
+		// ...
+	)
+	managers := fiberhouse.DefaultPManagers(fh.AppCtx).AndMore(
+		// 框架选项初始化管理器，获取框架启动器初始化的选项函数列表
+		optioninit.NewFrameOptionInitPManager(fh.AppCtx),
+		// 核心选项初始化管理器，获取核心启动器初始化的选项函数列表
+		optioninit.NewCoreOptionInitPManager(fh.AppCtx).MountToParent(),
+		// 应用中间件管理器，注册应用级中间件到核心应用实例
+		middleware.NewAppMiddlewarePManager(fh.AppCtx),
+		// 模块路由注册管理器，注册模块路由到核心应用实例
+		module.NewRouteRegisterPManager(fh.AppCtx),
+	)
+
+	// 初始化提供者和管理器并运行服务器
+	fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 }
 ```
 
@@ -307,12 +349,10 @@ cat README_go_build.md
 # windows环境构建产物保留.exe后缀，Linux or MacOS环境无需保留后缀
 go build -o ./target/cmdstarter.exe ./main.go 
 
-# 设置cmd应用的环境变量，windows环境，将读取application_cmd_dev.yml配置文件
-set APP_ENV_application_appType=cmd
+# 设置cmd应用的环境变量，windows环境，将读取application_dev.yml配置文件
 set APP_ENV_application_env=dev
 
 # Linux or MacOS 环境
-# export APP_ENV_application_appType=cmd
 # export APP_ENV_application_env=dev
 
 # 执行cmd命令脚本，查看帮助
@@ -329,8 +369,803 @@ set APP_ENV_application_env=dev
 # result:  ExampleMysqlService.TestOK: OK --from: ok
 
 ```
+## ⚙️ 核心接口与关键设计
 
-## 📖 使用指南
+### 设计理念
+
+FiberHouse 采用**接口驱动**和**提供者机制**的设计理念,通过清晰的接口定义和灵活的提供者模式,实现框架的高度可扩展性和可定制性。
+
+### 核心接口体系
+
+#### 1. 应用启动接口
+
+##### 框架启动器接口 (FrameStarter)
+
+**文件位置**: `application_interface.go` [跳转到文件](./application_interface.go)
+
+**职责**: 定义框架通用的初始化流程
+
+- 全局对象初始化和管理
+- 任务服务器启动
+- 应用上下文获取
+- 自定义初始化逻辑注册器注册
+
+**默认实现**: `frame_starter_impl.go`
+
+```go
+type FrameStarter interface {
+    IStarter
+    // GetContext 获取应用上下文
+    // 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
+    GetContext() IApplicationContext
+    
+    // RegisterApplication 注册应用注册器
+    // 将应用注册器实例注入到启动器中，用于后续的全局对象初始化和配置
+    RegisterApplication(application ApplicationRegister)
+    
+    // RegisterModule 注册模块注册器
+    // 将模块注册器实例注入到启动器中，用于模块级中间件、路由和Swagger的注册
+    RegisterModule(module ModuleRegister)
+    
+    // GetModule 获取模块注册器
+    // 返回已注册的模块注册器实例
+    GetModule() ModuleRegister
+    
+    // RegisterTask 注册任务注册器
+    // 将任务注册器实例注入到启动器中，用于异步任务服务器的初始化和启动
+    RegisterTask(task TaskRegister)
+    
+    // GetTask 获取任务注册器
+    // 返回已注册的任务注册器实例
+    GetTask() TaskRegister
+    
+    // RegisterToCtx 注册启动器到上下文
+    // 将启动器实例注册到应用上下文中，便于其他组件访问
+    RegisterToCtx(starter ApplicationStarter)
+    
+    // RegisterApplicationGlobals 注册应用全局对象和必要对象的初始化
+    // 注册全局对象初始化器、初始化必要的全局实例、配置验证器等
+    // 包括数据库、缓存、Redis、验证器、自定义标签等的初始化
+    RegisterApplicationGlobals(...IProviderManager)
+    
+    // RegisterLoggerWithOriginToContainer 注册带来源标识的日志器
+    // 将配置文件中预定义的不同来源的子日志器初始化器注册到容器中
+    // 便于获取已附加来源标记的专用日志器实例
+    RegisterLoggerWithOriginToContainer()
+    
+    // RegisterGlobalsKeepalive 注册全局对象保活机制
+    // 启动后台健康检测服务，定期检查全局对象状态并自动重建不健康的实例
+    RegisterGlobalsKeepalive(...IProviderManager)
+    
+    // RegisterTaskServer 注册异步任务服务器
+    // 根据配置启动异步任务服务器，注册任务处理器，运行后台任务worker服务并开始监听任务队列
+    RegisterTaskServer(...IProviderManager)
+    
+    // GetFrameApp 获取框架启动器实例
+    GetFrameApp() FrameStarter
+}
+```
+
+**扩展方式**: 实现 `FrameStarter` 接口,支持自定义框架初始化流程
+
+##### 核心启动器接口 (CoreStarter)
+
+**文件位置**: `application_interface.go` [跳转到文件](./application_interface.go)
+
+**职责**: 定义底层核心框架的启动逻辑
+
+- 核心应用实例创建 (Fiber/Gin/...)
+- 中间件注册
+- 路由注册
+- 服务监听启动
+
+**内置实现**:
+
+- Fiber核心启动器: `core_fiber_starter_impl.go`
+- Gin核心启动器: `core_gin_starter_impl.go`
+
+```go
+// CoreStarter 应用核心启动器接口
+type CoreStarter interface {
+    // GetAppContext 获取应用上下文
+    // 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
+    GetAppContext() IApplicationContext
+    
+    // InitCoreApp 初始化核心应用
+    // 创建并配置底层HTTP服务实例（如Fiber应用）
+    InitCoreApp(fs FrameStarter, managers ...IProviderManager)
+    
+    // RegisterAppMiddleware 注册应用级中间件
+    // 注册应用级别的中间件，如错误恢复、请求日志、CORS等全局中间件
+    RegisterAppMiddleware(fs FrameStarter, managers ...IProviderManager)
+    
+    // RegisterModuleSwagger 注册模块Swagger文档
+    // 根据配置决定是否注册Swagger API文档路由
+    RegisterModuleSwagger(fs FrameStarter, managers ...IProviderManager)
+    
+    // RegisterAppHooks 注册应用钩子函数
+    // 注册应用生命周期钩子函数，如启动、关闭时的回调处理
+    RegisterAppHooks(fs FrameStarter, managers ...IProviderManager)
+    
+    // RegisterModuleInitialize 注册模块初始化
+    // 执行模块级别的初始化，包括模块中间件和路由处理器的注册
+    RegisterModuleInitialize(fs FrameStarter, managers ...IProviderManager)
+    
+    // AppCoreRun 启动应用核心运行
+    // 启动HTTP服务监听，处理优雅关闭信号
+    AppCoreRun(...IProviderManager)
+    
+    // GetCoreApp 获取核心实例
+    GetCoreApp() interface{}
+}
+```
+
+**扩展方式**: 实现 `CoreStarter` 接口,支持其他Web框架集成
+
+##### 注册器接口族
+
+**文件位置**: `application_interface.go` [跳转到文件](./application_interface.go)
+
+**接口清单**:
+
+- `ApplicationRegister`: 应用级初始化逻辑注册
+- `ModuleRegister`: 模块级初始化逻辑注册
+- `TaskRegister`: 任务级初始化逻辑注册
+
+```go
+// ApplicationRegister 应用注册器
+//
+// 在应用启动阶段由启动器调用，用于：
+// 1. 注册应用的自定义配置、依赖与初始化逻辑；
+// 2. 将注册器实例绑定到 ApplicationStarter 的 application 字段，供启动流程使用。
+type ApplicationRegister interface {
+	IRegister
+	IApplication
+	// GetContext 返回全局上下文
+	GetContext() IApplicationContext
+
+	// ConfigGlobalInitializers 配置并返回全局对象初始化器的列表映射
+	ConfigGlobalInitializers() globalmanager.InitializerMap
+	// ConfigRequiredGlobalKeys 配置并返回需要初始化的全局对象keyName的切片
+	ConfigRequiredGlobalKeys() []globalmanager.KeyName
+	// ConfigCustomValidateInitializers 配置自定义语言验证器初始化器的切片
+	//见框架组件: validate.Wrap
+	ConfigCustomValidateInitializers() []validate.ValidateInitializer
+	// ConfigValidatorCustomTags 配置并返回需要注册的验证器自定义tag及翻译的切片(当验证tag缺乏所需语言的翻译时，可以自定义tag翻译)
+	//见框架组件: validate.RegisterValidatorTagFunc
+	ConfigValidatorCustomTags() []validate.RegisterValidatorTagFunc
+
+	// RegisterAppMiddleware 注册应用级别中间件
+	RegisterAppMiddleware(cs CoreStarter)
+
+	// RegisterCoreHook 注册核心应用(coreApp)的生命周期钩子
+	RegisterCoreHook(cs CoreStarter)
+}
+
+// ModuleRegister 模块注册器
+//
+// 用于注册应用的模块/子系统，包括中间件、路由、swagger等
+// 启动器会调用模块注册器完成模块初始化
+type ModuleRegister interface {
+	IRegister
+	// GetContext 返回全局上下文
+	GetContext() IApplicationContext
+
+	// RegisterModuleMiddleware 注册模块级别/子系统中间件
+	// RegisterModuleMiddleware(cs CoreStarter)
+
+	// RegisterModuleRouteHandlers 注册模块级别/子系统路由处理器
+	RegisterModuleRouteHandlers(cs CoreStarter)
+	// RegisterSwagger 注册swagger
+	RegisterSwagger(cs CoreStarter)
+}
+
+// TaskRegister 任务注册器（基于 asynq）
+//
+// 用户需实现此接口并在应用启动阶段注册到 ApplicationStarter
+// 注册后的任务注册器实例会绑定到 ApplicationStarter 的 task 属性，由启动器调用其方法完成任务组件的初始化
+//
+// 当全局配置开启异步任务组件时，任务注册器负责：
+// 1. 集中声明并注册任务类型（asynq 任务名）与其处理函数到映射容器。
+// 2. 将任务调度器（Dispatcher）与任务工作器（Worker）的初始化器注册到全局容器。
+// 3. 提供获取任务调度器与工作器实例的访问方法。
+type TaskRegister interface {
+	IRegister
+	// GetContext 返回全局上下文
+	GetContext() IApplicationContext
+
+	// GetTaskHandlerMap 返回任务处理器配置map
+	//
+	// 示例:
+	// func myTaskHandler(ctx context.Context, t *asynq.Task) error {
+	//     // 处理任务逻辑
+	//     return nil // 或返回错误
+	// }
+	//
+	// taskHandlerMap := map[string]func(context.Context, *asynq.Task) error{
+	//     "task_type_1": myTaskHandler,
+	//     // 更多任务类型和对应的处理器函数
+	// }
+	GetTaskHandlerMap() map[string]func(context.Context, *asynq.Task) error
+
+	// AddTaskHandlerToMap 向任务处理器映射中添加一个新的任务处理器
+	//
+	// 示例:
+	// func myTaskHandler2(ctx context.Context, t *asynq.Task) error {
+	//     // 处理任务逻辑
+	//     return nil // 或返回错误
+	// }
+	//
+	// taskRegister.AddTaskHandlerToMap("task_type_2", myTaskHandler2)
+	AddTaskHandlerToMap(pattern string, handler func(context.Context, *asynq.Task) error)
+
+	// RegisterTaskServerToContainer 注册异步任务服务器初始化器到容器
+	RegisterTaskServerToContainer()
+
+	// RegisterTaskDispatcherToContainer 注册异步任务客户端初始化器到容器
+	RegisterTaskDispatcherToContainer()
+
+	// GetTaskDispatcher 获取任务客户端/调度器实例
+	GetTaskDispatcher() (*TaskDispatcher, error)
+
+	// GetTaskWorker 获取任务服务器/工作器实例
+	GetTaskWorker(key string) (*TaskWorker, error)
+}
+```
+
+**设计目的**: 分层管理不同级别的初始化逻辑，对应业务应用、业务模块/子应用/子系统及其他功能的分层自定义逻辑
+
+#### 2. 提供者机制
+
+##### 提供者接口 (IProvider)
+
+**文件位置**: `provider_interface.go` [跳转到文件](./provider_interface.go)
+
+**职责**: 定义可扩展组件的注册契约
+
+- 提供者名称和类型定义
+- 提供者注册逻辑
+- 提供者依赖关系声明
+
+**基类实现**: `provider_impl.go` [跳转到文件](./provider_impl.go)
+
+```go
+// IProvider 提供者接口
+type IProvider interface {
+    // Name 返回提供者名称
+    Name() string
+    // Version 返回提供者版本
+    Version() string
+    // Initialize 执行提供者初始化操作
+    Initialize(IContext, ...ProviderInitFunc) (any, error)
+    // RegisterTo 将提供者注册到提供者管理器中
+    RegisterTo(manager IProviderManager) error
+    // Status 返回提供者当前状态
+    Status() IState
+    // Target 返回提供者的目标框架引擎类型, e.g., "gin", "fiber",...。该字段区分不同框架引擎类型的提供者实现，也可以用区分其他维度
+    Target() string
+    // Type 返回提供者的类型, e.g., "middleware", "route_register", "sonic_json_codec", "std_json_codec",...
+    Type() IProviderType
+    // SetName 设置提供者名称
+    SetName(string) IProvider
+    // SetVersion 设置提供者版本
+    SetVersion(string) IProvider
+    // SetTarget 设置提供者目标框架
+    SetTarget(string) IProvider
+    // SetStatus 设置提供者状态
+    SetStatus(IState) IProvider
+    // SetType 设置提供者类型，仅允许设置一次
+    SetType(IProviderType) IProvider
+    // Check 检查提供者是否设置类型值
+    Check()
+    // BindToUniqueManagerIfSingleton 将提供者绑定到唯一的管理器
+    // 注意：传入的管理器对象应当是一个单例实现，以确保全局唯一性
+    // 该方法内部调用管理器的 BindToUniqueProvider 方法进行彼此唯一绑定
+    // 返回提供者自身以支持链式调用
+    // 生效条件：1. 传入的管理器对象是单例实现；2. 子类提供者重载该方法且子类实例本身调用该方法；3. 需要将子类实例反向挂载到父类属性上
+    BindToUniqueManagerIfSingleton(IProviderManager) IProvider
+    // MountToParent 将当前提供者挂载到父级提供者中
+    MountToParent(son ...IProvider) IProvider
+}
+```
+
+**使用场景**:
+
+- 自定义中间件注册
+- 自定义JSON编解码器
+- 自定义核心启动器
+- 任意功能扩展
+
+**注意**: 框架提供默认的提供者基类实现，开发者直接组合/继承基类无需每次手动实现接口方法
+
+##### 提供者管理器接口 (IProviderManager)
+
+**文件位置**: `provider_interface.go` [跳转到文件](./provider_interface.go)
+
+**职责**: 提供者的集中管理和位置点挂载
+
+- 提供者收集
+- 提供者批量注册
+- 执行位置点挂载: 将管理器自身绑定到特定的生命周期或自定义位置点
+- 生命周期管理
+
+**基类实现**: `provider_manager_impl.go` [跳转到文件](./provider_manager_impl.go)
+
+```go
+// IProviderManager 提供者管理器接口
+type IProviderManager interface {
+    // Name 返回提供者管理器名称
+    Name() string
+    // SetName 设置提供者管理器名称
+    SetName(string) IProviderManager
+    // Type 返回提供者类型
+    Type() IProviderType
+    // SetType 设置提供者类型，仅允许设置一次
+    SetType(IProviderType) IProviderManager
+    // Location 获取管理器的执行位置点
+    Location() IProviderLocation
+    // SetOrBindToLocation 设置管理器的执行位置点，仅允许设置一次
+    SetOrBindToLocation(IProviderLocation, ...bool) IProviderManager
+    // GetContext 获取管理器关联的上下文对象
+    GetContext() IContext
+    // Register 注册提供者到管理器中
+    Register(provider IProvider) error
+    // Unregister 从管理器中注销提供者
+    Unregister(name string) error
+    // GetProvider 根据名称获取提供者实例
+    GetProvider(name string) (IProvider, error)
+    // List 列出管理器中所有注册的提供者
+    List() []IProvider
+    // Map 以名称为键，提供者实例为值，返回管理器中所有注册的提供者映射
+    Map() map[string]IProvider
+    // LoadProvider 加载提供者
+    LoadProvider(loadFunc ...ProviderLoadFunc) (any, error)
+    // Check 检查提供者管理器是否设置类型值
+    Check()
+    // BindToUniqueProvider 绑定唯一的提供者到管理器
+    // 确保管理器有且仅有一个提供者注册进来
+    // 如果已存在相同的提供者记录，视为注册成功
+    // 如果已存在多个提供者，则 panic 错误
+    // 返回管理器自身以支持链式调用
+    BindToUniqueProvider(IProvider) IProviderManager
+    // IsUnique 返回管理器是否处于唯一提供者模式
+    IsUnique() bool
+    // MountToParent 将当前管理器挂载到父级管理器中
+    MountToParent(son ...IProviderManager) IProviderManager
+}
+```
+
+**注意**: 框架提供默认的提供者管理器基类实现，开发者直接组合/继承基类无需每次手动实现接口方法
+
+##### 提供者类型分组
+
+**文件位置**: `provider_type.go` [跳转到文件](./provider_type.go)
+
+**内置类型**:
+
+```go
+// DefaultPType 预定义的默认类型对象集合
+//
+// 提供者类型分组的默认逻辑，同一类型的提供者仅允许注册进同一类型的管理器中并加载处理
+// 1. GroupXXXChoose Choose结尾，表示选择其中一个提供者执行（仅符合Target()单个提供者执行，即匹配到提供者则中断后续提供者初始化）（比如切换核心引擎、切换编解码器等只取管理器注册的提供者列表中的一个提供者）
+// 2. GroupYYYType Type结尾，表示受Target、Name、Version等约束条件限制，符合条件的多个提供者都可以执行（比如多个中间件注册、多个路由组注册的提供者都应用执行）
+// 3. GroupZZZAutoRun AutoRun结尾，表示自动运行，不受条件约束，所有注册的提供者均执行一次（比如全局对象注册、默认启动对象初始化的提供者）
+// 4. GroupWWWUnique Unique结尾，表示有且只有一个提供者存在和执行（比如框架启动器选项初始化提供者，唯一绑定管理器，管理器将无法注册更多的提供者）
+// 5. 其他自定义，由开发者自行约定和实现
+type DefaultPType struct {
+	ZeroType                        IProviderType // 默认零值类型
+	GroupDefaultManagerType         IProviderType // 默认管理器类型组，该类型提供者都注册进默认管理器进行处理
+	GroupTrafficCodecChoose         IProviderType // 传输编解码器选择组，该类型提供者中仅选择一个进行流量编解码处理
+	GroupCoreEngineChoose           IProviderType // 核心引擎选择组，该类型提供者中仅选择一个进行核心引擎处理
+	GroupMiddlewareRegisterType     IProviderType // 中间件注册类型组，该类型提供者都注册进中间件链进行处理
+	GroupRouteRegisterType          IProviderType // 路由注册类型组，该类型提供者都注册进路由表进行处理
+	GroupCoreHookChoose             IProviderType // 核心钩子选择组，该类型提供者中仅选择一个进行核心钩子处理
+	GroupFrameStarterChoose         IProviderType // 框架启动器选择组，该类型提供者中仅选择一个进行框架启动处理
+	GroupCoreStarterChoose          IProviderType // 核心启动器选择组，该类型提供者中仅选择一个进行核心启动处理
+	GroupProviderAutoRun            IProviderType // 提供者自动运行组，该类型提供者都自动运行一次进行处理
+	GroupCoreContextChoose          IProviderType // 核心上下文选择组，该类型提供者中仅选择一个进行核心上下文处理
+	GroupFrameStarterOptsInitUnique IProviderType // 框架启动器选项初始化唯一组，该类型提供者中仅唯一绑定一个管理器，并由该唯一的提供者进行处理
+	GroupCoreStarterOptsInitUnique  IProviderType // 核心启动器选项初始化唯一组，该类型提供者中仅唯一绑定一个管理器，并由该唯一的提供者进行处理
+	GroupRecoverMiddlewareChoose    IProviderType // 恢复中间件选择组，该类型提供者中仅选择一个进行恢复中间件处理（根据核心类型选择）
+	GroupResponseInfoChoose         IProviderType // 响应信息选择组，该类型提供者中仅选择一个进行响应信息处理（根据name存储的http内容类型来选择）
+}
+```
+
+**扩展方式**: 调用 `ProviderTypeDefault().MustCustom("xxx")` 创建自定义类型
+
+##### 执行位置点机制
+
+**文件位置**: `provider_location.go` [跳转到文件](./provider_location.go)
+
+**内置位置点**:
+
+```go
+// DefaultPLocation 预定义的默认位点对象集合
+//
+// 位点用于标识提供者的执行位置，相同位点的管理器会被收集并按顺序执行
+// 1. LocationXXXBefore 在某个阶段之前执行
+// 2. LocationXXXAfter 在某个阶段之后执行
+// 3. LocationXXXInit 在某个初始化阶段执行
+// 4. LocationXXXRun 在XXX运行阶段执行
+// 5. LocationXXXCreate 在XXX创建阶段执行
+// 6. 其他，由开发者自定义
+type DefaultPLocation struct {
+	ZeroLocation                   IProviderLocation // 初始化默认位点/零位点/保留为初始化状态
+	LocationAdaptCoreCtxChoose     IProviderLocation // 适配核心上下文选择位点（用于统一输出响应时屏蔽不同核心引擎上下文差异）
+	LocationBootStrapConfig        IProviderLocation // 引导配置阶段位点
+	LocationFrameStarterOptionInit IProviderLocation // 框架启动器选项初始化位点
+	LocationCoreStarterOptionInit  IProviderLocation // 核心启动器选项初始化位点
+	LocationFrameStarterCreate     IProviderLocation // 创建框架启动器位点
+	LocationCoreStarterCreate      IProviderLocation // 创建核心引擎启动器位点
+	LocationGlobalInit             IProviderLocation // 全局初始化位点
+	LocationGlobalKeepaliveInit    IProviderLocation // 全局对象保活初始化位点
+	LocationCoreEngineInit         IProviderLocation // 核心引擎初始化位点
+	LocationCoreHookInit           IProviderLocation // 核心引擎钩子（如有）初始化位点
+	LocationAppMiddlewareInit      IProviderLocation // 注册应用中间件初始化位点
+	LocationModuleMiddlewareInit   IProviderLocation // 注册模块中间件初始化位点
+	LocationRouteRegisterInit      IProviderLocation // 注册路由初始化位点
+	LocationTaskServerInit         IProviderLocation // 任务服务器初始化位点
+	LocationModuleSwaggerInit      IProviderLocation // 注册Swagger初始化位点
+	LocationServerRunBefore        IProviderLocation // 服务运行前位点
+	LocationServerRun              IProviderLocation // 服务运行位点
+	LocationServerRunAfter         IProviderLocation // 服务运行后位点
+	LocationServerShutdownBefore   IProviderLocation // 服务关闭前位点
+	LocationServerShutdown         IProviderLocation // 服务关闭位点
+	LocationServerShutdownAfter    IProviderLocation // 服务关闭后位点
+	LocationResponseInfoInit       IProviderLocation // 响应信息初始化位点
+}
+```
+
+**工作原理**:
+
+1. 提供者管理器通过 `SetOrBindToLocation(LocationServerRun)` 挂载到服务运行位置点
+2. 框架在特定生命周期(如服务运行)触发位置点
+3. 自动加载并执行对应的提供者管理器
+
+**优势**: 精确控制组件的加载时机,实现细粒度的生命周期管理
+
+#### 3. 全局上下文接口
+
+##### 应用上下文接口 (IAppContext)
+
+**文件位置**: `context_interface.go` [跳转到文件](./context_interface.go)
+
+**职责**: 应用全局对象访问，按需获取应用运行时的全局对象单例
+
+- 启动配置获取
+- 应用配置器获取
+- 日志器获取
+- 全局管理器获取
+- 验证器获取
+- 启动器实例获取
+
+**默认实现**: `context_impl.go` [跳转到文件](./context_impl.go)
+
+```go
+// IContext 全局上下文接口
+type IContext interface {
+    // GetConfig 定义获取全局配置的方法
+    GetConfig() appconfig.IAppConfig
+    // GetLogger 定义获取全局日志器的方法
+    GetLogger() bootstrap.LoggerWrapper
+    // GetContainer 定义获取全局管理器的方法
+    GetContainer() *globalmanager.GlobalManager
+    // GetStarter 定义获取启动器实例的方法，用于获取IApplication实例方法
+    GetStarter() IStarter
+    // GetLoggerWithOrigin 定义获取附加来源的子日志器单例的方法（从全局管理器获取）
+    GetLoggerWithOrigin(originFormCfg appconfig.LogOrigin) (*zerolog.Logger, error)
+    // GetMustLoggerWithOrigin 定义获取附加来源的日志器实例的方法，若获取失败则panic（从全局管理器获取）
+    GetMustLoggerWithOrigin(originFormCfg appconfig.LogOrigin) *zerolog.Logger
+    // GetValidateWrap 定义获取全局验证器包装器的方法
+    GetValidateWrap() validate.ValidateWrapper
+}
+
+// IApplicationContext 框架Web应用上下文接口
+type IApplicationContext interface {
+    IContext
+    // RegisterStarterApp 挂载框架启动器app
+    RegisterStarterApp(sApp ApplicationStarter)
+    // GetStarterApp 获取框架应用启动器实例(如WebApplication)
+    GetStarterApp() ApplicationStarter
+    // RegisterAppState 注册应用启动状态
+    RegisterAppState(bool)
+    // GetAppState 获取应用启动状态
+    GetAppState() bool
+    // GetBootConfig 获取启动配置
+    GetBootConfig() *BootConfig
+    // RegisterBootConfig 注册启动配置
+    RegisterBootConfig(bc *BootConfig)
+}
+```
+
+**注意**: 框架提供默认的全局应用上下文实例的实现，开发者可以任意组合全局应用上下文实例以按需使用
+
+#### 4. 业务分层接口
+
+##### 服务定位器接口族
+
+**文件位置**: `locator_interface.go` [跳转到文件](./locator_interface.go)
+
+**接口清单**:
+
+- `ApiLocator`: API层定位器
+- `ServiceLocator`: 服务层定位器
+- `RepositoryLocator`: 仓储层定位器
+- `TaskLocator`: 任务层定位器
+
+**提供能力**:
+
+- 获取应用上下文
+- 获取配置、日志器
+- 获取全局管理器实例
+- 统一日志输出
+
+**使用示例**:
+
+```go
+type ExampleService struct {
+    fiberhouse.ServiceLocator
+    Repo *repository.ExampleRepository
+}
+
+func (s *ExampleService) DoSomething() {
+    // 直接使用定位器能力
+    logger := s.GetLogger()
+    config := s.GetConfig()
+    instance := s.GetInstance("key")
+}
+```
+
+**注意**: 框架提供默认的业务分层定位器的基类实现，开发者可参考应用样例直接组合/继承基类无需每次手动实现接口方法
+
+#### 5. 异常处理接口
+
+##### 错误处理器接口
+
+**文件位置**: `recover_interface.go` [跳转到文件](./recover_interface.go)
+
+```go
+// IErrorHandler 错误处理接口，用于统一定义堆栈日志记录及错误处理器的方法
+type IErrorHandler interface {
+	DefaultStackTraceHandler(providerctx.ICoreContext, interface{})
+	ErrorHandler(providerctx.ICoreContext, error) error
+	GetContext() IApplicationContext
+	RecoverMiddleware(...RecoverConfig) any
+}
+```
+
+**职责**: 统一错误处理逻辑
+
+- 异常捕获
+- 错误日志记录
+- 响应格式化
+- 多框架适配
+  - 基于Fiber错误处理器适配器: `fiber_error_handler.go` [跳转到文件](./provider/adaptor/fiber_error_handler.go)
+  - 基于Gin错误处理器适配器: `gin_error_handler.go` [跳转到文件](./provider/adaptor/gin_error_handler.go)
+
+**内置实现**:
+
+- 统一错误处理器实现: `recover_error_handler_impl.go` [跳转到文件](./recover_error_handler_impl.go)
+
+**注意**: 框架提供默认的统一错误处理器的实现，开发者可自行实现该接口来支持更多自定义的错误处理逻辑
+
+##### 恢复接口
+
+**文件位置**: `recover_interface.go` [jump to file](./recover_interface.go)
+
+```go
+// IRecover 恢复惊慌接口，用于获取不同框架的请求上下文中的参数、查询参数、获取tranceID以及定义恢复中间件方法
+type IRecover interface {
+	// GetParamsJson 获取路由参数的 JSON 编码字节切片
+	GetParamsJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte
+	// GetQueriesJson 获取查询参数的 JSON 编码字节切片
+	GetQueriesJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte
+	// GetHeadersJson 获取请求头的 JSON 编码字节切片（敏感信息脱敏）
+	GetHeadersJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte
+	// RecoverPanic 返回恢复中间件函数，根据核心类型（如 fiber、gin）返回对应的中间件
+	// 通过恢复中间件管理器依据启动配置选择相应的提供者自动返回对应的恢复中间件
+	RecoverPanic(...RecoverConfig) any
+	TraceID(ctx providerctx.ICoreContext, flag ...string) string
+	GetHeader(ctx providerctx.ICoreContext, key string) string
+}
+```
+
+**职责**: Panic恢复机制
+
+- Panic捕获
+- 堆栈跟踪
+- 错误响应
+
+**内置实现**:
+- 基于Fiber的恢复实现: `FiberRecovery` [跳转到文件](./recover_recoveries_impl.go)
+- 基于Gin的恢复实现: `GinRecovery` [跳转到文件](./recover_recoveries_impl.go)
+
+#### 6. 响应处理接口
+
+##### 响应接口 (IResponse)
+
+**文件位置**: `response/response_interface.go`  [跳转到文件](./response/response_interface.go)
+
+**职责**: 统一响应格式
+
+- 响应码、消息、数据封装
+- 多种序列化协议支持
+- 对象池优化
+
+**内置实现**:
+
+- `RespInfo`: JSON响应 (对象池) [跳转到文件](./response/response_impl.go)
+- `Exception`: 异常响应 (对象池) [跳转到文件](./response/response_impl.go)
+- `ValidateException`: 验证异常响应 (对象池) [跳转到文件](./response/response_impl.go)
+- `RespInfoProto`: Protobuf响应 (对象池) [跳转到文件](./response/response_proto_impl.go)
+- `RespInfoMagPack`: MsgPack响应 (对象池) [跳转到文件](./response/response_msgpack_impl.go)
+- `RespInfoProtobufProvider`: Protobuf响应提供者 [跳转到文件](./response_providers_manager_impl.go)
+- `RespInfoMsgpackProvider`: MsgPack响应提供者 [跳转到文件](./response_providers_manager_impl.go)
+- `RespInfoPManager`: 响应提供者管理器 [跳转到文件](./response_providers_manager_impl.go)
+
+```go
+type IResponse interface {
+    GetCode() int
+    GetMsg() string
+    GetData() interface{}
+    SendWithCtx(c providerctx.ICoreContext, status ...int) error
+    JsonWithCtx(c providerctx.ICoreContext, status ...int) error
+    Reset(code int, msg string, data interface{}) IResponse
+    Release()
+    From(resp IResponse, needToRelease bool) IResponse
+    SuccessWithData(data ...interface{}) IResponse
+    ErrorCustom(code int, msg string) IResponse
+}
+```
+
+### 关键设计模式
+
+#### 1. 提供者模式 (Provider Pattern)
+
+**核心思想**: 将功能以提供者形式注册到框架
+
+**优势**:
+
+- 解耦: 功能与框架解耦
+- 灵活: 按需加载和替换
+- 扩展: 无侵入式扩展
+
+**使用流程**:
+
+```go
+// 1. 实现提供者
+// RespInfoProtobufProvider 响应信息 Protobuf 提供者
+type RespInfoProtobufProvider struct {
+    IProvider  // 组合基类提供者实现
+}
+
+func NewRespInfoProtobufProvider() *RespInfoProtobufProvider {
+  son := &RespInfoProtobufProvider{
+        IProvider: NewProvider().SetName("application/x-protobuf").SetType(ProviderTypeDefault().GroupResponseInfoChoose),
+  }
+  son.MountToParent(son)
+  return son
+}
+
+// Initialize 初始化
+func (p *RespInfoProtobufProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
+    return response.GetRespInfoPB(), nil
+}
+
+// 2. 收集提供者
+providers := fiberhouse.DefaultProviders().AndMore(
+    NewRespInfoProtobufProvider(),
+)
+
+// 3. 创建提供者管理器
+// RespInfoPManager 响应信息提供者管理器
+type RespInfoPManager struct {
+    IProviderManager  // 组合基类提供者管理器实现
+}
+
+func NewRespInfoPManager(ctx IContext) *RespInfoPManager {
+    son := &RespInfoPManager{
+        IProviderManager: NewProviderManager(ctx).
+            SetName("RespInfoPManager").
+            SetType(ProviderTypeDefault().GroupResponseInfoChoose),
+    }
+    // 挂载子实例到父属性，设置并绑定子实例（当前实例）到执行位点
+    son.MountToParent(son).SetOrBindToLocation(ProviderLocationDefault().LocationResponseInfoInit, true)
+    return son
+}
+
+// LoadProvider 加载提供者
+func (m *RespInfoPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
+    if len(loadFunc) == 0 {
+        return nil, fmt.Errorf("manager '%s': no load function provided", m.Name())
+    }
+    anything, err := loadFunc[0](m)
+    if err != nil {
+        return nil, err
+    }
+    contentType, ok := anything.(string)
+    if !ok {
+        return nil, errors.New("loadFunc manager '" + m.Name() + "': expected string of http Content-Type")
+    }
+    return m.GetProvider(contentType)
+}
+
+// 4. 框架自动加载: RunServer()内部自动将同类型组的提供者注册进管理器
+fiberhouse.New().WithProviders(providers).WithPManagers(managers).RunServer()
+```
+
+#### 2. 服务定位器模式 (Service Locator Pattern)
+
+**核心思想**: 通过定位器接口统一获取依赖
+
+**优势**:
+
+- 无需显式依赖注入
+- 延迟获取依赖
+- 简化代码结构
+
+**使用示例**:
+
+```go
+type MyService struct {
+    fiberhouse.ServiceLocator
+	repoInstanceRegisterKey string
+}
+
+func (s *MyService) Method() {
+    // 通过定位器获取依赖
+    dep := s.GetInstance(s.repoInstanceRegisterKey)
+}
+```
+
+#### 3. 对象池模式 (Object Pool Pattern)
+
+**应用场景**: 响应对象、缓存选项
+
+**优势**:
+
+- 减少GC压力
+- 提升性能
+- 内存复用
+
+**使用示例**:
+
+```go
+// 从对象池获取
+resp := response.GetRespInfo() // 内部从对象池获取响应信息对象
+defer resp.Release() // 归还对象池
+
+// 缓存选项池
+co := cache.OptionPoolGet(ctx)
+defer cache.OptionPoolPut(co)
+```
+
+### 扩展说明
+
+#### 添加新的核心框架支持
+
+1. 实现 `CoreStarter` 接口
+2. 创建对应的提供者
+3. 添加到提供者集合
+4. 注册到框架
+
+#### 添加新的响应协议
+
+1. 实现 `IResponse` 接口
+2. 实现对象池支持
+3. 添加到管理器集合
+3. 注册到框架
+
+FiberHouse 通过清晰的接口定义和灵活的提供者机制,实现了:
+
+- ✅ 高度可扩展性
+- ✅ 低耦合设计
+- ✅ 易于测试
+- ✅ 支持团队协作
+- ✅ 平滑的功能演进
+
+
+## 📖 业务应用使用指南
 
 - examples样例模板项目结构
 - 依赖注入工具说明和使用
@@ -348,118 +1183,143 @@ set APP_ENV_application_env=dev
 ```
 example_application/                    # 样例应用根目录
 ├── 应用配置层
-│   ├── application.go                  # 应用注册器实现
-│   ├── constant.go                     # 应用级常量定义
-│   └── customizer_interface.go         # 应用定制器接口
-├── API 接口层
-│   └── api-vo/                         # API 值对象定义
-│       ├── commonvo/                   # 通用 VO
-│       │   └── vo.go                   # 通用值对象
-│       └── example/                    # 示例模块 VO
-│           ├── api_interface.go        # API 接口定义
-│           ├── requestvo/              # 请求 VO
-│           │   └── example_reqvo.go    # 示例请求对象
-│           └── responsevo/             # 响应 VO
-│               └── example_respvo.go   # 示例响应对象
-├── 命令行框架应用层
-│   └── command/                        # 命令行程序
-│       ├── main.go                     # 命令行main入口
-│       ├── README_go_build.md          # 构建说明
-│       ├── application/                
-│       │   ├── application.go          # 命令应用配置和逻辑
-│       │   ├── constants.go            # 命令常量
-│       │   ├── functions.go            # 命令工具函数
-│       │   └── commands/               # 具体命令脚本实现
-│       │       ├── test_orm_command.go # ORM 测试命令
-│       │       └── test_other_command.go # 其他更多开发的命令脚本...
-│       ├── component/                  # 命令行组件
-│       │   ├── cron.go                 # 定时任务组件
-│       │   └── readme.md               # 组件说明
-│       └── target/                     # 构建产物
-│           └── cmdstarter.exe          # 命令行可执行文件
+│   ├── application_impl.go            # 应用注册器实现
+│   ├── constant.go                    # 应用级常量
+│   └── customizer_interface.go        # 应用定制器接口
+│
+├── API接口层
+│   └── apivo/                         # API值对象定义
+│       ├── commonvo/                  # 通用VO
+│       │   └── vo.go                  # 通用值对象
+│       └── example/                   # 示例模块VO
+│           ├── api_interface.go       # API接口定义
+│           ├── requestvo/             # 请求VO
+│           │   └── example_reqvo.go
+│           └── responsevo/            # 响应VO
+│               └── example_respvo.go
+│
+├── 命令行应用层
+│   └── command/                       # 命令行程序
+│       ├── main.go                    # 命令行入口
+│       ├── README_go_build.md         # 构建说明
+│       ├── application/               # 命令应用配置
+│       │   ├── application.go         # 命令应用逻辑
+│       │   ├── constants.go           # 命令常量
+│       │   ├── functions.go           # 工具函数
+│       │   └── commands/              # 命令脚本实现
+│       │       ├── test_orm_command.go
+│       │       └── test_other_command.go
+│       ├── component/                 # 命令行组件
+│       │   └── cron.go                # 定时任务
+│       └── target/                    # 构建产物目录
+│
 ├── 异常处理层
-│   ├── get_exceptions.go               # 异常获取器
-│   └── example-module/                 # 示例模块异常，其他模块异常，每个模块独立目录
-│       └── exceptions.go               # 模块异常汇总
-├── 中间件层
-│   └── middleware/                     # 应用级中间件
-│       └── register_app_middleware.go  # 应用中间件注册器
-├── 模块(子系统)层
-│   └── module/                         # 业务模块
-│       ├── module.go                   # 模块注册器
-│       ├── route_register.go           # 路由注册器
-│       ├── swagger.go                  # Swagger 文档配置
-│       ├── task.go                     # 异步任务注册器
-│       ├── api/                        # 模块级 API 中间件
-│       │   └── register_module_middleware.go
-│       ├── command-module/             # 命令行脚本专用的业务模块
-│       │   ├── entity/                 # 实体定义
-│       │   │   └── mysql_types.go      # MySQL 类型定义
-│       │   ├── model/                  # 数据模型
-│       │   │   ├── mongodb_model.go    # MongoDB 模型
-│       │   │   └── mysql_model.go      # MySQL 模型
-│       │   └── service/                # 业务服务
-│       │       ├── example_mysql_service.go  # MySQL 服务示例
-│       │       └── mongodb_service.go        # MongoDB 服务示例
-│       ├── common-module/           # 通用模块
-│       │   ├── attrs/                  # 属性定义
-│       │   │   └── attr1.go            # 属性示例
-│       │   ├── command/                # 通用命令
-│       │   ├── fields/                 # 通用字段
-│       │   │   └── timestamps.go       # 时间戳字段
-│       │   ├── model/                  # 通用模型
-│       │   ├── repository/             # 通用仓储
-│       │   ├── service/                # 通用服务
-│       │   └── vars/                   # 通用变量
-│       │       └── vars.go             # 变量定义
-│       ├── constant/                # 常量定义
-│       │   └── constants.go            # 模块常量
-│       └── example-module/          # 用于展示的核心样例模块
-│           ├── api/                    # API 控制器层
-│           │   ├── api_provider_wire_gen.go    # Wire 依赖注入生成文件
-│           │   ├── api_provider.go             # API 提供者，提供依赖关系
-│           │   ├── common_api.go               # 通用 API 控制器
-│           │   ├── example_api.go              # 示例 API 控制器
-│           │   ├── health_api.go               # 健康检查 API 控制器
-│           │   ├── README_wire_gen.md          # Wire 生成说明
-│           │   └── register_api_router.go      # API 路由注册
-│           ├── dto/                    # 数据传输对象
-│           ├── entity/                 # 实体层
-│           │   └── types.go            # 类型定义
-│           ├── model/                  # 模型层
-│           │   ├── example_model.go            # 示例模型
-│           │   ├── example_mysql_model.go      # MySQL 示例模型
-│           │   └── model_wireset.go            # 模型 Wire 集合
-│           ├── repository/             # 仓储层
-│           │   ├── example_repository.go       # 示例仓储
-│           │   ├── health_repository.go        # 健康检查仓储
-│           │   └── repository_wireset.go       # 仓储 Wire 集合
-│           ├── service/                # 服务层
-│           │   ├── example_service.go          # 示例服务
-│           │   ├── health_service.go           # 健康检查服务
-│           │   ├── service_wireset.go          # 服务 Wire 集合
-│           │   └── test_service.go             # 测试服务
-│           └── task/                   # 任务层
-│               ├── names.go            # 任务名称定义
-│               ├── task.go             # 任务注册器
-│               └── handler/            # 任务处理器
-│                   ├── handle.go       # 任务处理逻辑
-│                   └── mount.go        # 任务挂载器
+│   ├── get_exceptions.go              # 异常获取器
+│   └── example-module/                # 模块异常定义
+│       └── exceptions.go
+│
+├── 提供者层
+│   └── providers/                     # 提供者集合
+│       ├── middleware/                # 中间件提供者
+│       │   ├── fiber_app_middleware_provider.go
+│       │   ├── fiber_module_middleware_provider.go
+│       │   └── gin_app_middleware_provider.go
+│       ├── module/                    # 模块提供者
+│       │   ├── fiber_route_register_provider.go
+│       │   └── gin_route_register_provider.go
+│       └── optioninit/                # 选项初始化提供者
+│           ├── frame_option_init_provider.go
+│           └── core_option_init_provider.go
+│
+├── 业务模块层
+│   └── module/                        # 业务模块
+│       ├── module.go                  # 模块注册器
+│       ├── route_register.go          # 路由注册器
+│       ├── swagger.go                 # Swagger配置
+│       ├── task.go                    # 任务注册器
+│       │
+│       ├── command-module/            # 命令行业务模块
+│       │   ├── entity/                # 实体定义
+│       │   ├── model/                 # 数据模型
+│       │   └── service/               # 业务服务
+│       │
+│       ├── common-module/             # 通用模块
+│       │   ├── attrs/                 # 属性定义
+│       │   ├── fields/                # 通用字段
+│       │   ├── model/                 # 通用模型
+│       │   ├── repository/            # 通用仓储
+│       │   ├── service/               # 通用服务
+│       │   └── vars/                  # 通用变量
+│       │
+│       ├── constant/                  # 常量定义
+│       │   └── constants.go
+│       │
+│       └── example-module/            # 核心样例模块
+│           ├── api/                # API控制器层
+│           │   ├── api_provider_wire_gen.go  # Wire生成文件
+│           │   ├── api_provider.go    # API提供者
+│           │   ├── common_api.go      # 通用API
+│           │   ├── example_api.go     # 示例API
+│           │   ├── health_api.go      # 健康检查API
+│           │   └── register_api_router.go    # 路由注册
+│           │
+│           ├── dto/                # 数据传输对象
+│           │
+│           ├── entity/             # 实体层
+│           │   └── types.go
+│           │
+│           ├── model/              # 模型层
+│           │   ├── example_model.go
+│           │   ├── example_mysql_model.go
+│           │   └── model_wireset.go
+│           │
+│           ├── repository/         # 仓储层
+│           │   ├── example_repository.go
+│           │   ├── health_repository.go
+│           │   └── repository_wireset.go
+│           │
+│           ├── service/            # 服务层
+│           │   ├── example_service.go
+│           │   ├── health_service.go
+│           │   ├── service_wireset.go
+│           │   └── test_service.go
+│           │
+│           └── task/               # 任务层
+│               ├── names.go           # 任务名称
+│               ├── task.go            # 任务注册器
+│               └── handler/           # 任务处理器
+│                   ├── handle.go
+│                   └── mount.go
+│
 ├── 工具层
-│   └── utils/                          # 应用工具
-│       └── common.go                   # 通用工具函数
+│   └── utils/                         # 应用工具
+│       └── common.go
+│
 └── 自定义验证器层
-    └── validatecustom/                 # 自定义验证器
-        ├── tag_register.go             # 标签注册器
-        ├── validate_initializer.go     # 验证器初始化
-        ├── tags/                       # 自定义标签
-        │   ├── new_tag_hascourses.go   # 课程验证标签
-        │   └── tag_startswith.go       # 前缀验证标签
-        └── validators/                 # 多语言验证器
-            ├── ja.go                   # 日语验证器
-            ├── ko.go                   # 韩语验证器
-            └── langs_const.go          # 语言常量
+    └── validatecustom/                # 自定义验证器
+        ├── register_validator.go
+        └── custom_rules.go
 ```
+
+### 目录结构说明
+
+#### 核心分层
+- **应用配置层**: 应用级配置和常量定义
+- **API接口层**: 统一的API值对象定义
+- **命令行应用层**: 独立的命令行子框架
+- **异常处理层**: 模块化的异常定义
+- **提供者层**: 框架扩展点的提供者实现
+- **业务模块层**: 按模块组织的业务逻辑
+
+#### 业务模块内部分层（以example-module为例）
+- **api/**: API控制器，处理HTTP请求
+- **dto/**: 数据传输对象，用于层间数据传递
+- **entity/**: 实体定义，映射数据库表结构
+- **model/**: 数据模型，封装数据库操作
+- **repository/**: 仓储层，实现数据持久化
+- **service/**: 服务层，实现业务逻辑
+- **task/**: 任务层，处理异步任务
+
 
 ### 依赖注入工具说明和使用
 
@@ -624,7 +1484,7 @@ func (h *ExampleHandler) GetExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(c)
+    fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
 }
 ```
 
@@ -708,7 +1568,7 @@ func (r *ExampleRepository) GetExampleById(id string) (*entity.Example, error) {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, exception.GetNotFoundDocument() // 返回error
 		}
-		exception.GetInternalError().RespError(err.Error()).Panic() // 直接panic
+		exception.GetInternalError().RespData(err.Error()).Panic() // 直接panic
 	}
 	return result, nil
 }
@@ -747,7 +1607,7 @@ func RegisterKeyExampleModel(ctx fiberhouse.IApplicationContext, ns ...string) s
 func (m *ExampleModel) GetExampleByID(ctx context.Context, oid string) (*entity.Example, error) {
 	_id, err := bson.ObjectIDFromHex(oid)
 	if err != nil {
-		exception.GetInputError().RespError(err.Error()).Panic()
+		exception.GetInputError().RespData(err.Error()).Panic()
 	}
 	filter := bson.D{{"_id", _id}}
 	opts := options.FindOne().SetProjection(bson.M{
@@ -1179,22 +2039,19 @@ FiberHouse 支持基于环境的多配置文件管理，配置文件位于 examp
 - 配置文件命名规则
 
 ```
-配置文件格式: application_[应用类型]_[环境].yml
-应用类型: web | cmd
+配置文件格式: application_[环境].yml
 环境类型: dev | test | prod
 
 示例文件:
-- application_web_dev.yml     # Web应用开发环境
-- application_web_test.yml    # Web应用测试环境  
-- application_web_prod.yml    # Web应用生产环境
-- application_cmd_test.yml    # 命令行应用测试环境
+- application_dev.yml     # 应用开发环境
+- application_test.yml    # 应用测试环境  
+- application_prod.yml    # 应用生产环境
 
 ```
 - 环境变量配置
 
 ```
 # 引导环境变量 (APP_ENV_ 前缀):
-APP_ENV_application_appType=web    # 设置应用类型: web/cmd
 APP_ENV_application_env=prod       # 设置运行环境: dev/test/prod
 
 # 配置覆盖环境变量 (APP_CONF_ 前缀):
@@ -1210,7 +2067,6 @@ APP_CONF_application_appLog_asyncConf_type=chan # 覆盖异步日志类型
 ```yaml
 application:
   appName: "FiberHouse"           # 应用名称
-  appType: "web"                  # 应用类型: web/cmd
   env: "dev"                      # 运行环境: dev/test/prod
   
   server:

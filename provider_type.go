@@ -59,7 +59,7 @@ const (
 // 2. GroupYYYType Type结尾，表示受Target、Name、Version等约束条件限制，符合条件的多个提供者都可以执行（比如多个中间件注册、多个路由组注册的提供者都应用执行）
 // 3. GroupZZZAutoRun AutoRun结尾，表示自动运行，不受条件约束，所有注册的提供者均执行一次（比如全局对象注册、默认启动对象初始化的提供者）
 // 4. GroupWWWUnique Unique结尾，表示有且只有一个提供者存在和执行（比如框架启动器选项初始化提供者，唯一绑定管理器，管理器将无法注册更多的提供者）
-// 5. 其他自定义，由开发者自行约定和实现（比如自定义扩展逻辑）
+// 5. 其他自定义，由开发者自行约定和实现
 type DefaultPType struct {
 	ZeroType                        IProviderType // 默认零值类型
 	GroupDefaultManagerType         IProviderType // 默认管理器类型组，该类型提供者都注册进默认管理器进行处理

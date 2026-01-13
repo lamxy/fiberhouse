@@ -1,4 +1,4 @@
-# Package applicationstarter 提供基于 Fiber 框架的应用启动器实现，负责应用的完整生命周期管理和启动流程编排。
+# applicationstarter 提供基于 Fiber 框架的应用启动器实现，负责应用的完整生命周期管理和启动流程编排。
 
 该包是应用框架的启动引擎，提供标准化的应用启动流程和生命周期管理，包括：
 - 应用启动流程的标准化编排和执行
@@ -62,37 +62,7 @@
 
 ## 参考的项目结构示例
 
-		project/
-		├── application/                    # 应用层（业务实现）
-		│   ├── application.go              # 应用注册器实现
-		│   ├── constant.go                # 应用常量定义
-		│   ├── api-vo/                    # API 数据传输对象
-		│   │   ├── commonvo/              # 通用 VO
-		│   │   └── example/               # 示例模块 VO
-		│   ├── command/                   # 命令行工具
-		│   │   ├── main.go
-		│   │   └── application/           # 命令行应用逻辑
-		│   ├── exceptions/                # 异常定义
-		│   │   └── example-module/        # 模块异常
-		│   ├── middleware/                # 中间件注册
-		│   │   └── register_app_middleware.go
-		│   ├── module/                    # 业务模块
-		│   │   ├── example-module/        # example模块/子系统
-		│   │   ├── module.go              # 模块注册器
-		│   │   ├── route_register.go      # 路由注册
-		│   │   ├── swagger.go             # Swagger 注册
-		│   │   ├── task.go                # 任务注册器
-		│   │   └── api/                   # API 模块
-		│   ├── utils/                     # 工具函数
-		│   └── validatecustom/            # 自定义验证器
-		│       ├── tag_register.go
-		│       ├── tags/                  # 自定义标签
-		│       └── validators/            # 多语言验证器
-		│
-		├── frame/                         # 框架核心（基础设施层）
-		│   ├── applicationstarter/        # 应用启动器
-		│   │   └── frame_application.go   # 启动器实现
-	    ...
+见 [README.md](./README.md)
 
 ## 配置文件示例
 
