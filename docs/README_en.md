@@ -2,10 +2,10 @@
 
 [![Go Version](https://img.shields.io/badge/go-%3E%3D1.24-blue.svg)](https://golang.org/)
 [![Fiber Version](https://img.shields.io/badge/fiber-v2.x-green.svg)](https://github.com/gofiber/fiber)
-[...]
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 <img src="https://img.shields.io/github/issues/lamxy/fiberhouse.svg" alt="GitHub Issues"></img>
 
-📖 [中文](./README.md) | [English](./docs/README_en.md)
+📖 English | [中文](../README.md)
 
 ## 🏠 About FiberHouse
 
