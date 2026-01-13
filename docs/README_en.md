@@ -5,7 +5,7 @@
 [...]
 <img src="https://img.shields.io/github/issues/lamxy/fiberhouse.svg" alt="GitHub Issues"></img>
 
-📖 [中文](README.md) | [English](./docs/README_en.md)
+📖 [中文](./README.md) | [English](./docs/README_en.md)
 
 ## 🏠 About FiberHouse
 
