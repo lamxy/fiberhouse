@@ -64,7 +64,7 @@ func main() {
 		LogPath:                     "./example_main/logs",                     // 日志文件路径
 	})
 
-	// 收集提供者和管理器
+	// 在框架默认提供者和管理器基础上添加更多自定义的提供者和管理器
 	providers := fiberhouse.DefaultProviders().AndMore(
 		// 框架启动器和核心启动器的选项参数初始化提供者，
 		//注意：由于选项初始化管理器New时已唯一绑定对应的提供者，此处提供者可以无需新建和收集
@@ -96,8 +96,10 @@ func main() {
 		middleware.NewAppMiddlewarePManager(fh.AppCtx),
 		// 模块路由注册管理器，注册模块路由到核心应用实例
 		module.NewRouteRegisterPManager(fh.AppCtx),
+		// 其他提供者同类型组的管理器
+		// ...
 	)
 
-	// 初始化提供者和管理器并运行服务器
+	// 收集提供者和管理器并运行服务器
 	fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 }

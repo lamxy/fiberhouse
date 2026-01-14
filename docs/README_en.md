@@ -224,7 +224,7 @@ func main() {
     LogPath:                     "./example_main/logs",                     // log file path
   })
 
-  // Collect providers and managers
+  // Add additional custom providers and managers on top of the framework's default providers and managers
   providers := fiberhouse.DefaultProviders().AndMore(
     // Option initialization providers for frame starter and core starter.
     // Note: Since the option init manager is uniquely bound to the corresponding provider when New is called,
@@ -259,7 +259,7 @@ func main() {
     module.NewRouteRegisterPManager(fh.AppCtx),
   )
 
-  // Initialize providers and managers and run the server
+  // Collect providers and managers and run the server
   fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 }
 ```
@@ -371,15 +371,6 @@ FiberHouse adopts **interface-driven** and **provider-based** design to achieve 
 
 **Location**: `application_interface.go` [jump](./application_interface.go)
 
-**Role**: Defines common framework initialization
-
-- Global object init and management
-- Task server start
-- Access to app context
-- Register custom init logic
-
-**Default implementation**: `frame_starter_impl.go`
-
 ```go
 type FrameStarter interface {
     IStarter
@@ -433,23 +424,20 @@ type FrameStarter interface {
 }
 ```
 
+**Role**: Defines common framework initialization
+
+- Global object init and management
+- Task server start
+- Access to app context
+- Register custom init logic
+
+**Default implementation**: `frame_starter_impl.go`
+
 **Extend**: Implement `FrameStarter` for custom framework init.
 
 ##### CoreStarter
 
 **Location**: `application_interface.go` [jump](./application_interface.go)
-
-**Role**: Defines underlying core framework start logic
-
-- Core app creation (Fiber/Gin/...)
-- Middleware registration
-- Route registration
-- Service listen/start
-
-**Built-ins**:
-
-- Fiber core starter: `core_fiber_starter_impl.go`
-- Gin core starter: `core_gin_starter_impl.go`
 
 ```go
 // CoreStarter - Core application starter interface
@@ -486,6 +474,18 @@ type CoreStarter interface {
   GetCoreApp() interface{}
 }
 ```
+
+**Role**: Defines underlying core framework start logic
+
+- Core app creation (Fiber/Gin/...)
+- Middleware registration
+- Route registration
+- Service listen/start
+
+**Built-ins**:
+
+- Fiber core starter: `core_fiber_starter_impl.go`
+- Gin core starter: `core_gin_starter_impl.go`
 
 **Extend**: Implement `CoreStarter` to integrate other web frameworks.
 
@@ -607,19 +607,16 @@ type TaskRegister interface {
 
 **Purpose**: Layered management of init logic for app, modules/subsystems, and tasks.
 
+**Sample implementations**:
+- Application registrar example: `application_impl.go` [jump to file](./example_application/application_impl.go)
+- Module registrar example: `module_impl.go` [jump to file](./example_application/module/module_impl.go)
+- Task registrar example: `task_impl.go` [jump to file](./example_application/module/task_impl.go)
+
 #### 2. Provider Mechanism
 
 ##### IProvider
 
 **Location**: `provider_interface.go` [jump](./provider_interface.go)
-
-**Role**: Contract for extensible components
-
-- Provider name/type
-- Registration logic
-- Dependency declaration
-
-**Base**: `provider_impl.go` [jump](./provider_impl.go)
 
 ```go
 // IProvider provider interface
@@ -662,6 +659,14 @@ type IProvider interface {
 }
 ```
 
+**Role**: Contract for extensible components
+
+- Provider name/type
+- Registration logic
+- Dependency declaration
+
+**Base**: `provider_impl.go` [jump](./provider_impl.go)
+
 **Use cases**:
 
 - Custom middleware registration
@@ -674,15 +679,6 @@ type IProvider interface {
 ##### IProviderManager
 
 **Location**: `provider_interface.go` [jump](./provider_interface.go)
-
-**Role**: Central provider management and location binding
-
-- Collect providers
-- Batch registration
-- Bind to execution locations
-- Lifecycle management
-
-**Base**: `provider_manager_impl.go` [jump](./provider_manager_impl.go)
 
 ```go
 // IProviderManager provider manager interface
@@ -727,6 +723,15 @@ type IProviderManager interface {
     MountToParent(son ...IProviderManager) IProviderManager
 }
 ```
+
+**Role**: Central provider management and location binding
+
+- Collect providers
+- Batch registration
+- Bind to execution locations
+- Lifecycle management
+
+**Base**: `provider_manager_impl.go` [jump](./provider_manager_impl.go)
 
 **Note**: Base manager provided; compose/extend directly.
 
@@ -1151,6 +1156,17 @@ defer cache.OptionPoolPut(co)
 3. Add to provider set
 4. Register with the framework
 
+#### Add an error handler and recovery middleware for a new framework
+
+1. Implement the `IRecover` interface, e.g., `EchoRecover`. See `GinRecovery` [jump to file](./recover_recoveries_impl.go)
+2. Create the corresponding provider, e.g., `EchoRecoverProvider`. See `GinRecoveryProvider` [jump to file](./recover_providers_manager_impl.go)
+3. Add it to the provider collection by appending the new provider to the framework's provider list
+4. Register it with the framework, e.g.: [main.go](./example_main/main.go)
+  ```go
+  providers := fiberhouse.DefaultProviders().AndMore(NewEchoRecoverProvider())
+  fiberhouse.New(xxx).WithProviders(providers...).WithPManagers(managers...).RunServer();
+  ```
+
 #### Add a new response protocol
 
 1. Implement `IResponse`
@@ -1297,7 +1313,9 @@ example_application/                    # Sample app root
 │       └── common.go
 │
 └── Custom Validators
-    [...]
+    └── validatecustom/                # Custom validators
+        ├── register_validator.go
+        └── custom_rules.go
 ```
 
 ### Directory Notes
@@ -1336,20 +1354,20 @@ example_application/                    # Sample app root
 
 ```go
 func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, app fiber.Router) {
-    // 获取exampleApi处理器
-    exampleApi, _ := InjectExampleApi(ctx) // 由wire编译依赖注入生成注入函数获取ExampleApi
+    // Obtain the exampleApi handler
+    exampleApi, _ := InjectExampleApi(ctx) // InjectExampleApi is the wire-generated function that provides ExampleApi via dependency injection
     
-    // 获取CommonApi处理器，直接NewCommonHandler
+    // Obtain the CommonApi handler via NewCommonHandler
     
-    // 直接New，无需依赖注入(Wire注入)，内部依赖走全局管理器延迟获取依赖组件，
-    // 见 common_api.go: api.CommonHandler
+    // Create directly without DI (Wire); internal dependencies are retrieved lazily via the global manager.
+    // See common_api.go: api.CommonHandler
     commonApi := NewCommonHandler(ctx)
     
-    // 获取注册更多api处理器并注册相应路由...
+    // Acquire and register additional API handlers and their routes...
     
-    // 注册Example模块的路由
+    // Register routes for the Example module
     exampleGroup := app.Group("/example")
-    // hello world
+    // Hello world endpoint
     exampleGroup.Get("/hello/world", exampleApi.HelloWorld).Name("ex_get_example_test")
 }
 ```

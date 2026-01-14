@@ -230,7 +230,7 @@ func main() {
 		LogPath:                     "./example_main/logs",                     // 日志文件路径
 	})
 
-	// 收集提供者和管理器
+	// 在框架默认提供者和管理器基础上添加更多自定义的提供者和管理器
 	providers := fiberhouse.DefaultProviders().AndMore(
 		// 框架启动器和核心启动器的选项参数初始化提供者，
 		//注意：由于选项初始化管理器New时已唯一绑定对应的提供者，此处提供者可以无需新建和收集
@@ -264,7 +264,7 @@ func main() {
 		module.NewRouteRegisterPManager(fh.AppCtx),
 	)
 
-	// 初始化提供者和管理器并运行服务器
+	// 收集提供者和管理器并运行服务器
 	fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 }
 ```
@@ -383,15 +383,6 @@ FiberHouse 采用**接口驱动**和**提供者机制**的设计理念,通过清
 
 **文件位置**: `application_interface.go` [跳转到文件](./application_interface.go)
 
-**职责**: 定义框架通用的初始化流程
-
-- 全局对象初始化和管理
-- 任务服务器启动
-- 应用上下文获取
-- 自定义初始化逻辑注册器注册
-
-**默认实现**: `frame_starter_impl.go`
-
 ```go
 type FrameStarter interface {
     IStarter
@@ -446,23 +437,20 @@ type FrameStarter interface {
 }
 ```
 
+**职责**: 定义框架通用的初始化流程
+
+- 全局对象初始化和管理
+- 任务服务器启动
+- 应用上下文获取
+- 自定义初始化逻辑注册器注册
+
+**默认实现**: `frame_starter_impl.go` [跳转到文件](./frame_starter_impl.go)
+
 **扩展方式**: 实现 `FrameStarter` 接口,支持自定义框架初始化流程
 
 ##### 核心启动器接口 (CoreStarter)
 
 **文件位置**: `application_interface.go` [跳转到文件](./application_interface.go)
-
-**职责**: 定义底层核心框架的启动逻辑
-
-- 核心应用实例创建 (Fiber/Gin/...)
-- 中间件注册
-- 路由注册
-- 服务监听启动
-
-**内置实现**:
-
-- Fiber核心启动器: `core_fiber_starter_impl.go`
-- Gin核心启动器: `core_gin_starter_impl.go`
 
 ```go
 // CoreStarter 应用核心启动器接口
@@ -499,6 +487,18 @@ type CoreStarter interface {
     GetCoreApp() interface{}
 }
 ```
+
+**职责**: 定义底层核心框架的启动逻辑
+
+- 核心应用实例创建 (Fiber/Gin/...)
+- 中间件注册
+- 路由注册
+- 服务监听启动
+
+**内置实现**:
+
+- Fiber核心启动器: `core_fiber_starter_impl.go` [跳转到文件](./core_fiber_starter_impl.go)
+- Gin核心启动器: `core_gin_starter_impl.go` [跳转到文件](./core_gin_starter_impl.go)
 
 **扩展方式**: 实现 `CoreStarter` 接口,支持其他Web框架集成
 
@@ -615,19 +615,16 @@ type TaskRegister interface {
 
 **设计目的**: 分层管理不同级别的初始化逻辑，对应业务应用、业务模块/子应用/子系统及其他功能的分层自定义逻辑
 
+**样例实现**: 
+- 应用注册器示例: `application_impl.go` [跳转到文件](./example_application/application_impl.go)
+- 模块注册器示例: `module_impl.go` [跳转到文件](./example_application/module/module_impl.go)
+- 任务注册器示例: `task_impl.go` [跳转到文件](./example_application/module/task_impl.go)
+
 #### 2. 提供者机制
 
 ##### 提供者接口 (IProvider)
 
 **文件位置**: `provider_interface.go` [跳转到文件](./provider_interface.go)
-
-**职责**: 定义可扩展组件的注册契约
-
-- 提供者名称和类型定义
-- 提供者注册逻辑
-- 提供者依赖关系声明
-
-**基类实现**: `provider_impl.go` [跳转到文件](./provider_impl.go)
 
 ```go
 // IProvider 提供者接口
@@ -669,6 +666,14 @@ type IProvider interface {
 }
 ```
 
+**职责**: 定义可扩展组件的注册契约
+
+- 提供者名称和类型定义
+- 提供者注册逻辑
+- 提供者依赖关系声明
+
+**基类实现**: `provider_impl.go` [跳转到文件](./provider_impl.go)
+
 **使用场景**:
 
 - 自定义中间件注册
@@ -681,15 +686,6 @@ type IProvider interface {
 ##### 提供者管理器接口 (IProviderManager)
 
 **文件位置**: `provider_interface.go` [跳转到文件](./provider_interface.go)
-
-**职责**: 提供者的集中管理和位置点挂载
-
-- 提供者收集
-- 提供者批量注册
-- 执行位置点挂载: 将管理器自身绑定到特定的生命周期或自定义位置点
-- 生命周期管理
-
-**基类实现**: `provider_manager_impl.go` [跳转到文件](./provider_manager_impl.go)
 
 ```go
 // IProviderManager 提供者管理器接口
@@ -734,6 +730,15 @@ type IProviderManager interface {
     MountToParent(son ...IProviderManager) IProviderManager
 }
 ```
+
+**职责**: 提供者的集中管理和位置点挂载
+
+- 提供者收集
+- 提供者批量注册
+- 执行位置点挂载: 将管理器自身绑定到特定的生命周期或自定义位置点
+- 生命周期管理
+
+**基类实现**: `provider_manager_impl.go` [跳转到文件](./provider_manager_impl.go)
 
 **注意**: 框架提供默认的提供者管理器基类实现，开发者直接组合/继承基类无需每次手动实现接口方法
 
@@ -830,17 +835,6 @@ type DefaultPLocation struct {
 
 **文件位置**: `context_interface.go` [跳转到文件](./context_interface.go)
 
-**职责**: 应用全局对象访问，按需获取应用运行时的全局对象单例
-
-- 启动配置获取
-- 应用配置器获取
-- 日志器获取
-- 全局管理器获取
-- 验证器获取
-- 启动器实例获取
-
-**默认实现**: `context_impl.go` [跳转到文件](./context_impl.go)
-
 ```go
 // IContext 全局上下文接口
 type IContext interface {
@@ -878,6 +872,17 @@ type IApplicationContext interface {
 }
 ```
 
+**职责**: 应用全局对象访问，按需获取应用运行时的全局对象单例
+
+- 启动配置获取
+- 应用配置器获取
+- 日志器获取
+- 全局管理器获取
+- 验证器获取
+- 启动器实例获取
+
+**默认实现**: `context_impl.go` [跳转到文件](./context_impl.go)
+
 **注意**: 框架提供默认的全局应用上下文实例的实现，开发者可以任意组合全局应用上下文实例以按需使用
 
 #### 4. 业务分层接口
@@ -892,6 +897,32 @@ type IApplicationContext interface {
 - `ServiceLocator`: 服务层定位器
 - `RepositoryLocator`: 仓储层定位器
 - `TaskLocator`: 任务层定位器
+
+
+```go
+// Locator 定位器接口，定义了获取上下文、名称、实例等方法
+// 以及错误恢复方法。用于分层和管理应用中的业务组件或服务实例。
+// 该接口可以被具体的API、Service、Repository等定位器实现。
+type Locator interface {
+	// 获取全局上下文对象
+	GetContext() IContext
+	// 获取定位器名称空间
+	GetName() string
+	// 设置定位器名称空间
+	SetName(string) Locator // replace interface{}
+	// GetInstance 获取实例（从全局管理器获取具体的单例）
+	GetInstance(string) (interface{}, error)
+}
+
+// ApiLocator Api层定位器
+type ApiLocator = Locator
+
+// ServiceLocator 服务层定位器
+type ServiceLocator = Locator
+
+// RepositoryLocator 仓储层定位器
+type RepositoryLocator = Locator
+```
 
 **提供能力**:
 
@@ -986,6 +1017,21 @@ type IRecover interface {
 
 **文件位置**: `response/response_interface.go`  [跳转到文件](./response/response_interface.go)
 
+```go
+type IResponse interface {
+    GetCode() int
+    GetMsg() string
+    GetData() interface{}
+    SendWithCtx(c providerctx.ICoreContext, status ...int) error
+    JsonWithCtx(c providerctx.ICoreContext, status ...int) error
+    Reset(code int, msg string, data interface{}) IResponse
+    Release()
+    From(resp IResponse, needToRelease bool) IResponse
+    SuccessWithData(data ...interface{}) IResponse
+    ErrorCustom(code int, msg string) IResponse
+}
+```
+
 **职责**: 统一响应格式
 
 - 响应码、消息、数据封装
@@ -1002,21 +1048,6 @@ type IRecover interface {
 - `RespInfoProtobufProvider`: Protobuf响应提供者 [跳转到文件](./response_providers_manager_impl.go)
 - `RespInfoMsgpackProvider`: MsgPack响应提供者 [跳转到文件](./response_providers_manager_impl.go)
 - `RespInfoPManager`: 响应提供者管理器 [跳转到文件](./response_providers_manager_impl.go)
-
-```go
-type IResponse interface {
-    GetCode() int
-    GetMsg() string
-    GetData() interface{}
-    SendWithCtx(c providerctx.ICoreContext, status ...int) error
-    JsonWithCtx(c providerctx.ICoreContext, status ...int) error
-    Reset(code int, msg string, data interface{}) IResponse
-    Release()
-    From(resp IResponse, needToRelease bool) IResponse
-    SuccessWithData(data ...interface{}) IResponse
-    ErrorCustom(code int, msg string) IResponse
-}
-```
 
 ### 关键设计模式
 
@@ -1113,7 +1144,7 @@ type MyService struct {
 }
 
 func (s *MyService) Method() {
-    // 通过定位器获取依赖
+    // 通过组合定位器基类的获取实例方法获取依赖对象
     dep := s.GetInstance(s.repoInstanceRegisterKey)
 }
 ```
@@ -1140,7 +1171,7 @@ co := cache.OptionPoolGet(ctx)
 defer cache.OptionPoolPut(co)
 ```
 
-### 扩展说明
+### 扩展参考说明
 
 #### 添加新的核心框架支持
 
@@ -1149,12 +1180,23 @@ defer cache.OptionPoolPut(co)
 3. 添加到提供者集合
 4. 注册到框架
 
+#### 添加新框架的错误处理器和恢复中间件
+
+1. 实现 `IRecover` 接口，如EchoRecover，参考`GinRecovery` [跳转到文件](./recover_recoveries_impl.go)
+2. 创建对应的提供者，如`EchoRecoverProvider`，参考`GinRecoveryProvider` [跳转到文件](./recover_providers_manager_impl.go)
+3. 添加到提供者集合，将新的提供者添加到框架的提供者列表中
+4. 注册到框架， 如: [main.go](./example_main/main.go)
+  ```go
+  providers := fiberhouse.DefaultProviders().AndMore(NewEchoRecoverProvider())
+  fiberhouse.New(xxx).WithProviders(providers...).WithPManagers(managers...).RunServer();
+  ```
 #### 添加新的响应协议
 
 1. 实现 `IResponse` 接口
 2. 实现对象池支持
-3. 添加到管理器集合
-3. 注册到框架
+3. 创建对应的提供者
+4. 添加到提供者集合
+5. 注册到框架
 
 FiberHouse 通过清晰的接口定义和灵活的提供者机制,实现了:
 
