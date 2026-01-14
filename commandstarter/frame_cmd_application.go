@@ -24,12 +24,12 @@ func RunCommandStarter(starter fiberhouse.CommandStarter) {
 // FrameCmdApplication 是命令行应用启动器，实现 fiberhouse.FrameCmdStarter 接口。
 // 负责管理命令行应用的生命周期，包括初始化、注册全局选项和动作、运行应用及错误处理。
 type FrameCmdApplication struct {
-	Ctx         fiberhouse.ContextCommander
+	Ctx         fiberhouse.ICommandContext
 	application fiberhouse.ApplicationCmdRegister
 }
 
 // NewFrameCmdApplication 创建一个命令启动器对象，实现FrameCmdStarter接口
-func NewFrameCmdApplication(ctx fiberhouse.ContextCommander, opts ...fiberhouse.FrameCmdStarterOption) fiberhouse.FrameCmdStarter {
+func NewFrameCmdApplication(ctx fiberhouse.ICommandContext, opts ...fiberhouse.FrameCmdStarterOption) fiberhouse.FrameCmdStarter {
 	fca := &FrameCmdApplication{
 		Ctx: ctx,
 	}
@@ -46,7 +46,7 @@ func NewFrameCmdApplication(ctx fiberhouse.ContextCommander, opts ...fiberhouse.
 }
 
 // GetContext 获取全局上下文
-func (fca *FrameCmdApplication) GetContext() fiberhouse.ContextCommander {
+func (fca *FrameCmdApplication) GetContext() fiberhouse.ICommandContext {
 	return fca.Ctx
 }
 

@@ -1,0 +1,289 @@
+// Copyright (c) 2025 lamxy and Contributors
+// SPDX-License-Identifier: MIT
+//
+// Author: lamxy <pytho5170@hotmail.com>
+// GitHub: https://github.com/lamxy
+
+package fiberhouse
+
+import (
+	"github.com/gofiber/contrib/fiberzerolog"
+	"github.com/gofiber/fiber/v2"
+	"github.com/lamxy/fiberhouse/provider/adaptor"
+	"github.com/rs/zerolog"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+// CoreWithFiber 应用核心启动器
+type CoreWithFiber struct {
+	ctx     IApplicationContext
+	CoreCfg *fiber.Config
+	coreApp *fiber.App
+	json    JsonWrapper
+}
+
+// NewCoreWithFiber 创建一个应用核心启动器对象
+func NewCoreWithFiber(ctx IApplicationContext, opts ...CoreStarterOption) CoreStarter {
+	core := &CoreWithFiber{
+		ctx: ctx,
+	}
+
+	if len(opts) > 0 {
+		for _, opt := range opts {
+			opt(core)
+		}
+	}
+
+	return core
+}
+
+// GetAppContext 获取应用上下文
+func (cf *CoreWithFiber) GetAppContext() IApplicationContext {
+	return cf.ctx
+}
+
+// GetCoreApp 获取应用核心实例
+func (cf *CoreWithFiber) GetCoreApp() interface{} {
+	return cf.coreApp
+}
+
+// InitCoreApp 初始化应用核心（框架应用基于 fiber.App）
+func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManager) {
+	if cf.GetAppContext().GetAppState() {
+		return
+	}
+	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("InitCoreApp starting...")
+
+	// 自定义核心配置
+	if cf.CoreCfg != nil {
+		cf.coreApp = fiber.New(*cf.CoreCfg)
+		return
+	}
+
+	cfg := cf.GetAppContext().GetConfig()
+	// fiberhouse.JsonWrapper序列化反序列化接口，默认编解码器实例
+	//json := GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultTrafficCodecKey())
+
+	// 配置JSON序列化器
+	var (
+		json JsonWrapper
+		jOk  bool
+	)
+
+	if len(managers) == 0 {
+		// 默认编解码器实例
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Msg("No JSON codec manager provided, using default JSON codec.")
+		json = GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultTrafficCodecKey())
+	} else {
+		var jsonCodecManager IProviderManager
+		for _, manager := range managers {
+			if manager.Type().GetTypeID() == ProviderTypeDefault().GroupTrafficCodecChoose.GetTypeID() {
+				jsonCodecManager = manager
+				break
+			}
+		}
+
+		if jsonCodecManager == nil {
+			msg := "No JSON codec manager found in provided managers, using default JSON codec."
+			cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+				Msg(msg)
+			panic(msg)
+		}
+
+		jcodec, err := jsonCodecManager.LoadProvider()
+
+		if err != nil {
+			cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+				Str("applicationStarter", "CoreWithFiber").
+				Err(err).
+				Msg("Failed to load providers into Fiber application starter")
+			panic(err)
+		}
+
+		if json, jOk = jcodec.(JsonWrapper); !jOk {
+			panic("Loaded JSON codec provider does not implement JsonWrapper interface")
+		}
+	}
+	cf.json = json
+
+	// IErrorHandler接口实例
+	eh := NewErrorHandlerOnce(cf.GetAppContext())
+
+	// 默认核心配置
+	cf.coreApp = fiber.New(fiber.Config{
+		// 设置应用名称
+		AppName:       cfg.String("application.appName"),
+		CaseSensitive: cfg.Bool("application.server.caseSensitive"),
+		// 启用严格路由匹配，要求路由必须完全匹配请求路径
+		StrictRouting: cfg.Bool("application.server.strictRouting"),
+		// 设置服务器头部信息
+		ServerHeader: cfg.String("application.server.appServerHeader"),
+		// 设置自定义错误处理函数
+		// 该函数会在请求处理过程中发生错误时被调用
+		ErrorHandler: adaptor.FiberErrorHandler(eh.ErrorHandler),
+		// 设置并发处理请求的数量
+		Concurrency: cfg.Int("application.server.appConcurrency"),
+		// 设置是否启用长连接
+		DisableKeepalive: cfg.Bool("application.server.disableKeepalive"),
+		// 设置读取和写入缓冲区大小
+		ReadBufferSize:  cfg.Int("application.server.readBufferSize", 4096),
+		WriteBufferSize: cfg.Int("application.server.writeBufferSize", 4096),
+		// 设置请求体大小限制，单位为KB
+		BodyLimit: cfg.Int("application.server.bodyLimit", 4096),
+		// 设置空闲连接超时时间
+		IdleTimeout: cfg.Duration("application.server.idleTimeout", 60) * time.Second,
+		// 设置读取和写入超时时间
+		ReadTimeout:  cfg.Duration("application.server.readTimeout", 30) * time.Second,
+		WriteTimeout: cfg.Duration("application.server.writeTimeout", 30) * time.Second,
+		// 打印路由列表信息
+		EnablePrintRoutes: cfg.Bool("application.server.enablePrintRoutes"), // 默认false
+		JSONEncoder:       json.Marshal,
+		JSONDecoder:       json.Unmarshal,
+		// true: /api?foo=bar,baz == foo[]=bar&foo[]=baz
+		EnableSplittingOnParsers: true,
+		// http://127.0.0.1:3000/exchange/name/adas%20ahdsa+asldas,反转空格、+加号等特殊字符
+		UnescapePath: true,
+		// When set to true, it will not print out debug information
+		DisableStartupMessage: false,
+		// Limit supported http methods
+		RequestMethods: cfg.Strings("application.server.requestMethods", []string{}), // 默认支持全部方法
+		// enables request body streaming, and calls the handler sooner when given body is larger than the current limit
+		StreamRequestBody: cfg.Bool("application.server.streamRequestBody"), // 默认false
+		// more...
+	})
+}
+
+// RegisterAppMiddleware 注册应用级的中间件
+func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IProviderManager) {
+	if cf.GetAppContext().GetAppState() {
+		return
+	}
+	cf.GetAppContext().GetLogger().Info(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware")
+	debugMode := cf.GetAppContext().GetConfig().GetRecover().DebugMode
+
+	// 遍历管理器切片，筛选类型为GroupRecoverMiddlewareChoose管理器，然后加载对应的恢复中间件提供者
+	//或者，直接从NewErrorHandlerOnce单例获取恢复中间件
+
+	// IErrorHandler接口实例
+	eh := NewErrorHandlerOnce(cf.GetAppContext())
+
+	recoverHandler := eh.RecoverMiddleware(RecoverConfig{
+		AppCtx:            cf.GetAppContext(),
+		EnableStackTrace:  true,
+		StackTraceHandler: eh.DefaultStackTraceHandler,
+		Logger:            cf.GetAppContext().GetLogger(),
+		Stdout:            false,
+		JsonCodec:         cf.json.Marshal,
+		DebugMode:         debugMode, // true开启调试模式，将详细错误信息显示给客户端，否则隐藏细节，只能通过日志文件查看。生产环境关闭该调式模式。
+	})
+
+	// 注册核心应用(coreApp/fiber App)全局错误捕获中间件
+	cf.coreApp.Use(MustRecoverMiddleware[fiber.Handler](recoverHandler))
+
+	// 注册核心应用(coreApp/fiber App)http请求日志中间件
+	cf.coreApp.Use(fiberzerolog.New(fiberzerolog.Config{
+		Logger: func() *zerolog.Logger {
+			log, err := cf.GetAppContext().GetContainer().Get(cf.GetAppContext().GetConfig().LogOriginCoreHttp().InstanceKey())
+			if err != nil {
+				// 获取http类子日志器错误
+				cf.GetAppContext().GetLogger().Error(cf.GetAppContext().GetConfig().LogOriginFrame()).Err(err).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware register fiberzerolog middleware to get http logger error")
+				return nil // 使用默认日志器
+			}
+			return log.(*zerolog.Logger)
+		}(),
+		Next: func(c *fiber.Ctx) bool {
+			ms := cf.GetAppContext().GetConfig().GetMiddlewareSwitch("coreHttp")
+			return !ms
+		},
+	}))
+
+	if fs.GetApplication() != nil {
+		// 注册项目应用注册器全局中间件
+		fs.GetApplication().(ApplicationRegister).RegisterAppMiddleware(cf)
+	}
+}
+
+// RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器、swagger、etc...
+func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter, managers ...IProviderManager) {
+	if cf.GetAppContext().GetAppState() {
+		return
+	}
+	if fs.GetModule() != nil {
+		// 注册模块/子系统路由处理器
+		fs.GetModule().RegisterModuleRouteHandlers(cf)
+	}
+}
+
+// RegisterModuleSwagger 注册模块/子系统级的swagger
+func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter, managers ...IProviderManager) {
+	if cf.GetAppContext().GetAppState() {
+		return
+	}
+	registerOrNot := cf.GetAppContext().GetConfig().Bool("application.swagger.enable")
+	if registerOrNot {
+		if fs.GetModule() != nil {
+			// 注册模块系统的swagger
+			fs.GetModule().RegisterSwagger(cf)
+		}
+	}
+}
+
+// RegisterAppHooks 注册核心应用的生命周期钩子函数（如果存在）
+func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProviderManager) {
+	if cf.GetAppContext().GetAppState() {
+		return
+	}
+
+	// 注册应用注册器的钩子函数
+	if fs.GetApplication() != nil {
+		fs.GetApplication().(ApplicationRegister).RegisterCoreHook(cf)
+	}
+
+	cf.coreApp.Hooks().OnListen(func(listenData fiber.ListenData) error {
+		if fiber.IsChild() {
+			return nil
+		}
+		scheme := "http"
+		if listenData.TLS {
+			scheme = "https"
+		}
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appListen", listenData.Host+":"+listenData.Port).Msg(scheme + "://" + listenData.Host + ":" + listenData.Port)
+		return nil
+	})
+
+	cf.coreApp.Hooks().OnShutdown(func() error {
+		// 应用Shutdown时回调，回收/关闭相关资源，如后台程序(等待关闭信号)、异步任务(等待关闭信号)、连接池（关闭连接池）、中间件（封装实现Closable接口）等
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appShutdown", "ok").Msg("")
+
+		//fa.GetContext().GetContainer().ReleaseAll(true) // 释放资源
+		cf.GetAppContext().GetContainer().ClearAll(true) // 将全局容器初始化，清空全局对象
+		_ = cf.GetAppContext().GetLogger().Close()       // 日志器Close
+		return nil
+	})
+}
+
+// AppCoreRun 监听核心应用套接字
+func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) {
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM) // 监听信号
+
+	go func(app *CoreWithFiber) {
+		app.GetAppContext().GetLogger().InfoWith(app.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listening...")
+		host, port := app.GetAppContext().GetConfig().String("application.server.host"), app.GetAppContext().GetConfig().String("application.server.port")
+		if err := app.coreApp.Listen(host + ":" + port); err != nil {
+			app.GetAppContext().GetLogger().FatalWith(app.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listen failed")
+		}
+		app.GetAppContext().RegisterAppState(true)
+	}(cf)
+
+	<-stopCh
+
+	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("Fiber app Shutting down...")
+	err := cf.coreApp.Shutdown()
+	if err != nil {
+		cf.GetAppContext().GetLogger().FatalWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Err(err).Msg("Fiber app Shutdown failed.")
+	}
+}

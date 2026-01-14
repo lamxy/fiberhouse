@@ -10,10 +10,11 @@ package exception
 
 import (
 	"fmt"
-	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/globalmanager"
+	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"github.com/lamxy/fiberhouse/response"
+	"net/http"
 )
 
 /*
@@ -36,10 +37,6 @@ app.Get("/recover", func(c *fiber.Ctx) error {
 	response.RespSuccess().JsonWithCtx(c) // 成功返回
 })
 */
-
-func (e *Exception) Error() string {
-	return e.Msg
-}
 
 func New(c int, m string, d ...interface{}) *Exception {
 	if len(d) > 0 {
@@ -97,8 +94,8 @@ func Throw(key string, d ...interface{}) {
 	panic(New(constant.UnknownErrCode, constant.UnknownErrMsg))
 }
 
-// RespError 方法用于响应错误，并可添加数据参数
-func (e *Exception) RespError(d ...interface{}) *Exception {
+// RespData 方法用于响应错误，并可添加数据参数
+func (e *Exception) RespData(d ...interface{}) *Exception {
 	if len(d) > 0 {
 		if errData, ok := d[0].(error); ok {
 			e.Data = errData.Error()
@@ -109,17 +106,69 @@ func (e *Exception) RespError(d ...interface{}) *Exception {
 	return e
 }
 
+// GetCode 获取响应代码
+func (e *Exception) GetCode() int {
+	return e.Code
+}
+
+// GetMsg 获取响应消息
+func (e *Exception) GetMsg() string {
+	return e.Msg
+}
+
+// GetData 获取响应数据
+func (e *Exception) GetData() interface{} {
+	return e.Data
+}
+
+// Reset 重置 Exception 字段
+func (e *Exception) Reset(code int, msg string, data interface{}) response.IResponse {
+	e.Code = code
+	e.Msg = msg
+	e.Data = data
+	return e
+}
+
+// From 从另一个 IResponse 复制数据
+func (e *Exception) From(r response.IResponse, needToRelease bool) response.IResponse {
+	e.Reset(r.GetCode(), r.GetMsg(), r.GetData())
+
+	if needToRelease {
+		r.Release()
+	}
+	return e
+}
+
+// SuccessWithData 成功时的响应,重置data字段
+func (e *Exception) SuccessWithData(data ...interface{}) response.IResponse {
+	return e
+}
+
+// ErrorCustom 错误时的响应,重置code和msg字段
+func (e *Exception) ErrorCustom(code int, msg string) response.IResponse {
+	e.Code = code
+	e.Msg = msg
+	return e
+}
+
+// JsonWithCtx Exception 使用 ContextProvider 上下文响应 JSON
+func (e *Exception) JsonWithCtx(c providerctx.ICoreContext, status ...int) error {
+	defer e.Release()
+	statusCode := http.StatusOK
+	if len(status) > 0 {
+		statusCode = status[0]
+	}
+	return c.JSON(statusCode, e)
+}
+
+// SendWithCtx 使用 ICoreContext 上下文提供者返回 JSON 响应
+func (e *Exception) SendWithCtx(c providerctx.ICoreContext, status ...int) error {
+	return e.JsonWithCtx(c, status...)
+}
+
 // Panic Exception 直接panic
 func (e *Exception) Panic() {
 	panic(e)
-}
-
-func (e *Exception) JsonWithCtx(c *fiber.Ctx, status ...int) error {
-	defer e.Release()
-	if len(status) > 0 {
-		return c.Status(status[0]).JSON(e)
-	}
-	return c.JSON(e)
 }
 
 // GetInputError 常见异常错误方法
@@ -151,10 +200,6 @@ func GetUnknownError() *Exception {
 }
 
 // ----------- ValidateException ------------------
-
-func (e *ValidateException) Error() string {
-	return e.Msg
-}
 
 // Panic ValidateException 直接panic
 func (e *ValidateException) Panic() {
@@ -212,12 +257,8 @@ func VeThrow(key string, d ...interface{}) {
 	panic(NewVE(constant.UnknownErrCode, constant.UnknownErrMsg))
 }
 
-func (e *ValidateException) Release() {
-	(*response.RespInfo)(e).Release()
-}
-
-// RespError 方法用于响应错误，并可添加数据参数
-func (e *ValidateException) RespError(d ...interface{}) *ValidateException {
+// RespData 方法用于响应错误，并可添加数据参数
+func (e *ValidateException) RespData(d ...interface{}) *ValidateException {
 	if len(d) > 0 {
 		if errData, ok := d[0].(error); ok {
 			e.Data = errData.Error()
@@ -228,12 +269,69 @@ func (e *ValidateException) RespError(d ...interface{}) *ValidateException {
 	return e
 }
 
-func (e *ValidateException) JsonWithCtx(c *fiber.Ctx, status ...int) error {
-	defer e.Release()
-	if len(status) > 0 {
-		return c.Status(status[0]).JSON(e)
+// Release 释放 ValidateException 内部RespInfo对象回对象池
+func (e *ValidateException) Release() {
+	(*response.RespInfo)(e).Release()
+}
+
+// GetCode 获取响应代码
+func (e *ValidateException) GetCode() int {
+	return e.Code
+}
+
+// GetMsg 获取响应消息
+func (e *ValidateException) GetMsg() string {
+	return e.Msg
+}
+
+// GetData 获取响应数据
+func (e *ValidateException) GetData() interface{} {
+	return e.Data
+}
+
+// Reset 重置 ValidateException 字段
+func (e *ValidateException) Reset(code int, msg string, data interface{}) response.IResponse {
+	e.Code = code
+	e.Msg = msg
+	e.Data = data
+	return e
+}
+
+// From 从另一个 IResponse 复制数据
+func (e *ValidateException) From(r response.IResponse, needToRelease bool) response.IResponse {
+	e.Reset(r.GetCode(), r.GetMsg(), r.GetData())
+
+	if needToRelease {
+		r.Release()
 	}
-	return c.JSON(e)
+	return e
+}
+
+// SuccessWithData 成功时的响应,重置data字段
+func (e *ValidateException) SuccessWithData(data ...interface{}) response.IResponse {
+	return e
+}
+
+// ErrorCustom 错误时的响应,重置code和msg字段
+func (e *ValidateException) ErrorCustom(code int, msg string) response.IResponse {
+	e.Code = code
+	e.Msg = msg
+	return e
+}
+
+// JsonWithCtx ValidateException 使用 ContextProvider 上下文响应 JSON
+func (e *ValidateException) JsonWithCtx(c providerctx.ICoreContext, status ...int) error {
+	defer e.Release()
+	statusCode := http.StatusOK
+	if len(status) > 0 {
+		statusCode = status[0]
+	}
+	return c.JSON(statusCode, e)
+}
+
+// SendWithCtx 使用 ICoreContext 上下文提供者返回 JSON 响应
+func (e *ValidateException) SendWithCtx(c providerctx.ICoreContext, status ...int) error {
+	return e.JsonWithCtx(c, status...)
 }
 
 // VeGetInputError 常见验证类错误方法

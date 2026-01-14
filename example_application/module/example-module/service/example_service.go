@@ -5,9 +5,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/cache"
-	"github.com/lamxy/fiberhouse/example_application/api-vo/commonvo"
-	"github.com/lamxy/fiberhouse/example_application/api-vo/example/requestvo"
-	"github.com/lamxy/fiberhouse/example_application/api-vo/example/responsevo"
+	"github.com/lamxy/fiberhouse/example_application/apivo/commonvo"
+	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
+	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/task"
@@ -21,7 +21,7 @@ type ExampleService struct {
 	Repo                      *repository.ExampleRepository // 依赖的组件: 样例仓库，构造参数注入。由wire自动注入
 }
 
-func NewExampleService(ctx fiberhouse.ContextFramer, repo *repository.ExampleRepository) *ExampleService {
+func NewExampleService(ctx fiberhouse.IApplicationContext, repo *repository.ExampleRepository) *ExampleService {
 	name := GetKeyExampleService()
 	return &ExampleService{
 		ServiceLocator: fiberhouse.NewService(ctx).SetName(name),
@@ -46,7 +46,7 @@ func (s *ExampleService) GetExampleWithTaskDispatcher(id string) (*responsevo.Ex
 	log := s.GetContext().GetMustLoggerWithOrigin(s.GetContext().GetConfig().LogOriginTask())
 
 	// 获取样例数据成功，推送延迟任务异步执行
-	dispatcher, err := s.GetContext().(fiberhouse.ContextFramer).GetStarterApp().GetTask().GetTaskDispatcher()
+	dispatcher, err := s.GetContext().(fiberhouse.IApplicationContext).GetStarterApp().GetTask().GetTaskDispatcher()
 	if err != nil {
 		log.Warn().Err(err).Str("Category", "asynq").Msg("GetExampleWithTaskDispatcher GetTaskDispatcher failed")
 	}

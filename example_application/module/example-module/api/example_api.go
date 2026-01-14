@@ -6,11 +6,12 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/example_application/api-vo/example/requestvo"
-	"github.com/lamxy/fiberhouse/example_application/api-vo/example/responsevo"
+	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
+	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
-	"github.com/lamxy/fiberhouse/response"
+	providerctx "github.com/lamxy/fiberhouse/provider/context"
+	"net/http"
 	"strconv"
 )
 
@@ -21,7 +22,7 @@ type ExampleHandler struct {
 	KeyTestService string                  // 定义依赖组件的全局管理器的实例key。通过key即可由 h.GetInstance(key) 方法获取实例，或由 fiberhouse.GetMustInstance[T](key) 泛型方法获取实例，无需wire或其他依赖注入工具
 }
 
-func NewExampleHandler(ctx fiberhouse.ContextFramer, es *service.ExampleService) *ExampleHandler {
+func NewExampleHandler(ctx fiberhouse.IApplicationContext, es *service.ExampleService) *ExampleHandler {
 	return &ExampleHandler{
 		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyExampleHandler()),
 		Service:        es,
@@ -45,7 +46,7 @@ func GetKeyExampleHandler(ns ...string) string {
 	return fiberhouse.RegisterKeyName("ExampleHandler", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
-// GetTest 测试接口，通过 h.GetInstance(key) 方法获取TestService注册实例，无需编译阶段的wire依赖注入
+// HelloWorld 测试接口，通过 h.GetInstance(key) 方法获取TestService注册实例，无需编译阶段的wire依赖注入
 func (h *ExampleHandler) HelloWorld(c *fiber.Ctx) error {
 	// 通过Key即时获取注册在全局管理器的TestService实例单例
 	ts, err := h.GetInstance(h.KeyTestService)
@@ -57,7 +58,7 @@ func (h *ExampleHandler) HelloWorld(c *fiber.Ctx) error {
 	// 获取TestService服务实例
 	if tss, ok := ts.(*service.TestService); ok {
 		// 成功的响应
-		return response.RespSuccess(tss.HelloWorld()).JsonWithCtx(c)
+		return fiberhouse.Response().SuccessWithData(tss.HelloWorld()).SendWithCtx(fiberhouse.CoreContext(c), http.StatusOK)
 	}
 
 	// 类型断言失败响应
@@ -109,7 +110,8 @@ func (h *ExampleHandler) GetExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(c)
+	return fiberhouse.Response().SuccessWithData(resp).SendWithCtx(providerctx.WithFiberContext(c))
+	//return response.RespSuccess(resp).JsonWithCtx(providerctx.WithFiberContext(c))
 }
 
 // GetExampleWithTaskDispatcher godoc
@@ -153,7 +155,7 @@ func (h *ExampleHandler) GetExampleWithTaskDispatcher(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(c)
+	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
 }
 
 // CreateExample godoc
@@ -198,7 +200,7 @@ func (h *ExampleHandler) CreateExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(c)
+	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
 }
 
 // GetExamples godoc
@@ -248,5 +250,5 @@ func (h *ExampleHandler) GetExamples(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.RespSuccess(resp).JsonWithCtx(c)
+	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
 }

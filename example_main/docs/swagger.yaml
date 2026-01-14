@@ -2,6 +2,31 @@ basePath: /
 consumes:
 - application/json
 definitions:
+  requestvo.ExampleReqVo:
+    properties:
+      courses:
+        description: 自定义tag标签
+        items:
+          type: string
+        type: array
+      exam_age:
+        description: 可选字段，存在则验证后续tag
+        maximum: 60
+        minimum: 16
+        type: integer
+      exam_name:
+        description: Required field, min 5 char long max 20
+        maxLength: 20
+        minLength: 5
+        type: string
+      profile:
+        additionalProperties: true
+        type: object
+    required:
+    - courses
+    - exam_name
+    - profile
+    type: object
   response.RespInfo:
     properties:
       code:
@@ -18,6 +43,40 @@ info:
   title: XXX Service APIs
   version: "1.0"
 paths:
+  /create:
+    post:
+      consumes:
+      - application/json
+      description: create a new Example Object
+      parameters:
+      - description: Example Request
+        in: body
+        name: example
+        required: true
+        schema:
+          $ref: '#/definitions/requestvo.ExampleReqVo'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+      summary: create A Example
+      tags:
+      - example
   /example/get/{id}:
     get:
       consumes:
@@ -82,6 +141,47 @@ paths:
           schema:
             $ref: '#/definitions/response.RespInfo'
       summary: get A Example with Dispatcher Task
+      tags:
+      - example
+  /list:
+    get:
+      consumes:
+      - application/json
+      description: get paginated list of Example objects
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        minimum: 1
+        name: p
+        type: integer
+      - default: 10
+        description: Page size
+        in: query
+        maximum: 20
+        minimum: 1
+        name: s
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+      summary: get Examples with pagination
       tags:
       - example
 produces:

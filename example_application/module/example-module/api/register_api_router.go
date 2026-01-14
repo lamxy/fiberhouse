@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func RegisterRouteHandlers(ctx fiberhouse.ContextFramer, app fiber.Router) {
+func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, app fiber.Router) {
 	// 获取exampleApi处理器
 	exampleApi, _ := InjectExampleApi(ctx) // 由wire编译依赖注入获取
 

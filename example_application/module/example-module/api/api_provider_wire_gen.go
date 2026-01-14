@@ -15,7 +15,7 @@ import (
 
 // Injectors from api_provider.go:
 
-func InjectExampleApi(ctx fiberhouse.ContextFramer) (*ExampleHandler, error) {
+func InjectExampleApi(ctx fiberhouse.IApplicationContext) (*ExampleHandler, error) {
 	exampleModel := model.NewExampleModel(ctx)
 	exampleRepository := repository.NewExampleRepository(ctx, exampleModel)
 	exampleService := service.NewExampleService(ctx, exampleRepository)
@@ -23,7 +23,7 @@ func InjectExampleApi(ctx fiberhouse.ContextFramer) (*ExampleHandler, error) {
 	return exampleHandler, nil
 }
 
-func InjectHealthApi(ctx fiberhouse.ContextFramer) (*HealthHandler, error) {
+func InjectHealthApi(ctx fiberhouse.IApplicationContext) (*HealthHandler, error) {
 	healthRepository := repository.NewHealthRepository(ctx)
 	healthService := service.NewHealthService(ctx, healthRepository)
 	healthHandler := NewHealthHandler(ctx, healthService)

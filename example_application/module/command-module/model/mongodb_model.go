@@ -13,7 +13,7 @@ type MongodbModel struct {
 	ctx context.Context
 }
 
-func NewMongodbModel(ctx fiberhouse.ContextCommander) *MongodbModel {
+func NewMongodbModel(ctx fiberhouse.ICommandContext) *MongodbModel {
 	return &MongodbModel{
 		MongoLocator: dbmongo.NewMongoModel(ctx, constant.MongoInstanceKey).SetDbName(constant.DefaultMongoDatabase).
 			SetName("MongodbModel").(dbmongo.MongoLocator),

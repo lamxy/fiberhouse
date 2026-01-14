@@ -6,9 +6,12 @@
 
 package constant
 
+// 错误码和错误消息常量定义
 const (
 	UnknownErrCode        = 500000 // 未知错误
 	UnknownErrMsg         = "Don't worry, something went wrong, please try again later."
+	DefaultErrCode        = 4000000                          // 默认的错误Code
+	DefaultErrMsg         = ""                               // 默认错误消息
 	RespCoreErrorTypeCode = 500001                           // core error错误码
 	RespCoreErrorMsg      = "Unknown internal server Error." // core error错误消息
 )

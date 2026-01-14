@@ -186,7 +186,7 @@ func (vw *Wrap) Errors(errs validator.ValidationErrors, lang LangFlag, snakeCase
 		}
 	}
 	//return exception.Get("InputParamError").RespError(errs.Translate(vw.TransMap[vw.lang])) // fe.ns namespace.xxx
-	return exception.VeGet("InputParamError").RespError(errMap)
+	return exception.VeGet("InputParamError").RespData(errMap)
 }
 
 // ErrorsVar 用于动态验证指定的变量，手动指定变量名称参数，作为验证字段名称输出错误信息的处理，返回框架统一的错误响应结构
@@ -225,7 +225,7 @@ func (vw *Wrap) ErrorsVar(errs validator.ValidationErrors, varName string, lang 
 		}
 	}
 	//return exception.Get("InputParamError").RespError(errs.Translate(vw.TransMap[vw.lang])) // fe.ns带命名空间
-	return exception.VeGet("InputParamError").RespError(errMap)
+	return exception.VeGet("InputParamError").RespData(errMap)
 }
 
 // ErrorsMap 用于依据动态验证map规则验证组合的map字段的错误处理，返回框架统一的错误响应结构
@@ -272,5 +272,5 @@ func (vw *Wrap) ErrorsMap(errsMap map[string]interface{}, lang LangFlag, snakeCa
 		}
 	}
 
-	return exception.VeGetInputError().RespError(outMap)
+	return exception.VeGetInputError().RespData(outMap)
 }

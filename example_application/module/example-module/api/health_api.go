@@ -13,7 +13,7 @@ type HealthHandler struct {
 	Service *service.HealthService
 }
 
-func NewHealthHandler(ctx fiberhouse.ContextFramer, serv *service.HealthService) *HealthHandler {
+func NewHealthHandler(ctx fiberhouse.IApplicationContext, serv *service.HealthService) *HealthHandler {
 	name := GetKeyHealthHandler()
 	return &HealthHandler{
 		ApiLocator: fiberhouse.NewApi(ctx).SetName(name),

@@ -168,14 +168,14 @@ func (p *PayloadBase) GetJsonHandler(ctx IContext) (JsonWrapper, error) {
 		return p.GetDefault(ctx), nil
 	}
 	gm := ctx.GetContainer()
-	origin, err := gm.Get(ctx.GetStarter().GetApplication().GetFastJsonCodecKey())
+	origin, err := gm.Get(ctx.GetStarter().GetApplication().GetFastTrafficCodecKey())
 	if err != nil {
 		return nil, err
 	}
 	if instance, ok := origin.(JsonWrapper); ok {
 		return instance, nil
 	}
-	return nil, fmt.Errorf("assertion failure for type of '%s' instance", ctx.GetStarter().GetApplication().GetFastJsonCodecKey())
+	return nil, fmt.Errorf("assertion failure for type of '%s' instance", ctx.GetStarter().GetApplication().GetFastTrafficCodecKey())
 }
 
 // GetMustJsonHandler 确保获取到的JSON处理器不为nil，如果获取失败，则返回默认的JSON处理器
@@ -184,7 +184,7 @@ func (p *PayloadBase) GetMustJsonHandler(ctx IContext) JsonWrapper {
 		return p.GetDefault(ctx)
 	}
 	gm := ctx.GetContainer()
-	origin, err := gm.Get(ctx.GetStarter().GetApplication().GetFastJsonCodecKey())
+	origin, err := gm.Get(ctx.GetStarter().GetApplication().GetFastTrafficCodecKey())
 	if err != nil {
 		ctx.GetLogger().Warn(ctx.GetConfig().LogOriginWeb()).Err(err).Msg("GetMustJsonHandler: GetInstance failed, returns the newly created instance.")
 		return p.GetDefault(ctx)

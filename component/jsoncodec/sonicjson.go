@@ -9,6 +9,8 @@ package jsoncodec
 import (
 	"encoding/json"
 	"github.com/bytedance/sonic"
+	ginJson "github.com/gin-gonic/gin/codec/json"
+	"io"
 )
 
 /* JSON编解码接口化，按需选择不同的编解码库：encoding/json、go-json、bytedance.sonic、etc... */
@@ -33,6 +35,21 @@ func (s *SonicJSON) Unmarshal(data []byte, v interface{}) error {
 		err = json.Unmarshal(data, v) // fallback，标准库json容错
 	}
 	return err
+}
+
+// MarshalIndent use Sonic MarshalIndent
+func (s *SonicJSON) MarshalIndent(v any, prefix, indent string) ([]byte, error) {
+	return s.ConfigDefault.MarshalIndent(v, prefix, indent)
+}
+
+// NewEncoder use Sonic NewEncoder
+func (s *SonicJSON) NewEncoder(writer io.Writer) ginJson.Encoder {
+	return s.ConfigDefault.NewEncoder(writer)
+}
+
+// NewDecoder use Sonic NewDecoder
+func (s *SonicJSON) NewDecoder(reader io.Reader) ginJson.Decoder {
+	return s.ConfigDefault.NewDecoder(reader)
 }
 
 // SonicJsonEscape just start HTML escape

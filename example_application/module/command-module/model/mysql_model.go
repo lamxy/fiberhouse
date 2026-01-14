@@ -17,7 +17,7 @@ type ExampleMysqlModel struct {
 }
 
 // NewExampleMysqlModel 构造函数
-func NewExampleMysqlModel(ctx fiberhouse.ContextCommander) *ExampleMysqlModel {
+func NewExampleMysqlModel(ctx fiberhouse.ICommandContext) *ExampleMysqlModel {
 	return &ExampleMysqlModel{
 		MysqlLocator: dbmysql.NewMysqlModel(ctx, constant.MysqlInstanceKey).SetDbName("test").SetTable("user").SetName("MysqlModel").(dbmysql.MysqlLocator),
 		Ctx:          ctx,

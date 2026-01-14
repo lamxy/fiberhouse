@@ -2,6 +2,7 @@ package application
 
 import (
 	"errors"
+	"fmt"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/cache/cachelocal"
 	"github.com/lamxy/fiberhouse/cache/cacheremote"
@@ -18,12 +19,12 @@ import (
 
 // Application 定义应用对象，实现 fiberhouse.ApplicationCmdRegister 接口
 type Application struct {
-	Ctx             fiberhouse.ContextCommander
-	name            string
-	instanceFlagMap map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey // 预定义实例标识的key映射
+	Ctx            fiberhouse.ICommandContext
+	name           string
+	instanceKeyMap map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey // 预定义实例标识的key映射
 }
 
-func NewApplication(ctx fiberhouse.ContextCommander) fiberhouse.ApplicationCmdRegister {
+func NewApplication(ctx fiberhouse.ICommandContext) fiberhouse.ApplicationCmdRegister {
 	return &Application{
 		name: "application",
 		Ctx:  ctx,
@@ -41,7 +42,7 @@ func (app *Application) SetName(name string) {
 }
 
 // GetContext 获取应用上下文对象
-func (app *Application) GetContext() fiberhouse.ContextCommander {
+func (app *Application) GetContext() fiberhouse.ICommandContext {
 	return app.Ctx
 }
 
@@ -173,10 +174,10 @@ func (app *Application) GetCacheKey() string {
 func (app *Application) GetRedisKey() string {
 	return example_application.KEY_REDIS
 }
-func (app *Application) GetFastJsonCodecKey() string {
+func (app *Application) GetFastTrafficCodecKey() string {
 	return example_application.KEY_JSON_SONIC_FAST
 }
-func (app *Application) GetDefaultJsonCodecKey() string {
+func (app *Application) GetDefaultTrafficCodecKey() string {
 	return example_application.KEY_JSON_SONIC_ESCAPE
 }
 func (app *Application) GetTaskDispatcherKey() string {
@@ -195,11 +196,20 @@ func (app *Application) GetLevel2CacheKey() string {
 	return example_application.KEY_LEVEL2_CACHE
 }
 
-func (app *Application) GetInstanceKey(flag fiberhouse.InstanceKeyFlag) fiberhouse.InstanceKey {
-	if ik, ok := app.instanceFlagMap[flag]; ok {
+// GetKey 获取除框架预定义实例key外的由用户自定义标识映射的实例key
+func (app *Application) GetKey(keyFlag fiberhouse.InstanceKeyFlag) (fiberhouse.InstanceKey, error) {
+	if ik, ok := app.instanceKeyMap[keyFlag]; ok {
+		return ik, nil
+	}
+	return "", fmt.Errorf("instance key not found for flag: %s", keyFlag)
+}
+
+// GetMustKey 获取除框架预定义实例key外的由用户自定义标识映射的实例key，未找到则panic
+func (app *Application) GetMustKey(keyFlag fiberhouse.InstanceKeyFlag) fiberhouse.InstanceKey {
+	if ik, ok := app.instanceKeyMap[keyFlag]; ok {
 		return ik
 	}
-	return ""
+	panic(fmt.Errorf("instance key not found for flag: %s", keyFlag))
 }
 
 // getCommonCommands 获取应用通用命令行命令

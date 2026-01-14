@@ -28,7 +28,7 @@ type FrameStarter interface {
 	IStarter
 	// GetContext 获取应用上下文
 	// 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
-	GetContext() ContextFramer
+	GetContext() IApplicationContext
 
 	// RegisterApplication 注册应用注册器
 	// 将应用注册器实例注入到启动器中，用于后续的全局对象初始化和配置
@@ -54,10 +54,10 @@ type FrameStarter interface {
 	// 将启动器实例注册到应用上下文中，便于其他组件访问
 	RegisterToCtx(starter ApplicationStarter)
 
-	// RegisterApplicationGlobals 注册应用全局对象和初始化
+	// RegisterApplicationGlobals 注册应用全局对象和必要对象的初始化
 	// 注册全局对象初始化器、初始化必要的全局实例、配置验证器等
 	// 包括数据库、缓存、Redis、验证器、自定义标签等的初始化
-	RegisterApplicationGlobals()
+	RegisterApplicationGlobals(...IProviderManager)
 
 	// RegisterLoggerWithOriginToContainer 注册带来源标识的日志器
 	// 将配置文件中预定义的不同来源的子日志器初始化器注册到容器中
@@ -66,11 +66,11 @@ type FrameStarter interface {
 
 	// RegisterGlobalsKeepalive 注册全局对象保活机制
 	// 启动后台健康检测服务，定期检查全局对象状态并自动重建不健康的实例
-	RegisterGlobalsKeepalive()
+	RegisterGlobalsKeepalive(...IProviderManager)
 
 	// RegisterTaskServer 注册异步任务服务器
 	// 根据配置启动异步任务服务器，注册任务处理器，运行后台任务worker服务并开始监听任务队列
-	RegisterTaskServer()
+	RegisterTaskServer(...IProviderManager)
 
 	// GetFrameApp 获取框架启动器实例
 	GetFrameApp() FrameStarter
@@ -80,36 +80,33 @@ type FrameStarter interface {
 type CoreStarter interface {
 	// GetAppContext 获取应用上下文
 	// 返回全局应用上下文，提供配置、日志器、全局容器等基础设施访问
-	GetAppContext() ContextFramer
-
-	// RegisterCoreCfg 注册核心应用配置
-	RegisterCoreCfg(interface{})
+	GetAppContext() IApplicationContext
 
 	// InitCoreApp 初始化核心应用
 	// 创建并配置底层HTTP服务实例（如Fiber应用）
-	InitCoreApp(fs FrameStarter)
+	InitCoreApp(fs FrameStarter, managers ...IProviderManager)
 
 	// RegisterAppMiddleware 注册应用级中间件
 	// 注册应用级别的中间件，如错误恢复、请求日志、CORS等全局中间件
-	RegisterAppMiddleware(fs FrameStarter)
+	RegisterAppMiddleware(fs FrameStarter, managers ...IProviderManager)
 
 	// RegisterModuleSwagger 注册模块Swagger文档
 	// 根据配置决定是否注册Swagger API文档路由
-	RegisterModuleSwagger(fs FrameStarter)
+	RegisterModuleSwagger(fs FrameStarter, managers ...IProviderManager)
 
 	// RegisterAppHooks 注册应用钩子函数
 	// 注册应用生命周期钩子函数，如启动、关闭时的回调处理
-	RegisterAppHooks(fs FrameStarter)
+	RegisterAppHooks(fs FrameStarter, managers ...IProviderManager)
 
 	// RegisterModuleInitialize 注册模块初始化
 	// 执行模块级别的初始化，包括模块中间件和路由处理器的注册
-	RegisterModuleInitialize(fs FrameStarter)
+	RegisterModuleInitialize(fs FrameStarter, managers ...IProviderManager)
 
 	// AppCoreRun 启动应用核心运行
 	// 启动HTTP服务监听，处理优雅关闭信号
-	AppCoreRun()
+	AppCoreRun(...IProviderManager)
 
-	// GetCoreApp 获取核心启动器实例
+	// GetCoreApp 获取核心实例
 	GetCoreApp() interface{}
 }
 
@@ -146,8 +143,8 @@ func (ik *InstanceKey) String() globalmanager.KeyName {
 	return string(*ik)
 }
 
-// PrefixString 带前缀的实例Key字符串，用于容器注册
-func (ik *InstanceKey) PrefixString() globalmanager.KeyName {
+// KeyString 带默认前缀的实例Key字符串，用于容器注册
+func (ik *InstanceKey) KeyString() globalmanager.KeyName {
 	return constant.RegisterKeyPrefix + string(*ik)
 }
 
@@ -161,23 +158,26 @@ func (ik *InstanceKey) StringWithPrefix(pfx string) globalmanager.KeyName {
 // 框架启动器通过这些预定义方法，获取必要的全局对象实例key，
 // 以便在应用启动器启动阶段，注册和初始化这些全局对象实例，完成框架的启动流程
 type IApplication interface {
-	GetDBKey() globalmanager.KeyName               // 定义数据库实例key
-	GetDBMongoKey() globalmanager.KeyName          // 定义mongodb实例的key，应用启动器用到
-	GetDBMysqlKey() globalmanager.KeyName          // 定义mysql实例的key，应用启动器用到
-	GetRedisKey() globalmanager.KeyName            // 定义redis实例key，应用启动器异步任务注册用到
-	GetFastJsonCodecKey() globalmanager.KeyName    // 定义快速的json编解码器，应用启动器用到
-	GetDefaultJsonCodecKey() globalmanager.KeyName // 定义默认的json编解码器，应用启动器用到
-	GetTaskDispatcherKey() globalmanager.KeyName   // 定义异步任务客户端实例的key
-	GetCacheKey() globalmanager.KeyName            // 定义缓存实例的key，
-	GetTaskServerKey() globalmanager.KeyName       // 定义异步任务服务端实例的key
-	GetLocalCacheKey() globalmanager.KeyName       // 定义本地缓存实例的key
-	GetRemoteCacheKey() globalmanager.KeyName      // 定义远程缓存实例的key
-	GetLevel2CacheKey() globalmanager.KeyName      // 定义二级缓存实例的key
+	GetDBKey() globalmanager.KeyName                  // 定义数据库实例key
+	GetCacheKey() globalmanager.KeyName               // 定义缓存实例的key，
+	GetDBMongoKey() globalmanager.KeyName             // 定义mongodb实例的key，应用启动器用到
+	GetDBMysqlKey() globalmanager.KeyName             // 定义mysql实例的key，应用启动器用到
+	GetRedisKey() globalmanager.KeyName               // 定义redis实例key，应用启动器异步任务注册用到
+	GetFastTrafficCodecKey() globalmanager.KeyName    // 定义快速的传输编解码器，应用启动器用到
+	GetDefaultTrafficCodecKey() globalmanager.KeyName // 定义默认的传输编解码器，应用启动器用到
+	GetLocalCacheKey() globalmanager.KeyName          // 定义本地缓存实例的key
+	GetRemoteCacheKey() globalmanager.KeyName         // 定义远程缓存实例的key
+	GetLevel2CacheKey() globalmanager.KeyName         // 定义二级缓存实例的key
+	GetTaskDispatcherKey() globalmanager.KeyName      // 定义异步任务客户端实例的key
+	GetTaskServerKey() globalmanager.KeyName          // 定义异步任务服务端实例的key
 
 	// more keys...
 
-	// GetInstanceKey 自定义全局对象实例key的通用获取方法，获取框架上述预定义外的实例key
-	GetInstanceKey(flag InstanceKeyFlag) InstanceKey // 按预定义flag获取全局对象实例key
+	// GetKey 预定义更多的全局对象实例key的通用获取方法，获取框架上述预定义外的额外预定义实例key
+	// 预定义映射为: map[InstanceKeyFlag]InstanceKey，推荐预定义映射，不支持运行时写入仅运行时读取映射字段
+	// key1 := xxx.GetKey("MyDBTest").KeyString()  key2 := xxx.GetKey("MyDBTest2").StringWithPrefix("__custom_prefix_")
+	GetKey(InstanceKeyFlag) (InstanceKey, error) // 按预定义key flag获取全局对象实例key
+	GetMustKey(InstanceKeyFlag) InstanceKey      // 按预定义key flag获取全局对象实例key，未找到则panic
 }
 
 // ApplicationRegister 应用注册器
@@ -189,7 +189,7 @@ type ApplicationRegister interface {
 	IRegister
 	IApplication
 	// GetContext 返回全局上下文
-	GetContext() ContextFramer
+	GetContext() IApplicationContext
 
 	// ConfigGlobalInitializers 配置并返回全局对象初始化器的列表映射
 	ConfigGlobalInitializers() globalmanager.InitializerMap
@@ -203,10 +203,10 @@ type ApplicationRegister interface {
 	ConfigValidatorCustomTags() []validate.RegisterValidatorTagFunc
 
 	// RegisterAppMiddleware 注册应用级别中间件
-	RegisterAppMiddleware(core interface{})
+	RegisterAppMiddleware(cs CoreStarter)
 
 	// RegisterCoreHook 注册核心应用(coreApp)的生命周期钩子
-	RegisterCoreHook(core interface{})
+	RegisterCoreHook(cs CoreStarter)
 }
 
 // ModuleRegister 模块注册器
@@ -216,14 +216,15 @@ type ApplicationRegister interface {
 type ModuleRegister interface {
 	IRegister
 	// GetContext 返回全局上下文
-	GetContext() ContextFramer
+	GetContext() IApplicationContext
 
 	// RegisterModuleMiddleware 注册模块级别/子系统中间件
-	RegisterModuleMiddleware(core interface{})
+	// RegisterModuleMiddleware(cs CoreStarter)
+
 	// RegisterModuleRouteHandlers 注册模块级别/子系统路由处理器
-	RegisterModuleRouteHandlers(core interface{})
+	RegisterModuleRouteHandlers(cs CoreStarter)
 	// RegisterSwagger 注册swagger
-	RegisterSwagger(core interface{})
+	RegisterSwagger(cs CoreStarter)
 }
 
 // TaskRegister 任务注册器（基于 asynq）
@@ -238,7 +239,7 @@ type ModuleRegister interface {
 type TaskRegister interface {
 	IRegister
 	// GetContext 返回全局上下文
-	GetContext() ContextFramer
+	GetContext() IApplicationContext
 
 	// GetTaskHandlerMap 返回任务处理器配置map
 	//

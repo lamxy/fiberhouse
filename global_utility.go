@@ -70,7 +70,7 @@ type RegisterKeyFuncType func(ns ...string) string
 
 // RegisterInitializerFuncType 定义注册全局管理器初始化函数类型，用于便捷自动完成该函数签名
 // @param ns string namespace key前缀命名空间
-type RegisterInitializerFuncType func(ctx ContextFramer, ns ...string) string
+type RegisterInitializerFuncType func(ctx IApplicationContext, ns ...string) string
 
 // GetInstance 从全局管理获取单例
 //
@@ -120,4 +120,25 @@ func GetErrOrNoDocuments(err error) error {
 		return exception.GetNotFoundDocument()
 	}
 	return err
+}
+
+// RecoverMiddleware 尝试将任意类型断言为指定类型 T，若成功则返回该类型实例，否则返回错误
+func RecoverMiddleware[T any](fn any) (T, error) {
+	var zero T
+	if fn == nil {
+		return zero, fmt.Errorf("recovery function cannot be nil")
+	}
+	if f, ok := fn.(T); ok {
+		return f, nil
+	}
+	return zero, fmt.Errorf("assertion failure for type of function instance")
+}
+
+// MustRecoverMiddleware 尝试将任意类型断言为指定类型 T，若失败则 panic
+func MustRecoverMiddleware[T any](fn any) T {
+	f, err := RecoverMiddleware[T](fn)
+	if err != nil {
+		panic(err)
+	}
+	return f
 }

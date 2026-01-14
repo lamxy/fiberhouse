@@ -35,12 +35,12 @@
 ## 应用注册器实现示例
 
 	type Application struct {
-		Ctx             fiberhouse.ContextCommander
+		Ctx             fiberhouse.IApplicationContext
 		name            string
 		instanceFlagMap map[fiberhouse.InstanceKeyFlag]fiberhouse.InstanceKey  // 按需
 	}
 
-	func NewApplication(ctx fiberhouse.ContextCommander) fiberhouse.ApplicationCmdRegister {
+	func NewApplication(ctx fiberhouse.IApplicationContext) fiberhouse.ApplicationCmdRegister {
 		return &Application{
 			Ctx:             ctx,
 			name:            "application",
@@ -56,7 +56,7 @@
 				// 创建并返回 MySQL 数据库连接实例
 			},
 			// JSON 编解码器
-			app.GetFastJsonCodecKey(): func() (interface{}, error) {
+			app.GetFastTrafficCodecKey(): func() (interface{}, error) {
 				// 创建并返回 JSON 编解码器实例
 			},
 		}
@@ -65,7 +65,7 @@
 		// 预先初始化必要的全局对象
 		requiredKeys := []globalmanager.KeyName{
 			app.GetDBMysqlKey(),
-			app.GetFastJsonCodecKey(),
+			app.GetFastTrafficCodecKey(),
 		}
 		for _, key := range requiredKeys {
 			if _, err := app.GetContext().GetContainer().Get(key); err != nil {
@@ -131,10 +131,10 @@
 
 		 // TestOrmCommand 示例命令，测试 ORM 数据库操作，需要实现fiberhouse.CommandGetter接口的 GetCommand 方法
 			type TestOrmCommand struct {
-				Ctx fiberhouse.ContextCommander
+				Ctx fiberhouse.IApplicationContext
 			}
 
-			func NewTestOrmCommand(ctx fiberhouse.ContextCommander) fiberhouse.CommandGetter {
+			func NewTestOrmCommand(ctx fiberhouse.IApplicationContext) fiberhouse.CommandGetter {
 				return &TestOrmCommand{Ctx: ctx}
 			}
 

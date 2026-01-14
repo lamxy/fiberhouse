@@ -27,7 +27,7 @@ wrap := component.NewWrap[*OrderRepository]()
 // 获取单例容器，连缀操作提供依赖构造器注册
 dc := component.Container().
 
-	Provide(func() Xxx.ContextFramer { return ctx }).  // 依赖ctx，匿名函数注入ctx依赖
+	Provide(func() Xxx.IApplicationContext { return ctx }).  // 依赖ctx，匿名函数注入ctx依赖
 	Provide(model.NewOrderModel).
 	Provide(common-module.NewCommonModel)
 

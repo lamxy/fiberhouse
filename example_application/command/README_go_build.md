@@ -3,13 +3,13 @@
 
 ### go run
 ```shell
-cd command/   # command ROOT Directory
+cd commandline/   # command ROOT Directory
 go run /path/to/main.go
 ```
 
 ### go build
 ```shell
-cd command/  # command ROOT Directory
+cd commandline/  # command ROOT Directory
 # windows环境构建产物保留.exe后缀，linux环境无需保留后缀
 go build -o ./target/cmdstarter.exe ./main.go 
 ```

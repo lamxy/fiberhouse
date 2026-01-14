@@ -11,7 +11,7 @@ type HealthService struct {
 	Resp *repository.HealthRepository
 }
 
-func NewHealthService(ctx fiberhouse.ContextFramer, resp *repository.HealthRepository) *HealthService {
+func NewHealthService(ctx fiberhouse.IApplicationContext, resp *repository.HealthRepository) *HealthService {
 	name := GetKeyHealthService()
 	return &HealthService{
 		ServiceLocator: fiberhouse.NewService(ctx).SetName(name),

@@ -319,10 +319,10 @@ func (c *CacheOption) SetJsonWrapper(jpr fiberhouse.JsonWrapper) *CacheOption {
 	return c
 }
 
-// GetJsonWrapper 获取json编解码器，默认获取GetDefaultJsonCodecKey编解码器
+// GetJsonWrapper 获取json编解码器，默认获取GetDefaultTrafficCodecKey编解码器
 func (c *CacheOption) GetJsonWrapper() fiberhouse.JsonWrapper {
 	if c.jsonWrapper == nil {
-		c.jsonWrapper = fiberhouse.GetMustInstance[fiberhouse.JsonWrapper](c.AppCtx.GetStarter().GetApplication().GetDefaultJsonCodecKey())
+		c.jsonWrapper = fiberhouse.GetMustInstance[fiberhouse.JsonWrapper](c.AppCtx.GetStarter().GetApplication().GetDefaultTrafficCodecKey())
 	}
 	return c.jsonWrapper
 }

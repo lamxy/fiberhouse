@@ -10,7 +10,7 @@ type HealthRepository struct {
 	Status string
 }
 
-func NewHealthRepository(ctx fiberhouse.ContextFramer) *HealthRepository {
+func NewHealthRepository(ctx fiberhouse.IApplicationContext) *HealthRepository {
 	return &HealthRepository{
 		RepositoryLocator: fiberhouse.NewRepository(ctx).SetName(GetKeyHealthRepository()),
 		Status:            "Health is OK",
@@ -21,7 +21,7 @@ func GetKeyHealthRepository(ns ...string) string {
 	return fiberhouse.RegisterKeyName("HealthRepository", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
-func RegisterKeyHealthRepository(ctx fiberhouse.ContextFramer, ns ...string) string {
+func RegisterKeyHealthRepository(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyHealthRepository(ns...), func() (interface{}, error) {
 		return NewHealthRepository(ctx), nil
 	})

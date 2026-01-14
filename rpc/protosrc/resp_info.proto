@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package response;
+
+import "google/protobuf/any.proto";
+
+option go_package = "github.com/lamxy/fiberhouse/rpc/protosrc;protosrc";
+
+// RespInfoProto 对应 RespInfo 的 protobuf 消息定义
+message RespInfoProto {
+  int32 code = 1;
+  string msg = 2;
+  google.protobuf.Any data = 3;
+}
