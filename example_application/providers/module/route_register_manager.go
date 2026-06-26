@@ -2,6 +2,7 @@ package module
 
 import (
 	"fmt"
+
 	"github.com/lamxy/fiberhouse"
 )
 
@@ -12,7 +13,7 @@ type RouteRegisterPManager struct {
 func NewRouteRegisterPManager(ctx fiberhouse.IContext) *RouteRegisterPManager {
 	son := &RouteRegisterPManager{
 		IProviderManager: fiberhouse.NewProviderManager(ctx).
-			SetName("FiberRouteRegisterProvider").
+			SetName("RouteRegisterPManager").
 			SetType(fiberhouse.ProviderTypeDefault().GroupRouteRegisterType).
 			SetOrBindToLocation(fiberhouse.ProviderLocationDefault().LocationRouteRegisterInit, true),
 	}

@@ -21,7 +21,7 @@ func NewJaValidate() *JaValidate {
 	localeEn := en.New()
 	localeJa := ja.New()
 	uniTrans := ut.New(localeEn, localeJa)
-	trans, _ := uniTrans.GetTranslator("de")
+	trans, _ := uniTrans.GetTranslator("ja")
 	if err := translation.RegisterDefaultTranslations(va, trans); err != nil {
 		panic(err)
 	}

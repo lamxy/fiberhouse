@@ -16,4 +16,9 @@ packed/swagger.go
 target/
 logs/
 files/
+graphify-out/
+graphify_evaluation_report.md
+.venv/
+__pycache__/
+*.pyc
 

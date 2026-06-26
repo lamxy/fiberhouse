@@ -15,8 +15,8 @@ import (
 var (
 	StatePending = new(State).Set(0, "pending")
 	StateLoaded  = new(State).Set(1, "loaded")
-	StateSkipped = new(State).Set(1, "skipped")
-	StateFailed  = new(State).Set(1, "failed")
+	StateSkipped = new(State).Set(2, "skipped")
+	StateFailed  = new(State).Set(3, "failed")
 )
 
 // State 提供者的状态结构体，实现状态器接口

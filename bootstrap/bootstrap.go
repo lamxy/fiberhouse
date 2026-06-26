@@ -9,6 +9,13 @@ package bootstrap
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/v2"
 	"github.com/lamxy/fiberhouse/appconfig"
@@ -16,12 +23,6 @@ import (
 	"github.com/lamxy/fiberhouse/constant"
 	frameUtils "github.com/lamxy/fiberhouse/utils"
 	"github.com/rs/zerolog"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync"
-	"time"
 )
 
 const (
@@ -250,7 +251,7 @@ func NewConfigOnce(path ...string) appconfig.IAppConfig {
 			return aConf
 		})
 
-		// 执行必要的初始化并返回最终的应用配置实例
+		// 执行必要地初始化并返回最终的应用配置实例
 		AppConfigured = aCfg.Initialize()
 	})
 

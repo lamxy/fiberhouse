@@ -7,6 +7,8 @@
 package fiberhouse
 
 import (
+	"sync"
+
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component"
@@ -14,7 +16,6 @@ import (
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/globalmanager"
 	"github.com/rs/zerolog"
-	"sync"
 )
 
 var (
@@ -44,7 +45,7 @@ type AppContext struct {
 }
 
 // NewAppContext 获取新的全局上下文对象
-func NewAppContext(cfg *appconfig.AppConfig, logger bootstrap.LoggerWrapper) IApplicationContext {
+func NewAppContext(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper) IApplicationContext {
 	return &AppContext{
 		IStorage:     NewDefaultStorage(),
 		cfg:          cfg,
@@ -53,21 +54,13 @@ func NewAppContext(cfg *appconfig.AppConfig, logger bootstrap.LoggerWrapper) IAp
 		appState:     false,
 		appStateOnce: sync.Once{},
 		vw:           validate.NewWrap(cfg),
-		storage:      make(map[string]interface{}),
 	}
 }
 
 // NewAppContextOnce 获取全局应用上下文单例
 func NewAppContextOnce(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper) IApplicationContext {
 	once.Do(func() {
-		applicationContext = &AppContext{
-			IStorage:  NewDefaultStorage(),
-			cfg:       cfg,
-			logger:    logger,
-			container: globalmanager.NewGlobalManagerOnce(),
-			vw:        validate.NewWrap(cfg),
-			storage:   make(map[string]interface{}),
-		}
+		applicationContext = NewAppContext(cfg, logger)
 	})
 	return applicationContext
 }

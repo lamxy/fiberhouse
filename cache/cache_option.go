@@ -11,12 +11,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/globalmanager"
-	"github.com/samber/lo"
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/globalmanager"
+	"github.com/samber/lo"
 )
 
 /**
@@ -75,10 +76,11 @@ co.Level2().EnableCache().SetCacheKey("key:example:list:page:"+strconv.Itoa(page
 	})
 */
 
-var (
-	optionsPool *sync.Pool
-	optsOnce    sync.Once
-)
+var optionsPool = &sync.Pool{
+	New: func() any {
+		return NewCacheOption(nil)
+	},
+}
 
 // Level 缓存级别
 type Level int8
@@ -153,14 +155,9 @@ func NewCacheOption(appCtx fiberhouse.IContext) *CacheOption {
 
 // OptionPoolGet 从选项池获取缓存选项
 func OptionPoolGet(ctx fiberhouse.IContext) *CacheOption {
-	optsOnce.Do(func() {
-		optionsPool = &sync.Pool{
-			New: func() any {
-				return NewCacheOption(ctx)
-			},
-		}
-	})
-	return optionsPool.Get().(*CacheOption)
+	co := optionsPool.Get().(*CacheOption)
+	co.AppCtx = ctx
+	return co
 }
 
 // OptionPoolPut 将使用完的CacheOption放回选项池

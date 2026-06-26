@@ -48,6 +48,7 @@ type entry struct {
 	initializer InitializerFunc           // 对象初始化器函数，用于延迟实例化
 	once        atomic.Pointer[sync.Once] // 实现对象单例化，原子指针，确保读安全性，重置once的写时使用锁(多条原子操作)
 	instance    atomic.Value              // 类型安全的原子值，原子化读写实例
+	initErr     atomic.Value              // 存储 error
 	initialized int32                     // 原子标志位：0 未初始化，1 初始化成功，-1 初始化失败，使用atomic原子操作
 	mu          sync.Mutex                // 用于保护重置操作(如多条原子操作)
 }
@@ -126,6 +127,7 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 	// 如果初始化失败，重置初始化状态
 	if atomic.LoadInt32(&entity.initialized) == -1 {
 		entity.mu.Lock()
+		// todo 直接重新初始化新的 entity
 		if atomic.LoadInt32(&entity.initialized) == -1 { // 双重检查
 			entity.once.Store(&sync.Once{})           // 重置once以便下次可以重新初始化
 			atomic.StoreInt32(&entity.initialized, 0) // 重置初始化状态
@@ -134,20 +136,21 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 	}
 
 	// 仅初始化一次
-	currentOnce := entity.once.Load()
-	currentOnce.Do(func() {
+	entity.once.Load().Do(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				// 捕获 panic 并设置初始化状态为-1
 				atomic.StoreInt32(&entity.initialized, -1)
-				err = fmt.Errorf("panic occurred while initializing global object '%s': %v", name, r)
+				e := fmt.Errorf("panic occurred while initializing global object '%s': %v", name, r)
+				entity.initErr.Store(e)
 			}
 		}()
 		instance, err = entity.initializer()
 		if err != nil {
 			// 初始化失败，设置初始化状态为-1
 			atomic.StoreInt32(&entity.initialized, -1)
-			err = fmt.Errorf("failed to initialize global object '%s': %v", name, err)
+			e := fmt.Errorf("failed to initialize global object '%s': %v", name, err)
+			entity.initErr.Store(e)
 			return
 		}
 		entity.instance.Store(instance)
@@ -155,6 +158,10 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 		atomic.StoreInt32(&entity.initialized, 1)
 	})
 
+	if er, ok := entity.initErr.Load().(error); ok && er != nil {
+		err = er
+		return
+	}
 	instance = entity.instance.Load()
 	return
 }

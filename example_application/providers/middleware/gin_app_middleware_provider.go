@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+
 	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
 	"github.com/lamxy/fiberhouse"
@@ -25,7 +26,10 @@ func NewGinAppMiddlewareProvider() *GinAppMiddlewareProvider {
 }
 
 // Initialize 初始化并注册中间件到Gin引擎
+// required 注入 fiberhouse.CoreStarter 实例
 func (g *GinAppMiddlewareProvider) Initialize(ctx fiberhouse.IContext, initFunc ...fiberhouse.ProviderInitFunc) (any, error) {
+	_ = ctx
+
 	if len(initFunc) == 0 {
 		return nil, fmt.Errorf("Provider '%s': initFunc must not be empty", g.Name())
 	}
@@ -42,7 +46,7 @@ func (g *GinAppMiddlewareProvider) Initialize(ctx fiberhouse.IContext, initFunc 
 
 	app, ok := cs.GetCoreApp().(*gin.Engine)
 	if !ok {
-		return nil, fmt.Errorf("Provider '%s': core app must be *gin.Engine", g.Name())
+		return nil, fmt.Errorf("Provider '%s': cs.GetCoreApp(), core app must be *gin.Engine", g.Name())
 	}
 
 	// 注册 TraceId 中间件

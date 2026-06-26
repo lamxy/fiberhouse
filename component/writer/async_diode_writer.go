@@ -8,20 +8,26 @@ package writer
 
 import (
 	"bufio"
+	"fmt"
+	"os"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"code.cloudfoundry.org/go-diodes"
 	"github.com/lamxy/fiberhouse/appconfig"
 	"gopkg.in/natefinch/lumberjack.v2"
-	"sync"
-	"time"
 )
 
 // AsyncDiodeWriter 实现异步写日志功能，实现 io.Writer 接口
 type AsyncDiodeWriter struct {
-	diode  diodes.Diode       // 二极管
-	wg     sync.WaitGroup     // 用于等待后台写入完成
-	stopCh chan struct{}      // 通知子goroutine退出
-	writer *bufio.Writer      // 缓冲写入器，接入lumberjack.Logger
-	lumber *lumberjack.Logger // lumberjack 实例，用于管理日志文件滚动等
+	diode       diodes.Diode       // 二极管
+	wg          sync.WaitGroup     // 用于等待后台写入完成
+	stopCh      chan struct{}       // 通知子goroutine退出
+	writer      *bufio.Writer      // 缓冲写入器，接入lumberjack.Logger
+	lumber      *lumberjack.Logger // lumberjack 实例，用于管理日志文件滚动等
+	closed      int32              // atomic 标志，防止 Close 后 Write 触发未定义行为
+	droppedLogs int64              // 因 diode 满而丢弃的日志条数（atomic）
 }
 
 // NewAsyncDiodeWriter 创建一个新的异步日志记录器
@@ -44,18 +50,17 @@ func NewAsyncDiodeWriter(cfg appconfig.IAppConfig, filename string) *AsyncDiodeW
 
 	writer := bufio.NewWriterSize(logRoller, diodeBuf)
 
-	dd := diodes.NewManyToOne(diodeSize, diodes.AlertFunc(func(missed int) {
-		// TODO 指标记录drop计数
-		//fmt.Printf("AsyncDiodeWriter: %d messages dropped due to full diode buffer\n", missed)
-	}))
-
 	aw := &AsyncDiodeWriter{
-		diode:  dd,
-		wg:     sync.WaitGroup{},
 		stopCh: make(chan struct{}),
 		writer: writer,
 		lumber: logRoller,
 	}
+
+	dd := diodes.NewManyToOne(diodeSize, diodes.AlertFunc(func(missed int) {
+		dropped := atomic.AddInt64(&aw.droppedLogs, int64(missed))
+		_, _ = fmt.Fprintf(os.Stderr, "AsyncDiodeWriter: diode full, +%d dropped, total: %d\n", missed, dropped)
+	}))
+	aw.diode = dd
 
 	// 启动后台写入 goroutine
 	aw.wg.Add(1)
@@ -63,7 +68,7 @@ func NewAsyncDiodeWriter(cfg appconfig.IAppConfig, filename string) *AsyncDiodeW
 	return aw
 }
 
-// consume 后台 goroutine 不断从 二极管 中读取日志数据，并写入底层 Writer
+// consume 后台 goroutine 不断从二极管中读取日志数据，并写入底层 Writer
 func (a *AsyncDiodeWriter) consume(flushInterval time.Duration) {
 	defer a.wg.Done()
 	ticker := time.NewTicker(flushInterval) // 定时 flush 缓冲区
@@ -72,6 +77,16 @@ func (a *AsyncDiodeWriter) consume(flushInterval time.Duration) {
 	for {
 		select {
 		case <-a.stopCh:
+			// 排空 diode 中残留数据，避免关闭时丢失
+			for {
+				data, ok := a.diode.TryNext()
+				if !ok || data == nil {
+					break
+				}
+				b := *(*[]byte)(data)
+				_, _ = a.writer.Write(b)
+			}
+			// 由 consume 负责最终刷盘，Close 不再并发 Flush
 			_ = a.writer.Flush()
 			return
 		case <-ticker.C:
@@ -90,6 +105,10 @@ func (a *AsyncDiodeWriter) consume(flushInterval time.Duration) {
 
 // Write 方法实现 io.Writer 接口，将数据写入二极管
 func (a *AsyncDiodeWriter) Write(p []byte) (int, error) {
+	if atomic.LoadInt32(&a.closed) == 1 {
+		return 0, fmt.Errorf("AsyncDiodeWriter: writer is closed")
+	}
+
 	// 拷贝数据，避免传参 slice 被复用
 	l := len(p)
 	data := make([]byte, l)
@@ -99,10 +118,16 @@ func (a *AsyncDiodeWriter) Write(p []byte) (int, error) {
 	return l, nil
 }
 
-// Close 关闭日志记录器，等待后台 goroutine 完成
+// DroppedLogs 返回因 diode 满而丢弃的日志总条数
+func (a *AsyncDiodeWriter) DroppedLogs() int64 {
+	return atomic.LoadInt64(&a.droppedLogs)
+}
+
+// Close 关闭日志记录器，等待后台 goroutine 完成所有写入后再关闭底层文件
 func (a *AsyncDiodeWriter) Close() error {
+	atomic.StoreInt32(&a.closed, 1)
 	close(a.stopCh)
-	_ = a.writer.Flush()
+	// 不在此处 Flush：consume goroutine 排空 diode 并完成最终 Flush 后才退出，避免并发写 bufio.Writer
 	a.wg.Wait()
 	return a.lumber.Close()
 }

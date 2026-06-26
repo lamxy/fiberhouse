@@ -9,19 +9,23 @@ package writer
 import (
 	"bufio"
 	"fmt"
-	"github.com/lamxy/fiberhouse/appconfig"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/lamxy/fiberhouse/appconfig"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // AsyncChannelWriter 实现异步写日志功能，实现 io.Writer 接口
 type AsyncChannelWriter struct {
-	logChan chan []byte        // 用于接收日志数据
-	wg      sync.WaitGroup     // 用于等待后台写入完成
-	writer  *bufio.Writer      // 缓冲写入器，包装 lumberjack.Logger
-	lumber  *lumberjack.Logger // lumberjack 实例，用于管理日志文件滚动等
+	logChan     chan []byte        // 用于接收日志数据
+	wg          sync.WaitGroup     // 用于等待后台写入完成
+	writer      *bufio.Writer      // 缓冲写入器，包装 lumberjack.Logger
+	lumber      *lumberjack.Logger // lumberjack 实例，用于管理日志文件滚动等
+	closed      int32              // atomic 标志，防止 Close 后 Write 触发 panic
+	droppedLogs int64              // 因通道满而丢弃的日志条数（atomic）
 }
 
 // NewAsyncChannelWriter 创建一个新的异步日志记录器
@@ -53,7 +57,7 @@ func NewAsyncChannelWriter(cfg appconfig.IAppConfig, filename string) *AsyncChan
 	return al
 }
 
-// start 后台 goroutine 不断从 logChan 中读取日志数据，并写入底层 Writer
+// consume 后台 goroutine 不断从 logChan 中读取日志数据，并写入底层 Writer
 func (a *AsyncChannelWriter) consume(flushInterval time.Duration) {
 	defer a.wg.Done()
 	ticker := time.NewTicker(flushInterval) // 定时 flush 缓冲区
@@ -63,7 +67,7 @@ func (a *AsyncChannelWriter) consume(flushInterval time.Duration) {
 		select {
 		case data, ok := <-a.logChan:
 			if !ok {
-				// 通道关闭时 flush 并退出
+				// 通道关闭且已排空，执行最终刷盘后退出
 				_ = a.writer.Flush()
 				return
 			}
@@ -80,28 +84,40 @@ func (a *AsyncChannelWriter) consume(flushInterval time.Duration) {
 
 // Write 方法实现 io.Writer 接口，将数据放入 logChan
 func (a *AsyncChannelWriter) Write(p []byte) (int, error) {
+	if atomic.LoadInt32(&a.closed) == 1 {
+		return 0, fmt.Errorf("AsyncChannelWriter: writer is closed")
+	}
 
-	// 将数据发送到通道，可能会阻塞但保证数据不丢失
-	//a.logChan <- p
-
-	// 当通道满了，写阻塞时，超时1s丢弃消息
 	// 拷贝数据，避免传参 slice 被复用
-	l := len(p)
-	data := make([]byte, l)
+	data := make([]byte, len(p))
 	copy(data, p)
+
+	// 通道有空位时立即写入；通道持续满超过 1s 才丢弃，期间调用方阻塞等待
+	timer := time.NewTimer(1 * time.Second)
+	defer timer.Stop()
 	select {
 	case a.logChan <- data:
-	case <-time.After(1 * time.Second):
-		// TODO 指标监控drop计数
+	case <-timer.C:
+		// 超过 1s 仍无法写入，丢弃并计数
+		dropped := atomic.AddInt64(&a.droppedLogs, 1)
+		if dropped%100 == 1 {
+			_, _ = fmt.Fprintf(os.Stderr, "AsyncChannelWriter: log channel full, total dropped: %d\n", dropped)
+		}
 	}
 
 	return len(p), nil
 }
 
-// Close 关闭日志记录器，等待后台 goroutine 完成
+// DroppedLogs 返回因通道满而丢弃的日志总条数
+func (a *AsyncChannelWriter) DroppedLogs() int64 {
+	return atomic.LoadInt64(&a.droppedLogs)
+}
+
+// Close 关闭日志记录器，等待后台 goroutine 完成所有写入后再关闭底层文件
 func (a *AsyncChannelWriter) Close() error {
+	atomic.StoreInt32(&a.closed, 1)
 	close(a.logChan)
-	_ = a.writer.Flush()
+	// 不在此处 Flush：consume goroutine 在通道耗尽后负责最终 Flush，避免并发写 bufio.Writer
 	a.wg.Wait()
 	return a.lumber.Close()
 }
