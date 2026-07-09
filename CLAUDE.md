@@ -1,9 +1,9 @@
-## graphify
+## CodeGraph QA Docs
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+This project keeps durable codebase analysis notes in `.codegraph-qa/`.
 
 Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- For codebase questions, first check `.codegraph-qa/` for relevant prior Q&A and analysis notes before redoing the same investigation.
+- Treat `.codegraph-qa/` as the local documentation library for CodeGraph-assisted analysis.
+- When a new codebase analysis result should be preserved, add or update a focused Markdown file under `.codegraph-qa/`.
+- Do not rely on graphify, graphify-out, or graphify commands for this repository.

@@ -1,14 +1,5 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(graphify query *)",
-      "Bash(graphify path *)"
-    ]
-  },
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": [
-    "graphify"
-  ],
   "sandbox": {
     "enabled": false,
     "autoAllowBashIfSandboxed": false

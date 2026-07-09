@@ -4,6 +4,8 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy
 
+// Package fiberhouse provides a web application framework built on top of Fiber,
+// combining frame and core starters to simplify application bootstrapping.
 package fiberhouse
 
 import (

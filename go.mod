@@ -1,6 +1,6 @@
 module github.com/lamxy/fiberhouse
 
-go 1.24.2
+go 1.25.1
 
 require (
 	code.cloudfoundry.org/go-diodes v0.0.0-20250826065211-2f5346d41d66
