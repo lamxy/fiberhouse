@@ -9,14 +9,15 @@ package cache
 import (
 	"errors"
 	"fmt"
-	"github.com/bits-and-blooms/bloom/v3"
-	"github.com/sony/gobreaker/v2"
 	"hash/fnv"
 	"math"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/bits-and-blooms/bloom/v3"
+	"github.com/sony/gobreaker/v2"
 )
 
 // CircuitBreakerWrap gobreaker熔断器封装
@@ -55,7 +56,7 @@ func NewCircuitBreakerWrap(name string, st ...*gobreaker.Settings) *CircuitBreak
 			return failureRate >= maxFailureRate
 		},
 		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-			// 这里可以集成日志系统或监控系统
+			// TODO 这里可以集成日志系统或监控系统
 			fmt.Printf("CircuitBreaker '%s' state changed from %s to %s\n", name, from.String(), to.String())
 		},
 	}

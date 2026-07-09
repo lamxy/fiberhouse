@@ -9,14 +9,15 @@ package cache2
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/dgraph-io/ristretto/v2"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/cache"
 	"github.com/lamxy/fiberhouse/cache/cachelocal"
 	"github.com/panjf2000/ants/v2"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 // Level2Cache 二级缓存实现（本地+远程）
@@ -241,6 +242,7 @@ func (l2c *Level2Cache) asyncSetLocal(ctx context.Context, key string, value int
 			Err(err).
 			Msg("AsyncSetLocal submit failed")
 	}
+	// TODO fallback go func(){}
 }
 
 // asyncSetRemote 异步写入远程缓存
