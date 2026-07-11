@@ -5,7 +5,7 @@ import (
 	"github.com/lamxy/fiberhouse"
 )
 
-// RegisterAppCoreHook 注册应用钩子函数
+// RegisterFiberAppCoreHook 注册应用钩子函数
 func RegisterFiberAppCoreHook(appCtx fiberhouse.IApplicationContext, cs fiberhouse.CoreStarter) {
 	coreApp := cs.GetCoreApp().(*fiber.App)
 	coreApp.Hooks().OnGroup(func(group fiber.Group) error {

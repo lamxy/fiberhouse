@@ -4,7 +4,7 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy
 
-package plugin
+package plugins
 
 import (
 	"github.com/lamxy/fiberhouse"

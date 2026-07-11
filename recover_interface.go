@@ -11,7 +11,7 @@ import (
 	providerctx "github.com/lamxy/fiberhouse/provider/context"
 )
 
-// IErrorHandler 错误处理接口，用于统一定义堆栈日志记录及错误处理器的方法
+// IErrorHandler 错误处理器接口，用于统一定义堆栈日志的记录及错误处理器的方法
 type IErrorHandler interface {
 	DefaultStackTraceHandler(providerctx.ICoreContext, interface{})
 	ErrorHandler(providerctx.ICoreContext, error) error

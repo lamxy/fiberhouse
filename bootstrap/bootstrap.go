@@ -26,12 +26,9 @@ import (
 )
 
 const (
-	envAppTypeWeb        = "web"                                       // web应用
-	envAppTypeCmd        = "cmd"                                       // 命令行应用
-	defaultAppConfigFile = "application_" + envAppTypeWeb + "_dev.yml" // test、dev、prod
-	defaultEnv           = "dev"
-	envPrefix            = "APP_ENV_"
-	envConfigPrefix      = "APP_CONF_"
+	defaultEnv      = "dev" // test、dev、prod
+	envPrefix       = "APP_ENV_"
+	envConfigPrefix = "APP_CONF_"
 )
 
 var (

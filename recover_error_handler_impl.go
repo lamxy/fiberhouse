@@ -8,10 +8,11 @@ package fiberhouse
 
 import (
 	"errors"
-	"github.com/lamxy/fiberhouse/component/jsonconvert"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"net/http"
 	"sync"
+
+	"github.com/lamxy/fiberhouse/component/jsonconvert"
+	providerctx "github.com/lamxy/fiberhouse/provider/context"
 
 	"github.com/lamxy/fiberhouse/exception"
 
@@ -92,14 +93,21 @@ func (r *ErrorHandler) RecoverMiddleware(config ...RecoverConfig) any {
 func (r *ErrorHandler) DefaultStackTraceHandler(ctx providerctx.ICoreContext, e interface{}) {
 	// 从配置文件获取调试相关参数和请求ID参数的配置值
 	cfg := r.GetContext().GetConfig()
+	// 配置中的 recover 恢复 error 错误的配置段
 	recoverConfig := cfg.GetRecover()
+	// 配置中 trace 请求ID 配置段
 	traceConfig := cfg.GetTrace()
 
+	// 调试标记和调试标记值
 	debugFlag = recoverConfig.DebugFlag
 	debugFlagValue = recoverConfig.DebugFlagValue
+	// request id
 	requestID = traceConfig.RequestID
+	// 是否打印堆栈信息
 	enablePrintStack := recoverConfig.EnablePrintStack
+	// 是否启动 debug 调试标记
 	enableDebugFlag := recoverConfig.EnableDebugFlag
+	// 是否开启了调试模式
 	debugMode := recoverConfig.DebugMode
 
 	// 日志器
@@ -121,7 +129,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx providerctx.ICoreContext, e 
 		}
 	}
 
-	// 头部debug标记
+	// http头部debug标记
 	debugFlagFromHeader := recovery.GetHeader(ctx, debugFlag)
 	// 请求requestId
 	traceId := recovery.GetHeader(ctx, requestID)

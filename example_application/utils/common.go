@@ -2,13 +2,15 @@ package utils
 
 import (
 	"fmt"
-	"github.com/lamxy/fiberhouse/constant"
 	"io"
 	"math"
 	"net/http"
 	"os"
+
+	"github.com/lamxy/fiberhouse/constant"
 )
 
+// DownloadImg2File 下载图片并保存到文件
 func DownloadImg2File(url, fileName string) error {
 	response, err := http.Get(url)
 	if err != nil {
@@ -41,18 +43,7 @@ func DownloadImg2File(url, fileName string) error {
 	return nil
 }
 
-func PageNext(page, pageSize int64) (offset, limit int64) {
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
-		pageSize = constant.DefaultPageSize
-	}
-	offset = (page - 1) * pageSize
-	limit = pageSize
-	return
-}
-
+// PageParams 计算分页参数，返回偏移量和限制数量
 func PageParams(page, pageSize int64) (offset, limit int64) {
 	if page < 1 {
 		page = 1
@@ -65,6 +56,7 @@ func PageParams(page, pageSize int64) (offset, limit int64) {
 	return
 }
 
+// Round 简单的四舍五入函数，precision 表示保留的小数位数
 func Round(f float64, precision float64) float64 {
 	if precision == 0 {
 		return math.Round(f)

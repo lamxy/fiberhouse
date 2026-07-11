@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/constant"
+	"github.com/lamxy/fiberhouse/example_application/providers/apphook"
 	"github.com/lamxy/fiberhouse/example_application/providers/middleware"
 	"github.com/lamxy/fiberhouse/example_application/providers/module"
 	"github.com/lamxy/fiberhouse/example_application/providers/optioninit"
@@ -77,6 +78,8 @@ func main() {
 		middleware.NewFiberModuleMiddlewareProvider(),
 		// 基于Gin的中间件注册提供者
 		middleware.NewGinAppMiddlewareProvider(),
+		// 基于fiber的生命周期hook注册提供者,gin无需
+		apphook.NewFiberAppHookProvider(),
 		// 其他可切换的框架相关中间件提供者
 		// ...
 
@@ -92,6 +95,8 @@ func main() {
 		optioninit.NewFrameOptionInitPManager(fh.AppCtx),
 		// 核心选项初始化管理器，获取核心启动器初始化的选项函数列表
 		optioninit.NewCoreOptionInitPManager(fh.AppCtx).MountToParent(),
+		// 核心 hook 注册生命周期钩子管理器，注册核心框架生命周期钩子到核心应用实例
+		apphook.NewAppCoreHookPManager(fh.AppCtx),
 		// 应用中间件管理器，注册应用级中间件到核心应用实例
 		middleware.NewAppMiddlewarePManager(fh.AppCtx),
 		// 模块路由注册管理器，注册模块路由到核心应用实例
