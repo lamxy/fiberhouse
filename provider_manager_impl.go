@@ -37,7 +37,7 @@ func NewProviderManager(ctx IContext) *ProviderManager {
 	}
 }
 
-// Check 检查提供者类型是否设置，未设置则抛出异常，强制Initialize方法内优先进行检查
+// Check 检查提供者类型是否设置，未设置则抛出异常，强制LoadProvider方法内优先进行检查
 func (m *ProviderManager) Check() {
 	if m.pType.GetTypeID() == ProviderTypeDefault().ZeroType.GetTypeID() {
 		panic(fmt.Errorf("manager '%s' type is not set", m.name))
@@ -228,8 +228,23 @@ func NewDefaultPManager(ctx IContext) *DefaultPManager {
 }
 
 func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
+	m.Check()
+
+	var (
+		fh    *FiberHouse
+		other any
+	)
+
 	if len(loadFunc) > 0 {
-		return m.IProviderManager.LoadProvider(loadFunc...)
+		// 如果传入了自定义加载函数，则使用该函数加载提供者
+		anything, err := loadFunc[0](m)
+		if err != nil {
+			return nil, err
+		}
+		if at, ok := anything.(*FiberHouse); ok {
+			fh = at
+		}
+		other = anything
 	}
 
 	// 默认加载逻辑，根据引导配置加载相应的提供者
@@ -244,11 +259,27 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 	for _, provider := range m.List() {
 		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupProviderAutoRun.GetTypeID() {
 			// 自动运行类型的提供者，不依赖Target约束可以直接初始化
-			_, err := provider.Initialize(m.GetContext())
+			_, err := provider.Initialize(m.GetContext(), func(provider IProvider) (any, error) {
+				if fh != nil {
+					return fh, nil
+				}
+				if other != nil {
+					return other, nil
+				}
+				return nil, nil
+			})
 			errs = append(errs, err)
 		} else if provider.Target() == bootCfg.CoreType {
 			// 目标类型匹配启动配置的核心类型的提供者，进行初始化
-			_, err := provider.Initialize(m.GetContext())
+			_, err := provider.Initialize(m.GetContext(), func(provider IProvider) (any, error) {
+				if fh != nil {
+					return fh, nil
+				}
+				if other != nil {
+					return other, nil
+				}
+				return nil, nil
+			})
 			errs = append(errs, err)
 		}
 	}

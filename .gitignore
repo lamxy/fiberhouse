@@ -21,4 +21,5 @@ graphify_evaluation_report.md
 .venv/
 __pycache__/
 *.pyc
-
+.codegraph-qa-out/assets/
+.codegraph-qa-out/dependency-upgrade-risk-assessment.md

@@ -2,6 +2,7 @@ package apphook
 
 import (
 	"fmt"
+
 	"github.com/lamxy/fiberhouse"
 )
 
@@ -24,7 +25,7 @@ func (m *AppCoreHookPManager) LoadProvider(loadFunc ...fiberhouse.ProviderLoadFu
 	if len(loadFunc) == 0 {
 		return nil, fmt.Errorf("provider loadFunc must not be empty")
 	}
-	instance, err := m.IProviderManager.LoadProvider(loadFunc[0])
+	instance, err := loadFunc[0](m)
 	if err != nil {
 		return nil, err
 	}
