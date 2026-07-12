@@ -23,3 +23,5 @@ __pycache__/
 *.pyc
 .codegraph-qa-out/assets/
 .codegraph-qa-out/dependency-upgrade-risk-assessment.md
+.codegraph-qa-out/provider-to-coreadaptor-impact.md
+.codegraph-qa-out/todo.md
