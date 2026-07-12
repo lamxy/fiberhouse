@@ -80,10 +80,10 @@ adaptorerrorhandler "github.com/lamxy/fiberhouse/adaptor/errorhandler"
 
 ```go
 adaptorerrorhandler.FiberErrorHandler
-adaptorerrorhandler.GinErrorhandler
+adaptorerrorhandler.GinErrorHandler
 ```
 
-因此 Gin 公開函式會由 `GinErrorHandler` 改名為 `GinErrorhandler`；Fiber 公開函式仍為 `FiberErrorHandler`。這是本次除了 import path 外額外的一項導出符號破壞性變更。
+`GinErrorHandler` 與 `FiberErrorHandler` 均保留原公開名稱；本次不增加 import path 搬移以外的導出符號改名。
 
 ## 搬移的 5 個定義檔
 
@@ -93,7 +93,7 @@ adaptorerrorhandler.GinErrorhandler
 | `provider/context/core_ctx_wrap_fiber_impl.go` | `adaptor/context/core_ctx_wrap_fiber_impl.go` | 只搬移；保留公開符號與行為 |
 | `provider/context/core_ctx_wrap_gin_impl.go` | `adaptor/context/core_ctx_wrap_gin_impl.go` | 只搬移；保留公開符號與行為 |
 | `provider/adaptor/fiber_error_handler.go` | `adaptor/errorhandler/fiber_error_handler.go` | `package errorhandler`；context import 改新路徑和 alias |
-| `provider/adaptor/gin_error_handler.go` | `adaptor/errorhandler/gin_error_handler.go` | `package errorhandler`；context import 改新路徑和 alias；`GinErrorHandler` → `GinErrorhandler` |
+| `provider/adaptor/gin_error_handler.go` | `adaptor/errorhandler/gin_error_handler.go` | `package errorhandler`；context import 改新路徑和 alias；保留 `GinErrorHandler` |
 
 新依賴方向維持：
 
@@ -110,7 +110,7 @@ adaptor/errorhandler -> adaptor/context
 | 檔案 | 使用面 | 修改 |
 | --- | --- | --- |
 | `core_fiber_starter_impl.go` | `adaptor.FiberErrorHandler` | import 改為 `adaptor/errorhandler` 並 alias `adaptorerrorhandler`；selector 改為 `adaptorerrorhandler.FiberErrorHandler` |
-| `core_gin_starter_impl.go` | `adaptor.GinErrorHandler` | import 改為 `adaptor/errorhandler` 並 alias `adaptorerrorhandler`；selector 改為 `adaptorerrorhandler.GinErrorhandler` |
+| `core_gin_starter_impl.go` | `adaptor.GinErrorHandler` | import 改為 `adaptor/errorhandler` 並 alias `adaptorerrorhandler`；selector 改為 `adaptorerrorhandler.GinErrorHandler` |
 | `ctx_core_adapter.go` | `ICoreContext` | import 改為 `adaptor/context`；alias/selector 統一為 `adaptorctx` |
 | `ctx_fiber_adaptor_provider.go` | `WithFiberContext` | 同上 |
 | `ctx_gin_adaptor_provider.go` | `WithGinContext` | 同上 |
@@ -194,7 +194,7 @@ example .../example-module/api --------------> adaptor/context
 2. 以 `git mv provider adaptor` 搬移根目錄，保留 Git rename history。
 3. 以 `git mv adaptor/adaptor adaptor/errorhandler` 解決搬移後的雙層 `adaptor/adaptor`。
 4. 將 `adaptor/errorhandler/*.go` 的 package clause 改為 `package errorhandler`。
-5. 將 `GinErrorHandler` 定義改名為 `GinErrorhandler`；保留 `FiberErrorHandler`。
+5. 保留 `GinErrorHandler` 與 `FiberErrorHandler` 的原公開名稱。
 6. 更新兩個 error handler 檔案內部的 context import 為 `adaptor/context`，alias 統一為 `adaptorctx`。
 7. 更新 17 個其他 context 消費檔的 import path、alias 和 selector。
 8. 更新兩個 starter 的 error handler import，alias 為 `adaptorerrorhandler`，使用已批准的精確 selector。
@@ -218,7 +218,7 @@ rg -n 'github\.com/lamxy/fiberhouse/provider/(context|adaptor)' --glob '*.go'
 
 ```bash
 go list ./adaptor/...
-rg -n 'adaptorerrorhandler\.(FiberErrorHandler|GinErrorhandler)' \
+rg -n 'adaptorerrorhandler\.(FiberErrorHandler|GinErrorHandler)' \
   core_fiber_starter_impl.go core_gin_starter_impl.go
 rg -n '^package errorhandler$' adaptor/errorhandler/*.go
 ```
@@ -251,14 +251,13 @@ go test ./...
 
 1. **公開 import path 破壞**：模組已是 v1，刪除 `provider/context` 和 `provider/adaptor` 會使所有未遷移的外部消費者編譯失敗；本倉庫無法枚舉外部使用者。
 2. **公開型別 identity 變化**：`ICoreContext`、`FiberContext`、`GinContext` 搬到新 package path，公開簽名和外部實作需要重新編譯與更新 import。
-3. **額外導出符號改名**：`GinErrorHandler` → `GinErrorhandler` 是明確的額外 breaking change；大小寫必須在定義和 starter selector 完全一致。
-4. **名稱碰撞**：新 `adaptor/context` 容易與標準庫 `context` 混淆；統一 `adaptorctx` alias 可降低誤用風險。
-5. **漏改內部依賴**：兩個被搬移的 error handler 自身也匯入舊 context，若只改外部消費者會導致新 package 無法編譯。
-6. **誤改 provider 架構**：機械替換 `provider` 字詞會錯誤修改大量核心 API、範例目錄、檔名和錯誤訊息。
-7. **文件暫時失真**：README 與 `docs/*.md` 的舊連結會在此次改名後失效；這是已批准的暫存風險，必須在後續文檔專題追蹤。
-8. **CodeGraph 索引陳舊**：worktree 或 watcher 可能延遲更新，查詢可能暫時顯示舊 source path；不能將生成資料手工編輯成新路徑。
-9. **既有測試紅燈**：完整測試基線已失敗，驗證必須比較失敗集合，不能將所有紅燈歸因於本次改名，也不能忽略新增編譯失敗。
-10. **換行噪音**：目前 checkout 中部分 Go 檔為 CRLF，而索引和 `.gitattributes` 規定 LF；`gofmt` 後需以語義 diff 審閱，避免把無關全檔變動混入改名提交。
+3. **名稱碰撞**：新 `adaptor/context` 容易與標準庫 `context` 混淆；統一 `adaptorctx` alias 可降低誤用風險。
+4. **漏改內部依賴**：兩個被搬移的 error handler 自身也匯入舊 context，若只改外部消費者會導致新 package 無法編譯。
+5. **誤改 provider 架構**：機械替換 `provider` 字詞會錯誤修改大量核心 API、範例目錄、檔名和錯誤訊息。
+6. **文件暫時失真**：README 與 `docs/*.md` 的舊連結會在此次改名後失效；這是已批准的暫存風險，必須在後續文檔專題追蹤。
+7. **CodeGraph 索引陳舊**：worktree 或 watcher 可能延遲更新，查詢可能暫時顯示舊 source path；不能將生成資料手工編輯成新路徑。
+8. **既有測試紅燈**：完整測試基線已失敗，驗證必須比較失敗集合，不能將所有紅燈歸因於本次改名，也不能忽略新增編譯失敗。
+9. **換行噪音**：目前 checkout 中部分 Go 檔為 CRLF，而索引和 `.gitattributes` 規定 LF；`gofmt` 後需以語義 diff 審閱，避免把無關全檔變動混入改名提交。
 
 ## 已記錄的改名前基線
 
