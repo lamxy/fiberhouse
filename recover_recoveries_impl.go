@@ -19,8 +19,8 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/lamxy/fiberhouse/bootstrap"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
 )
 
 var (
@@ -66,7 +66,7 @@ func NewFiberRecovery(ctx IApplicationContext) *FiberRecovery {
 	}
 }
 
-func (f *FiberRecovery) GetParamsJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (f *FiberRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
 	c, ok := ctx.GetCtx().(*fiber.Ctx)
 	if !ok {
 		return nil
@@ -80,7 +80,7 @@ func (f *FiberRecovery) GetParamsJson(ctx providerctx.ICoreContext, log bootstra
 	return j
 }
 
-func (f *FiberRecovery) GetQueriesJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (f *FiberRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
 	c, ok := ctx.GetCtx().(*fiber.Ctx)
 	if !ok {
 		return nil
@@ -94,7 +94,7 @@ func (f *FiberRecovery) GetQueriesJson(ctx providerctx.ICoreContext, log bootstr
 	return j
 }
 
-func (f *FiberRecovery) GetHeadersJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (f *FiberRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
 	c, ok := ctx.GetCtx().(*fiber.Ctx)
 	if !ok {
 		return nil
@@ -109,7 +109,7 @@ func (f *FiberRecovery) GetHeadersJson(ctx providerctx.ICoreContext, log bootstr
 	return j
 }
 
-func (f *FiberRecovery) GetHeader(ctx providerctx.ICoreContext, key string) string {
+func (f *FiberRecovery) GetHeader(ctx adaptorctx.ICoreContext, key string) string {
 	c, ok := ctx.GetCtx().(*fiber.Ctx)
 	if !ok {
 		return ""
@@ -127,7 +127,7 @@ func (f *FiberRecovery) RecoverPanic(config ...RecoverConfig) any {
 
 	// Return new handler
 	return func(c *fiber.Ctx) error {
-		pCtx := providerctx.WithFiberContext(c)
+		pCtx := adaptorctx.WithFiberContext(c)
 		// Don't execute middleware if Next returns true
 		if cfg.Next != nil && cfg.Next(pCtx) {
 			return c.Next()
@@ -141,7 +141,7 @@ func (f *FiberRecovery) RecoverPanic(config ...RecoverConfig) any {
 	}
 }
 
-func (f *FiberRecovery) TraceID(ctx providerctx.ICoreContext, flag ...string) string {
+func (f *FiberRecovery) TraceID(ctx adaptorctx.ICoreContext, flag ...string) string {
 	// 原生上下文
 	var (
 		c  *fiber.Ctx
@@ -218,7 +218,7 @@ func NewGinRecovery(ctx IApplicationContext) *GinRecovery {
 	}
 }
 
-func (g *GinRecovery) GetParamsJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (g *GinRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
 	c, ok := ctx.GetCtx().(*gin.Context)
 	if !ok {
 		return nil
@@ -235,7 +235,7 @@ func (g *GinRecovery) GetParamsJson(ctx providerctx.ICoreContext, log bootstrap.
 	return j
 }
 
-func (g *GinRecovery) GetQueriesJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (g *GinRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
 	c, ok := ctx.GetCtx().(*gin.Context)
 	if !ok {
 		return nil
@@ -252,7 +252,7 @@ func (g *GinRecovery) GetQueriesJson(ctx providerctx.ICoreContext, log bootstrap
 	return j
 }
 
-func (g *GinRecovery) GetHeadersJson(ctx providerctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (g *GinRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
 	c, ok := ctx.GetCtx().(*gin.Context)
 	if !ok {
 		return nil
@@ -270,7 +270,7 @@ func (g *GinRecovery) GetHeadersJson(ctx providerctx.ICoreContext, log bootstrap
 	return j
 }
 
-func (g *GinRecovery) GetHeader(ctx providerctx.ICoreContext, key string) string {
+func (g *GinRecovery) GetHeader(ctx adaptorctx.ICoreContext, key string) string {
 	c, ok := ctx.GetCtx().(*gin.Context)
 	if !ok {
 		return ""
@@ -286,7 +286,7 @@ func (g *GinRecovery) RecoverPanic(config ...RecoverConfig) any {
 
 	// Return new handler
 	return func(c *gin.Context) {
-		pCtx := providerctx.WithGinContext(c)
+		pCtx := adaptorctx.WithGinContext(c)
 		// Don't execute middleware if Cfg Next returns true
 		if cfg.Next != nil && cfg.Next(pCtx) {
 			c.Next()
@@ -299,7 +299,7 @@ func (g *GinRecovery) RecoverPanic(config ...RecoverConfig) any {
 	}
 }
 
-func (g *GinRecovery) TraceID(ctx providerctx.ICoreContext, flag ...string) string {
+func (g *GinRecovery) TraceID(ctx adaptorctx.ICoreContext, flag ...string) string {
 	// 原生上下文
 	var (
 		c  *gin.Context
@@ -313,7 +313,7 @@ func (g *GinRecovery) TraceID(ctx providerctx.ICoreContext, flag ...string) stri
 }
 
 // RecoverPanicInternal 全局恢复panic函数，用于defer fn()
-func RecoverPanicInternal(pCtx providerctx.ICoreContext, cfg RecoverConfig) {
+func RecoverPanicInternal(pCtx adaptorctx.ICoreContext, cfg RecoverConfig) {
 	if r := recover(); r != nil {
 		if cfg.EnableStackTrace {
 			cfg.StackTraceHandler(pCtx, r)

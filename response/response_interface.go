@@ -6,14 +6,14 @@
 
 package response
 
-import providerctx "github.com/lamxy/fiberhouse/provider/context"
+import adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 
 type IResponse interface {
 	GetCode() int
 	GetMsg() string
 	GetData() interface{}
-	SendWithCtx(c providerctx.ICoreContext, status ...int) error
-	JsonWithCtx(c providerctx.ICoreContext, status ...int) error
+	SendWithCtx(c adaptorctx.ICoreContext, status ...int) error
+	JsonWithCtx(c adaptorctx.ICoreContext, status ...int) error
 	Reset(code int, msg string, data interface{}) IResponse
 	Release()
 	From(resp IResponse, needToRelease bool) IResponse

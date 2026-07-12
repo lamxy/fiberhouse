@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"sync"
 
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	pb "github.com/lamxy/fiberhouse/rpc/protosrc"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -65,7 +65,7 @@ func (r *RespInfoPB) GetData() interface{} {
 }
 
 // SendWithCtx 返回 Protobuf 响应
-func (r *RespInfoPB) SendWithCtx(c providerctx.ICoreContext, status ...int) error {
+func (r *RespInfoPB) SendWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	defer r.Release()
 
 	statusCode := http.StatusOK
@@ -82,7 +82,7 @@ func (r *RespInfoPB) SendWithCtx(c providerctx.ICoreContext, status ...int) erro
 }
 
 // JsonWithCtx 返回 JSON 响应
-func (r *RespInfoPB) JsonWithCtx(c providerctx.ICoreContext, status ...int) error {
+func (r *RespInfoPB) JsonWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	defer r.Release()
 
 	statusCode := http.StatusOK
@@ -202,7 +202,7 @@ func (r *RespInfoPB) ErrorCustom(code int, msg string) IResponse {
 //}
 //
 //// ProtoWithCtx 使用 ICoreContext 返回 Protobuf 响应
-//func (r *RespInfo) ProtoWithCtx(c providerctx.ICoreContext, status ...int) error {
+//func (r *RespInfo) ProtoWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 //	defer r.Release()
 //
 //	pbResp, err := r.ToProto()

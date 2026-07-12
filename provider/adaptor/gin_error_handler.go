@@ -8,15 +8,15 @@ package adaptor
 
 import (
 	"github.com/gin-gonic/gin"
-	providerCtx "github.com/lamxy/fiberhouse/provider/context"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 )
 
 // GinErrorHandler 创建一个 Gin 框架的错误处理适配器
-func GinErrorHandler(fn func(providerCtx.ICoreContext, error) error) gin.HandlerFunc {
+func GinErrorHandler(fn func(adaptorctx.ICoreContext, error) error) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 		if len(c.Errors) > 0 {
-			err := fn(providerCtx.WithGinContext(c), c.Errors.Last())
+			err := fn(adaptorctx.WithGinContext(c), c.Errors.Last())
 			if err != nil {
 				panic(err)
 			}
@@ -24,7 +24,7 @@ func GinErrorHandler(fn func(providerCtx.ICoreContext, error) error) gin.Handler
 		}
 		if err, ok := c.Get("error"); ok { // 自定义错误处理
 			if errObj, isErr := err.(error); isErr {
-				err := fn(providerCtx.WithGinContext(c), errObj)
+				err := fn(adaptorctx.WithGinContext(c), errObj)
 				if err != nil {
 					panic(err)
 				}

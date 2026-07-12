@@ -6,11 +6,11 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"net/http"
 	"strconv"
 )
@@ -110,8 +110,8 @@ func (h *ExampleHandler) GetExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return fiberhouse.Response().SuccessWithData(resp).SendWithCtx(providerctx.WithFiberContext(c))
-	//return response.RespSuccess(resp).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c))
+	//return response.RespSuccess(resp).JsonWithCtx(adaptorctx.WithFiberContext(c))
 }
 
 // GetExampleWithTaskDispatcher godoc
@@ -155,7 +155,7 @@ func (h *ExampleHandler) GetExampleWithTaskDispatcher(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(adaptorctx.WithFiberContext(c))
 }
 
 // CreateExample godoc
@@ -200,7 +200,7 @@ func (h *ExampleHandler) CreateExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(adaptorctx.WithFiberContext(c))
 }
 
 // GetExamples godoc
@@ -250,5 +250,5 @@ func (h *ExampleHandler) GetExamples(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(adaptorctx.WithFiberContext(c))
 }

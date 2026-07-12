@@ -7,12 +7,12 @@
 package fiberhouse
 
 import (
-	providerCtx "github.com/lamxy/fiberhouse/provider/context"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"sync"
 )
 
 type IContextCoreWrapper interface {
-	WithAppCtx(appCtx IApplicationContext) providerCtx.ICoreContext
+	WithAppCtx(appCtx IApplicationContext) adaptorctx.ICoreContext
 	Release()
 }
 
@@ -35,7 +35,7 @@ func Context(c any) *ContextCore {
 }
 
 // WithAppCtx 接收应用上下文参数，返回核心上下文接口，内部核心上下文提供者管理器自动依据启动配置的核心参数CoreType决定返回哪种核心上下文实现JSON响应
-func (c *ContextCore) WithAppCtx(appCtx IContext) providerCtx.ICoreContext {
+func (c *ContextCore) WithAppCtx(appCtx IContext) adaptorctx.ICoreContext {
 	// 函数结束时释放回对象池
 	defer c.Release()
 
@@ -48,7 +48,7 @@ func (c *ContextCore) WithAppCtx(appCtx IContext) providerCtx.ICoreContext {
 	if err != nil {
 		panic(err)
 	}
-	coreCtx, ok := ctx.(providerCtx.ICoreContext)
+	coreCtx, ok := ctx.(adaptorctx.ICoreContext)
 	if !ok {
 		panic("loaded core context provider is not ICoreContext")
 	}
@@ -63,7 +63,7 @@ func (c *ContextCore) Release() {
 
 // CoreContext 全局函数，接收任意类型参数(不同框架的上下文)，返回核心上下文接口
 // 内部核心上下文提供者管理器自动依据启动配置的核心参数CoreType决定返回哪种核心上下文实现JSON响应
-func CoreContext(c any) providerCtx.ICoreContext {
+func CoreContext(c any) adaptorctx.ICoreContext {
 	// 获取核心上下文管理器单例
 	manager := NewCoreCtxPManagerParentOnce()
 
@@ -73,7 +73,7 @@ func CoreContext(c any) providerCtx.ICoreContext {
 	if err != nil {
 		panic(err)
 	}
-	coreCtx, ok := ctx.(providerCtx.ICoreContext)
+	coreCtx, ok := ctx.(adaptorctx.ICoreContext)
 	if !ok {
 		panic("manager '" + manager.Name() + "' : loaded core context provider is not ICoreContext")
 	}

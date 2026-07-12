@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"sync"
 
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/lamxy/fiberhouse/component/jsonconvert"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
 
 	"github.com/lamxy/fiberhouse/exception"
 
@@ -90,7 +90,7 @@ func (r *ErrorHandler) RecoverMiddleware(config ...RecoverConfig) any {
 }
 
 // DefaultStackTraceHandler 记录请求上下文信息 + panic信息 + 堆栈信息
-func (r *ErrorHandler) DefaultStackTraceHandler(ctx providerctx.ICoreContext, e interface{}) {
+func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e interface{}) {
 	// 从配置文件获取调试相关参数和请求ID参数的配置值
 	cfg := r.GetContext().GetConfig()
 	// 配置中的 recover 恢复 error 错误的配置段
@@ -320,7 +320,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx providerctx.ICoreContext, e 
 }
 
 // ErrorHandler 处理错误并返回对应的HTTP响应
-func (r *ErrorHandler) ErrorHandler(ctx providerctx.ICoreContext, err error) error {
+func (r *ErrorHandler) ErrorHandler(ctx adaptorctx.ICoreContext, err error) error {
 	// 记录日志 & 堆栈
 	r.DefaultStackTraceHandler(ctx, err)
 

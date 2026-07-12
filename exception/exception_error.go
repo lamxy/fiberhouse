@@ -10,9 +10,9 @@ package exception
 
 import (
 	"fmt"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/globalmanager"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"github.com/lamxy/fiberhouse/response"
 	"net/http"
 )
@@ -152,7 +152,7 @@ func (e *Exception) ErrorCustom(code int, msg string) response.IResponse {
 }
 
 // JsonWithCtx Exception 使用 ContextProvider 上下文响应 JSON
-func (e *Exception) JsonWithCtx(c providerctx.ICoreContext, status ...int) error {
+func (e *Exception) JsonWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	defer e.Release()
 	statusCode := http.StatusOK
 	if len(status) > 0 {
@@ -162,7 +162,7 @@ func (e *Exception) JsonWithCtx(c providerctx.ICoreContext, status ...int) error
 }
 
 // SendWithCtx 使用 ICoreContext 上下文提供者返回 JSON 响应
-func (e *Exception) SendWithCtx(c providerctx.ICoreContext, status ...int) error {
+func (e *Exception) SendWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	return e.JsonWithCtx(c, status...)
 }
 
@@ -320,7 +320,7 @@ func (e *ValidateException) ErrorCustom(code int, msg string) response.IResponse
 }
 
 // JsonWithCtx ValidateException 使用 ContextProvider 上下文响应 JSON
-func (e *ValidateException) JsonWithCtx(c providerctx.ICoreContext, status ...int) error {
+func (e *ValidateException) JsonWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	defer e.Release()
 	statusCode := http.StatusOK
 	if len(status) > 0 {
@@ -330,7 +330,7 @@ func (e *ValidateException) JsonWithCtx(c providerctx.ICoreContext, status ...in
 }
 
 // SendWithCtx 使用 ICoreContext 上下文提供者返回 JSON 响应
-func (e *ValidateException) SendWithCtx(c providerctx.ICoreContext, status ...int) error {
+func (e *ValidateException) SendWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	return e.JsonWithCtx(c, status...)
 }
 

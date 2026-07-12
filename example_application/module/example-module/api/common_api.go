@@ -3,9 +3,9 @@ package api
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
 )
 
 // CommonHandler 示例公共处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
@@ -38,10 +38,10 @@ func (h *CommonHandler) TestGetInstance(c *fiber.Ctx) error {
 	}
 
 	if ts, ok := testService.(*service.TestService); ok {
-		return fiberhouse.Response().SuccessWithData(t + ":" + ts.HelloWorld()).JsonWithCtx(providerctx.WithFiberContext(c))
+		return fiberhouse.Response().SuccessWithData(t + ":" + ts.HelloWorld()).JsonWithCtx(adaptorctx.WithFiberContext(c))
 	}
 
-	return fiberhouse.Response().SuccessWithData(t).SendWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(t).SendWithCtx(adaptorctx.WithFiberContext(c))
 }
 
 // TestGetMustInstance 测试获取注册实例，通过 fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例，无需编译阶段的wire依赖注入
@@ -51,7 +51,7 @@ func (h *CommonHandler) TestGetMustInstance(c *fiber.Ctx) error {
 	// 通过fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例
 	testService := fiberhouse.GetMustInstance[*service.TestService](h.KeyTestService)
 
-	return fiberhouse.Response().SuccessWithData(t + testService.HelloWorld()).SendWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(t + testService.HelloWorld()).SendWithCtx(adaptorctx.WithFiberContext(c))
 }
 
 // TestGetMustInstanceFailed 测试获取注册实例失败，通过 fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例，无需编译阶段的wire依赖注入
@@ -61,5 +61,5 @@ func (h *CommonHandler) TestGetMustInstanceFailed(c *fiber.Ctx) error {
 	// 通过fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例
 	testService := fiberhouse.GetMustInstance[service.TestService](h.KeyTestService)
 
-	return fiberhouse.Response().SuccessWithData(t + testService.HelloWorld()).SendWithCtx(providerctx.WithFiberContext(c))
+	return fiberhouse.Response().SuccessWithData(t + testService.HelloWorld()).SendWithCtx(adaptorctx.WithFiberContext(c))
 }

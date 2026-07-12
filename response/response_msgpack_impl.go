@@ -9,7 +9,7 @@ package response
 import (
 	"sync"
 
-	"github.com/lamxy/fiberhouse/provider/context"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -48,7 +48,7 @@ func (r *RespInfoMagPack) GetData() interface{} {
 }
 
 // SendWithCtx 使用MessagePack格式发送响应
-func (r *RespInfoMagPack) SendWithCtx(c context.ICoreContext, status ...int) error {
+func (r *RespInfoMagPack) SendWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	statusCode := 200
 	if len(status) > 0 {
 		statusCode = status[0]
@@ -71,7 +71,7 @@ func (r *RespInfoMagPack) SendWithCtx(c context.ICoreContext, status ...int) err
 }
 
 // JsonWithCtx 使用JSON格式发送响应
-func (r *RespInfoMagPack) JsonWithCtx(c context.ICoreContext, status ...int) error {
+func (r *RespInfoMagPack) JsonWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	statusCode := 200
 	if len(status) > 0 {
 		statusCode = status[0]

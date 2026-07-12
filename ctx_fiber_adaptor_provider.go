@@ -9,7 +9,7 @@ package fiberhouse
 import (
 	"fmt"
 	"github.com/gofiber/fiber/v2"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 )
 
 // CoreCtxFiberProvider Fiber 框架核心上下文提供者
@@ -47,5 +47,5 @@ func (p *CoreCtxFiberProvider) Initialize(ctx IContext, initFunc ...ProviderInit
 		return nil, fmt.Errorf("provider '%s' Initialize: invalid core context type: expected *fiber.Ctx, got %T", p.Name(), fiberCtx)
 	}
 
-	return providerctx.WithFiberContext(fiberCtx), nil
+	return adaptorctx.WithFiberContext(fiberCtx), nil
 }

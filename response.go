@@ -7,9 +7,9 @@
 package fiberhouse
 
 import (
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/exception"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"github.com/lamxy/fiberhouse/response"
 	"strings"
 	"sync"
@@ -64,7 +64,7 @@ func Response() *ResponseWrap {
 }
 
 // SendWithCtx 使用核心上下文接口响应 JSON 数据
-func (r *ResponseWrap) SendWithCtx(c providerctx.ICoreContext, status ...int) error {
+func (r *ResponseWrap) SendWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	defer r.Release()
 
 	// 获取响应信息提供者管理器单例

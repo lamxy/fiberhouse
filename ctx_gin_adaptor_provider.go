@@ -9,7 +9,7 @@ package fiberhouse
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 )
 
 // CoreCtxGinProvider Gin 框架上下文提供者
@@ -44,5 +44,5 @@ func (p *CoreCtxGinProvider) Initialize(ctx IContext, initFunc ...ProviderInitFu
 		return nil, fmt.Errorf("provider '%s' Initialize: invalid core context type: expected *gin.Context, got %T", p.Name(), ginCtx)
 	}
 
-	return providerctx.WithGinContext(ginCtx), nil
+	return adaptorctx.WithGinContext(ginCtx), nil
 }

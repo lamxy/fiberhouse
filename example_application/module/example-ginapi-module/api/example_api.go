@@ -9,11 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/lamxy/fiberhouse"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
 	"github.com/lamxy/fiberhouse/response"
 )
 
@@ -61,7 +61,7 @@ func (h *ExampleHandler) HelloWorld(c *gin.Context) {
 	// 获取TestService服务实例
 	if tss, ok := ts.(*service.TestService); ok {
 		// 成功的响应
-		_ = response.RespSuccess(tss.HelloWorld()).JsonWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+		_ = response.RespSuccess(tss.HelloWorld()).JsonWithCtx(adaptorctx.WithGinContext(c), http.StatusOK)
 		return
 	}
 
@@ -119,7 +119,7 @@ func (h *ExampleHandler) GetExample(c *gin.Context) {
 	}
 
 	// 返回成功响应
-	_ = fiberhouse.Response().SuccessWithData(exam).SendWithCtx(providerctx.WithGinContext(c))
+	_ = fiberhouse.Response().SuccessWithData(exam).SendWithCtx(adaptorctx.WithGinContext(c))
 }
 
 // GetExampleWithTaskDispatcher godoc
@@ -168,7 +168,7 @@ func (h *ExampleHandler) GetExampleWithTaskDispatcher(c *gin.Context) {
 	}
 
 	// 返回成功响应
-	_ = fiberhouse.Response().SuccessWithData(resp).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(resp).SendWithCtx(adaptorctx.WithGinContext(c), http.StatusOK)
 }
 
 // CreateExample godoc
@@ -219,7 +219,7 @@ func (h *ExampleHandler) CreateExample(c *gin.Context) {
 	}
 
 	// 返回成功响应
-	_ = fiberhouse.Response().SuccessWithData(resp).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(resp).SendWithCtx(adaptorctx.WithGinContext(c), http.StatusOK)
 }
 
 // GetExamples godoc
@@ -275,5 +275,5 @@ func (h *ExampleHandler) GetExamples(c *gin.Context) {
 	}
 
 	// 返回成功响应
-	_ = fiberhouse.Response().SuccessWithData(resp).SendWithCtx(providerctx.WithGinContext(c), http.StatusOK)
+	_ = fiberhouse.Response().SuccessWithData(resp).SendWithCtx(adaptorctx.WithGinContext(c), http.StatusOK)
 }

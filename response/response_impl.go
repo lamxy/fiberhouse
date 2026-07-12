@@ -8,7 +8,7 @@
 package response
 
 import (
-	providerctx "github.com/lamxy/fiberhouse/provider/context"
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"net/http"
 	"sync"
 )
@@ -146,8 +146,8 @@ func (r *RespInfo) From(resp IResponse, needToRelease bool) IResponse {
 }
 
 // JsonWithCtx 使用 ICoreContext 上下文提供者返回 JSON 响应，并释放对象回池
-// 使用 provider.Context(c any).WithAppCtx(c IApplicationContext) providerCtx.ICoreContext 作为入参
-func (r *RespInfo) JsonWithCtx(c providerctx.ICoreContext, status ...int) error {
+// 使用 provider.Context(c any).WithAppCtx(c IApplicationContext) adaptorctx.ICoreContext 作为入参
+func (r *RespInfo) JsonWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	defer r.Release()
 	statusCode := http.StatusOK
 	if len(status) > 0 {
@@ -158,7 +158,7 @@ func (r *RespInfo) JsonWithCtx(c providerctx.ICoreContext, status ...int) error 
 }
 
 // SendWithCtx 使用 ICoreContext 上下文提供者返回 JSON 响应
-func (r *RespInfo) SendWithCtx(c providerctx.ICoreContext, status ...int) error {
+func (r *RespInfo) SendWithCtx(c adaptorctx.ICoreContext, status ...int) error {
 	return r.JsonWithCtx(c, status...)
 }
 
