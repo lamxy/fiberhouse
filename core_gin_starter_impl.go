@@ -12,8 +12,8 @@ import (
 	"errors"
 	"fmt"
 	ginJson "github.com/gin-gonic/gin/codec/json"
+	adaptorerrorhandler "github.com/lamxy/fiberhouse/adaptor/errorhandler"
 	"github.com/lamxy/fiberhouse/appconfig"
-	"github.com/lamxy/fiberhouse/provider/adaptor"
 	"net"
 	"net/http"
 	"os"
@@ -225,7 +225,7 @@ func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProvi
 	cg.coreApp.Use(MustRecoverMiddleware[func(ctx *gin.Context)](recoverHandler))
 
 	// 注册错误处理器中间件
-	cg.coreApp.Use(adaptor.GinErrorHandler(eh.ErrorHandler))
+	cg.coreApp.Use(adaptorerrorhandler.GinErrorHandler(eh.ErrorHandler))
 
 	// 注册HTTP请求日志中间件
 	cg.coreApp.Use(cg.loggerMiddleware())

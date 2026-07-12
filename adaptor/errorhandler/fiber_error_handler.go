@@ -4,7 +4,7 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy
 
-package adaptor
+package errorhandler
 
 import (
 	"github.com/gofiber/fiber/v2"

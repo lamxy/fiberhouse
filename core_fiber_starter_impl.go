@@ -9,7 +9,7 @@ package fiberhouse
 import (
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
-	"github.com/lamxy/fiberhouse/provider/adaptor"
+	adaptorerrorhandler "github.com/lamxy/fiberhouse/adaptor/errorhandler"
 	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
@@ -123,7 +123,7 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 		ServerHeader: cfg.String("application.server.appServerHeader"),
 		// 设置自定义错误处理函数
 		// 该函数会在请求处理过程中发生错误时被调用
-		ErrorHandler: adaptor.FiberErrorHandler(eh.ErrorHandler),
+		ErrorHandler: adaptorerrorhandler.FiberErrorHandler(eh.ErrorHandler),
 		// 设置并发处理请求的数量
 		Concurrency: cfg.Int("application.server.appConcurrency"),
 		// 设置是否启用长连接
