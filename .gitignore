@@ -19,6 +19,7 @@ files/
 graphify-out/
 graphify_evaluation_report.md
 .venv/
+.worktrees/
 __pycache__/
 *.pyc
 .codegraph-qa-out/assets/
