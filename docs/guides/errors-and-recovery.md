@@ -38,19 +38,24 @@ if err != nil {
 
 也可以 `c.Set("error", err)`。Gin 错误 adaptor 在 `c.Next()` 返回后先检查 `c.Errors`，只处理最后一个；仅当 `c.Errors` 为空时才读取 Context 的 `"error"`。单纯 `return`、记录日志或把 error 放到其他 key 都不会自动产生统一错误响应。
 
-若统一 `ErrorHandler` 的响应发送返回错误，Gin adaptor 会 panic；由于 recovery 中间件注册在它外层，该 panic 会再次进入 panic recovery。应用 handler 不应在 `c.Error` 后继续写另一个响应。
+若统一 `ErrorHandler` 的响应发送返回非 nil 错误，Gin adaptor 会 panic；由于 recovery 中间件注册在它外层，该 panic 会再次进入 panic recovery。不过 `GinContext.JSON` 在调用 Gin 的 JSON 写出后无条件返回 nil，所以普通 JSON 错误响应的编码/写出失败不会通过该条件触发 panic；二进制编码或 `Writer.Write` 错误仍可能返回。应用 handler 不应在 `c.Error` 后继续写另一个响应。
 
 ## panic recovery 与 Provider 选择
 
 `RecoveryPManager` 绑定到应用中间件位点，按 `BootConfig.CoreType` 选择 `FiberRecoveryProvider` 或 `GinRecoveryProvider`。没有匹配 Provider、返回值未实现 `IRecover`，或 Manager 未装配都会在中间件注册阶段失败。
 
-两个 starter 都通过 `NewErrorHandlerOnce` 取得进程级 ErrorHandler，并用以下 `RecoverConfig` 注册 recovery：
+两个 starter 都通过 `NewErrorHandlerOnce` 取得进程级 ErrorHandler，并传入 `RecoverConfig`。字段的当前实际消费如下：
 
-- `AppCtx`：当前应用 Context；
-- `EnableStackTrace=true`，`StackTraceHandler=DefaultStackTraceHandler`；
-- `Logger`：应用 logger，`Stdout=false`；
-- `JsonCodec`：当前引擎选择的 JSON marshal；
-- `DebugMode`：`application.recover.debugMode`。
+| 字段 | starter 传值 | recovery 当前怎样读取 |
+|---|---|---|
+| `Next` | 未设置 | Fiber/Gin 中间件进入 handler 前检查；标准装配为 nil |
+| `EnableStackTrace` | `true` | panic 后决定是否调用 `StackTraceHandler` |
+| `StackTraceHandler` | `DefaultStackTraceHandler` | 只在 `EnableStackTrace=true` 且发生 panic 时调用 |
+| `DebugMode` | `application.recover.debugMode` | 决定 panic 响应是否保留详细错误/data |
+| `JsonCodec` | 当前引擎选择的 JSON marshal | 只在 debug 模式处理非 `error` 的未知 panic 值，且该值可 JSON 化时使用；普通异常响应和堆栈日志不使用它 |
+| `AppCtx`、`Logger`、`Stdout` | 当前 Context、应用 logger、`false` | 当前 Fiber/Gin recovery 实现没有读取这些字段 |
+
+`DefaultStackTraceHandler` 自行从进程级 ErrorHandler 的 Context 取得配置与 logger；params/query/headers 和格式化堆栈使用 `GetFastTrafficCodecKey()` 对应的容器 codec。这与引擎 JSON codec、`RecoverConfig.JsonCodec` 是三个应分别装配和排障的入口。
 
 `RecoverConfig` 自身的零参数默认值则是 stack trace 关闭、空 handler、`Stdout=true`、`DebugMode=false`。starter 明确覆盖了其中一部分，所以不能用结构体默认值描述标准 Web 装配。`configDefault` 把最终配置写入 package 级 `ConfigConfigured`；它不是每个应用独立保存的配置，也没有并发更新协议。
 
