@@ -7,17 +7,51 @@
 package fiberhouse
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sync"
 
 	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
+	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component/jsonconvert"
+	frameUtils "github.com/lamxy/fiberhouse/utils"
 
 	"github.com/lamxy/fiberhouse/exception"
 
 	"github.com/gofiber/fiber/v2"
 )
+
+var (
+	debugFlag      = "X-your-custom-debug-flag"             // 自定义debug标记key，由后端recover配置定义覆盖
+	debugFlagValue = "f0dc4970-ed31-4598-acd8-b5c5fd66c12e" // 自定义debug标记值，由后端recover配置定义覆盖
+	requestID      = "traceId"                              // 请求ID字段名称，由后端trace配置定义覆盖
+)
+
+// ErrorStack 获取当前的堆栈信息字符串
+func ErrorStack(debugStack ...bool) string {
+	//if len(debugStack) > 0 && debugStack[0] {
+	//	return frameUtils.StackMsg()
+	//}
+	return frameUtils.CaptureStack()
+}
+
+// GetJsonIndent 从堆栈字符串获取堆栈行并转换为JSON缩进格式字节切片
+func GetJsonIndent(appCtx IApplicationContext, s string, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+	if len(s) == 0 {
+		return nil
+	}
+	lines := frameUtils.DebugStackLines(s)
+	if len(lines) == 0 {
+		return nil
+	}
+	j, err := json.MarshalIndent(lines, "", "  ")
+	if err != nil {
+		log.Warn(appCtx.GetConfig().LogOriginRecover()).Str(requestID, traceId).Err(err).Msg("getJson from stack lines error")
+		return nil
+	}
+	return j
+}
 
 // ErrorHandler 错误处理器，提供错误处理和恢复中间件功能
 type ErrorHandler struct {

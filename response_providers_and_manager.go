@@ -12,6 +12,8 @@ import (
 	"github.com/lamxy/fiberhouse/response"
 )
 
+// Providers-----------------------------------------------------------------------------------
+
 // RespInfoProtobufProvider 响应信息 Protobuf 提供者
 type RespInfoProtobufProvider struct {
 	IProvider

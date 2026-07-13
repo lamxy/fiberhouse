@@ -8,9 +8,12 @@ package fiberhouse
 
 import (
 	"fmt"
-	"github.com/lamxy/fiberhouse/constant"
 	"sync"
+
+	"github.com/lamxy/fiberhouse/constant"
 )
+
+// Providers-----------------------------------------------------------------------------------
 
 // FiberRecoveryProvider Fiber 恢复提供者
 type FiberRecoveryProvider struct {
@@ -36,6 +39,8 @@ func (p *FiberRecoveryProvider) Initialize(ctx IContext, initFunc ...ProviderIni
 	return NewFiberRecovery(ctx.(IApplicationContext)), nil
 }
 
+// ---------------------------------------------------------------------------
+
 // GinRecoveryProvider Gin 恢复提供者
 type GinRecoveryProvider struct {
 	IProvider
@@ -60,7 +65,7 @@ func (p *GinRecoveryProvider) Initialize(ctx IContext, initFunc ...ProviderInitF
 	return NewGinRecovery(ctx.(IApplicationContext)), nil
 }
 
-//-----------------------------------------------------------------------------------
+// PManager-----------------------------------------------------------------------------------
 
 // RecoveryPManager 恢复惊慌管理器
 type RecoveryPManager struct {
