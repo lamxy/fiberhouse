@@ -103,9 +103,12 @@ type Rebuilder interface {
 - 启动期：完成所有 `Register` / `Registers`，检查重复结果，对必需 key 调用 `Get` 并验证具体类型。
 - 运行期：以 `Get` 和已持有实例的只读访问为主，不动态替换 initializer。
 - 重建期：先停止或隔离流量，由资源所有者创建新实例、切换引用并关闭旧实例；不要假设 `Rebuild` 已完成这些步骤。
-- 停止期：先取消 keepalive、任务和请求生产者，再逐项关闭资源，最后 `Clear` / `ClearAll`。
 
-框架当前没有提供 keepalive cancel，也没有统一逐项关闭链，因此上述取消与资源回收需要应用补齐。GlobalManager 的原子字段与 `sync.Map` 保护局部读写，不会让业务对象自身变成线程安全，也不会让 `Rebuild`、`Release`、`ClearAll` 成为无缝并发切换。
+内建 keepalive 是进程生命周期 goroutine：`RegisterGlobalsKeepalive` 不返回 cancel，也没有把 ticker 绑定到 shutdown context；一旦启用，只能依赖进程退出终止，应用无法在受控关闭流程中取消它。这是依据当前源码得出的静态生命周期限制，不表示已经通过运行时故障复现。
+
+如果需要可控关闭，应禁用 `application.globalManage.keepAlive`，由应用自建扫描器并持有其 `context.CancelFunc`、`time.Ticker` 和退出等待机制。此时停止顺序才是：先 cancel context、stop ticker 并等待自建扫描器退出，再停止请求与任务生产者，逐项释放资源，清理容器，最后关闭日志。不要在启用内建 keepalive 时照搬这套顺序，因为应用没有可调用的内建取消句柄。
+
+框架当前也没有统一逐项关闭链，因此资源回收仍需应用补齐。GlobalManager 的原子字段与 `sync.Map` 保护局部读写，不会让业务对象自身变成线程安全，也不会让 `Rebuild`、`Release`、`ClearAll` 成为无缝并发切换。
 
 ## 已知限制
 
