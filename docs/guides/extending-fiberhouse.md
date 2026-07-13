@@ -16,7 +16,7 @@ FiberHouse 当前可用的扩展单位是 Provider、Manager、Location、应用
 
 ## 新增 Provider 与 Manager
 
-下面骨架展示完整协议。`SetType` 让 `RunServer` 能把 Provider 分发给 Manager；`SetTarget` 只是这里选择 Fiber 的应用约定，必须由 Manager 显式比较；`MountToParent` 让基类动态分派到外层实现；Manager 还必须设置并绑定一个真实消费的 Location。
+下面骨架展示完整协议。`SetType` 让 `RunServer` 能把 Provider 分发给 Manager；`SetTarget` 只是这里选择 Fiber 的应用约定，必须由 Manager 显式比较；`MountToParent` 让基类动态分派到外层实现。Manager 必须设置 Location；`ZeroLocation` 由 `RunServer` 遍历传入的 Manager 列表消费，不需要绑定到 Location 的 Manager 列表。
 
 ```go
 package extension
@@ -59,9 +59,6 @@ func NewWarmupManager(ctx fh.IApplicationContext) *WarmupManager {
 		SetType(warmupType).
 		SetOrBindToLocation(fh.ProviderLocationDefault().ZeroLocation)}
 	m.MountToParent(m)
-	if err := fh.ProviderLocationDefault().ZeroLocation.Bind(m); err != nil {
-		panic(err) // 不使用会吞掉 Bind error 的便捷 bind 参数
-	}
 	return m
 }
 
@@ -81,7 +78,7 @@ func (m *WarmupManager) LoadProvider(
 }
 ```
 
-这个 Manager 显式处于 `ZeroLocation`；`RunServer` 会在创建 Starter 前从传入的 Manager 列表加载所有 zero-location Manager。装配时 Provider 与 Manager 两边都要进入 `FiberHouse`：
+这个 Manager 显式处于 `ZeroLocation`；只要它进入 `WithPManagers`，`RunServer` 就会在创建 Starter 前加载它，无需也不应额外调用 `ZeroLocation.Bind`。装配时 Provider 与 Manager 两边都要进入 `FiberHouse`：
 
 ```go
 providers := fh.DefaultProviders().AndMore(NewWarmupProvider())
@@ -101,6 +98,8 @@ var (
 	afterCatalog = fh.ProviderLocationGen().MustCustom("AfterCatalog")
 )
 
+type CatalogManager struct{ fh.IProviderManager }
+
 func NewCatalogManager(ctx fh.IApplicationContext) *CatalogManager {
 	m := &CatalogManager{IProviderManager: fh.NewProviderManager(ctx).
 		SetName("CatalogManager").
@@ -113,6 +112,18 @@ func NewCatalogManager(ctx fh.IApplicationContext) *CatalogManager {
 	return m
 }
 
+func (m *CatalogManager) LoadProvider(
+	loadFuncs ...fh.ProviderLoadFunc,
+) (any, error) {
+	m.Check()
+	for _, provider := range m.List() {
+		if _, err := provider.Initialize(m.GetContext()); err != nil {
+			return nil, fmt.Errorf("initialize %s: %w", provider.Name(), err)
+		}
+	}
+	return nil, nil
+}
+
 func runAfterCatalog() error {
 	for _, manager := range afterCatalog.GetManagers() {
 		if _, err := manager.LoadProvider(); err != nil {
@@ -123,7 +134,7 @@ func runAfterCatalog() error {
 }
 ```
 
-应用必须在自己的可达生命周期中调用 `runAfterCatalog`。若希望框架调用，优先绑定已经被消费的默认 Location，并核对该入口是否真的执行 Manager；例如 `RunServer` 虽把若干 Manager 传给 Starter，内建 Fiber/Gin 并不会读取所有参数。`LocationServerShutdownBefore`、`LocationServerShutdownAfter` 和 `LocationAdaptCoreCtxChoose` 当前没有标准启动消费者。
+`CatalogManager` 必须重载 `LoadProvider`；只嵌入基类方法会让基类经 `sonManager` 再分派回自身，不能形成有效加载链。应用还必须在自己的可达生命周期中调用 `runAfterCatalog`。若希望框架调用，优先绑定已经被消费的默认 Location，并核对该入口是否真的执行 Manager；例如 `RunServer` 虽把若干 Manager 传给 Starter，内建 Fiber/Gin 并不会读取所有参数。`LocationServerShutdownBefore`、`LocationServerShutdownAfter` 和 `LocationAdaptCoreCtxChoose` 当前没有标准启动消费者。
 
 ## 新增中间件或路由注册器
 
@@ -299,7 +310,8 @@ func (p *EchoCoreProvider) Initialize(
 
 - Provider 的 Name 唯一，Type 与 Manager 完全一致；需要选择时 Provider 已 `SetTarget`，Manager 明确比较 Target/Version/Name。
 - 每个自定义 Provider 与 Manager 都在构造器中调用 `MountToParent`；不是只构造了内部基类。
-- Manager 已设置 Location，直接 `Bind` 的 error 已检查；该 Location 存在可达消费者。
+- Zero-location Manager 已通过 `SetOrBindToLocation(ZeroLocation)` 设置位置并进入 `WithPManagers`，没有额外调用 `Bind`；`RunServer` 会按 Location ID 直接加载它。
+- 非 zero Location 只有在消费者调用 `GetManagers()` 时才需要显式 `Bind`；绑定 error 已检查，且该消费者确实可达。
 - Provider 与 Manager 分别进入 `WithProviders` 与 `WithPManagers`；默认集合不是自动装配。
 - 初始化错误能到达可观察入口，没有被 `RunServer`、Manager 或日志分支静默忽略。
 - 所有 map/registry 在启动期冻结；Manager 若需要顺序，自己排序而不依赖 map 遍历。

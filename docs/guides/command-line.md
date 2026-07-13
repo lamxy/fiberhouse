@@ -64,7 +64,7 @@ commandstarter.RunCommandStarter(starter)
 
 ## 注册命令、全局 flag 与 action
 
-四个 `ApplicationCmdRegister` 回调接收的 `core` 静态类型是 `interface{}`；当前 `CoreCmdCli` 传入的是 `*cli.App`。应用应检查类型而不是直接信任示例中的强制断言：
+`RegisterGlobalErrHandler`、`RegisterCommands`、`RegisterCoreGlobalOptional` 三个 `ApplicationCmdRegister` 回调接收的 `core` 静态类型是 `interface{}`；`RegisterApplicationGlobals` 没有参数。当前 `CoreCmdCli` 向前三个回调传入 `*cli.App`，应用应检查类型而不是直接信任示例中的强制断言：
 
 ```go
 func (a *CommandApplication) RegisterCommands(core interface{}) {
@@ -110,7 +110,24 @@ Frame 先把配置中的 `LogOrigin` 子日志器 initializer 注册到 `GlobalM
 
 `RegisterGlobalErrHandler` 由应用给 `cli.App.ExitErrHandler` 赋值。仓库示例会记录错误；若错误实现 `cli.ExitCoder`，使用其 exit code，否则使用 1，并通过 `cli.OsExiter` 退出进程。这是一种应用策略，不是框架自动策略。
 
-需要可测试的退出码和确定清理时，不应把所有回收工作放在 `defer` 后再让深层 `ExitErrHandler` 调用 `os.Exit`：`os.Exit` 不执行 defer。可以让命令 action 返回带 exit code 的 error，在最外层统一记录、关闭资源并退出；但当前 `RunCommandStarter` 又丢弃 `AppCoreRun` error，因此严格入口需要直接按相同顺序驱动 `CommandStarter`，最后自行接收 `AppCoreRun()`。
+需要可测试的退出码和确定清理时，不应把所有回收工作放在 `defer` 后再让深层 `ExitErrHandler` 调用 `os.Exit`：`os.Exit` 不执行 defer。仅仅绕过 `RunCommandStarter` 还不够；应用必须让 `RegisterGlobalErrHandler` 安装一个只记录、不调用 `cli.OsExiter` / `os.Exit` 的 handler，或者在自定义启动流程中跳过该注册阶段。这样 `cli.App.Run` 的 error 才能经 `AppCoreRun()` 返回顶层。
+
+严格入口可按同一阶段顺序显式驱动：
+
+```go
+starter.InitCoreApp()
+starter.RegisterGlobalErrHandler(starter.GetFrameCmdApp()) // 应用实现必须禁止深层退出
+starter.RegisterCommands(starter.GetFrameCmdApp())
+starter.RegisterCoreGlobalOptional(starter.GetFrameCmdApp())
+starter.RegisterApplicationGlobals()
+
+runErr := starter.AppCoreRun()
+closeErr := closeApplicationResources()
+exitCode := chooseExitCode(runErr, closeErr) // 可识别 cli.ExitCoder
+os.Exit(exitCode) // 所有清理完成后，且只在最外层退出
+```
+
+若应用不能保证 `RegisterGlobalErrHandler` 的实现不退出，就不要调用该阶段，改由顶层处理 `AppCoreRun` 返回值。命令 action 可以返回带 exit code 的 error；顶层统一记录运行与关闭错误，再决定最终 exit code。
 
 CLI 当前没有统一 shutdown 阶段，也不会自动调用 GlobalManager 中实例的 `Close`。安全顺序应由入口建立：停止新工作，等待命令启动的 goroutine，关闭数据库/缓存/client，关闭日志 writer，最后决定退出码。`GlobalManager.ClearAll(true)` 只删除引用，不能替代逐项关闭。
 
