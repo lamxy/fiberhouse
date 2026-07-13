@@ -57,8 +57,10 @@ cd fiberhouse
 go mod download
 
 docker compose -f docs/docker_compose_db_redis_yaml/docker-compose.yml up -d
+until docker compose -f docs/docker_compose_db_redis_yaml/docker-compose.yml \
+  exec -T mysql mysqladmin ping -uroot -proot --silent; do sleep 2; done
 docker compose -f docs/docker_compose_db_redis_yaml/docker-compose.yml \
-  exec mysql mysql -uroot -proot \
+  exec -T mysql mysql -uroot -proot \
   -e 'CREATE DATABASE IF NOT EXISTS test CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;'
 
 APP_ENV_application_env=dev go run ./example_main/main.go
@@ -209,6 +211,8 @@ go build ./...
 go test ./...
 go vet ./...
 ```
+
+当前 `go test ./...` 的已知基线包含 `bootstrap` 1 项和 `component/writer` 3 项失败；本次文档整理不修复这些测试。
 
 `Makefile` 还提供 `build`、`lint` 和交叉构建目标，但使用前应先核对其目标路径与本机工具。示例需要外部服务的运行验证与纯框架构建是两件事。
 

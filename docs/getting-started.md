@@ -51,8 +51,11 @@ Compose 会启动：
 [`application_dev.yml`](../example_config/application_dev.yml) 的 MySQL DSN 指向 `test` 数据库，而 Compose 文件只设置 root 密码。启动后需要显式创建数据库：
 
 ```bash
+until docker compose -f docs/docker_compose_db_redis_yaml/docker-compose.yml \
+  exec -T mysql mysqladmin ping -uroot -proot --silent; do sleep 2; done
+
 docker compose -f docs/docker_compose_db_redis_yaml/docker-compose.yml \
-  exec mysql mysql -uroot -proot \
+  exec -T mysql mysql -uroot -proot \
   -e 'CREATE DATABASE IF NOT EXISTS test CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;'
 ```
 
