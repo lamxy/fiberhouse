@@ -63,7 +63,7 @@ Gin 的运行模式键是 `application.plugins.server.gin.mode`，fallback 为 `
 - Fiber 把函数保存在单个 `fiber.App` 的配置中，作用域是该引擎实例。
 - Gin 修改 `gin/codec/json.API` 包级变量。这是进程全局副作用：同进程创建多套 Gin 应用并选择不同 codec 不具备隔离保证，初始化先后也会影响 Gin 的其他使用者。
 
-这里的引擎 JSON codec 负责请求绑定和 JSON 写出。starter 还把同一个 marshal 函数放进 `RecoverConfig.JsonCodec`，但 recovery 只在 debug 模式处理“既不是 `error` 也不是已知异常”的 panic 值时用它尝试 JSON 转换。`DefaultStackTraceHandler` 编码 params/query/headers 和格式化堆栈时读取的则是应用注册器 `GetFastTrafficCodecKey()` 指向的容器实例，这是第三个、由应用装配的 codec 入口；它不等同于 `BootConfig.TrafficCodec` 的选择结果。示例应用可以让两者都指向 Sonic，但框架没有强制它们相同。
+这里的引擎 JSON codec 负责请求绑定和 JSON 写出。starter 还把同一个 marshal 函数放进 `RecoverConfig.JsonCodec`，但 recovery 只在 debug 模式处理“既不是 `error` 也不是已知异常”的 panic 值时用它尝试 JSON 转换。`DefaultStackTraceHandler` 编码 params/query/headers 与异常 data 时读取的则是应用注册器 `GetFastTrafficCodecKey()` 指向的容器实例，这是第三个、由应用装配的 codec 入口；它不等同于 `BootConfig.TrafficCodec` 的选择结果。`DebugStackLines` 是例外：`GetJsonIndent` 忽略传入的 codec 参数，固定调用标准库 `encoding/json.MarshalIndent`。示例应用可以让前述 codec 都指向 Sonic，但框架没有强制它们相同。
 
 以上三个 codec 入口都不决定统一响应是否改用 MsgPack/Protobuf；后者是 `ResponseWrap.SendWithCtx` 的独立协商，见[《响应与序列化》](response-and-serialization.md)。
 

@@ -55,7 +55,7 @@ if err != nil {
 | `JsonCodec` | 当前引擎选择的 JSON marshal | 只在 debug 模式处理非 `error` 的未知 panic 值，且该值可 JSON 化时使用；普通异常响应和堆栈日志不使用它 |
 | `AppCtx`、`Logger`、`Stdout` | 当前 Context、应用 logger、`false` | 当前 Fiber/Gin recovery 实现没有读取这些字段 |
 
-`DefaultStackTraceHandler` 自行从进程级 ErrorHandler 的 Context 取得配置与 logger；params/query/headers 和格式化堆栈使用 `GetFastTrafficCodecKey()` 对应的容器 codec。这与引擎 JSON codec、`RecoverConfig.JsonCodec` 是三个应分别装配和排障的入口。
+`DefaultStackTraceHandler` 自行从进程级 ErrorHandler 的 Context 取得配置与 logger；params/query/headers 和异常 data 使用 `GetFastTrafficCodecKey()` 对应的容器 codec。`DebugStackLines` 的格式化不使用该 codec：`GetJsonIndent` 忽略传入的 encoder 参数，固定调用标准库 `encoding/json.MarshalIndent`。fast traffic codec、引擎 JSON codec 与 `RecoverConfig.JsonCodec` 是三个应分别装配和排障的入口。
 
 `RecoverConfig` 自身的零参数默认值则是 stack trace 关闭、空 handler、`Stdout=true`、`DebugMode=false`。starter 明确覆盖了其中一部分，所以不能用结构体默认值描述标准 Web 装配。`configDefault` 把最终配置写入 package 级 `ConfigConfigured`；它不是每个应用独立保存的配置，也没有并发更新协议。
 
