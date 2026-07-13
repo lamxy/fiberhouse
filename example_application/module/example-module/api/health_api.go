@@ -27,5 +27,5 @@ func GetKeyHealthHandler(ns ...string) string {
 
 func (ha *HealthHandler) Liveness(c *fiber.Ctx) error {
 	result := ha.Service.GetHealth()
-	return c.Status(fiber.StatusOK).JSON(response.RespSuccess(result))
+	return c.Status(fiber.StatusOK).JSON(response.SuccessWithData(result))
 }

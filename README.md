@@ -6,8 +6,6 @@
 <img src="https://img.shields.io/github/issues/lamxy/fiberhouse.svg" alt="GitHub Issues"></img>
 
 
-📖 中文 | [English](./docs/README_en.md)
-
 ## 🏠 关于 FiberHouse
 
 FiberHouse 是默认基于 Fiber 核心的高性能、可装配、模块化设计的 Go Web & CMD 框架，内置全局管理器、配置器、统一日志器、验证包装器以及数据库、缓存、中间件、统一异常处理等框架组件，以及完整的命令行子框架的实现，开箱即用。

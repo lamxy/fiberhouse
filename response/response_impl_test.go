@@ -71,28 +71,28 @@ func TestRespInfo_Reset(t *testing.T) {
 
 // ----------------- Test: 成功响应构造 -----------------
 
-func TestRespSuccess_WithPool(t *testing.T) {
+func TestSuccessWithData_WithPool(t *testing.T) {
 	// 无数据
-	resp1 := RespSuccess()
+	resp1 := SuccessWithData()
 	defer resp1.Release()
 	if resp1.GetCode() != 0 || resp1.GetMsg() != "ok" || resp1.GetData() != nil {
-		t.Fatalf("RespSuccess()期望(0,ok,nil)，实际(%d,%s,%v)", resp1.GetCode(), resp1.GetMsg(), resp1.GetData())
+		t.Fatalf("SuccessWithData()期望(0,ok,nil)，实际(%d,%s,%v)", resp1.GetCode(), resp1.GetMsg(), resp1.GetData())
 	}
 
 	// 有数据
 	testData := []string{"a", "b"}
-	resp2 := RespSuccess(testData)
+	resp2 := SuccessWithData(testData)
 	defer resp2.Release()
 	if resp2.GetCode() != 0 || resp2.GetMsg() != "ok" {
-		t.Fatalf("RespSuccess(data)基础字段错误")
+		t.Fatalf("SuccessWithData(data)基础字段错误")
 	}
 	if data, ok := resp2.GetData().([]string); !ok || len(data) != 2 || data[0] != "a" {
-		t.Fatalf("RespSuccess(data)数据不匹配: %v", resp2.GetData())
+		t.Fatalf("SuccessWithData(data)数据不匹配: %v", resp2.GetData())
 	}
 }
 
-func TestRespSuccessWithoutPool(t *testing.T) {
-	resp := RespSuccessWithoutPool("test")
+func TestSuccessWithoutPool(t *testing.T) {
+	resp := SuccessWithoutPool("test")
 	// 注意：这个函数实际实现有bug，应该传递data参数
 	if resp.GetCode() != 0 || resp.GetMsg() != "ok" {
 		t.Fatalf("RespSuccessWithoutPool基础字段错误")
@@ -105,7 +105,7 @@ func TestRespSuccessWithoutPool(t *testing.T) {
 // ----------------- Test: 错误响应构造 -----------------
 
 func TestRespError_WithPool(t *testing.T) {
-	resp := RespError(40001, "参数错误")
+	resp := ErrorCustom(40001, "参数错误")
 	defer resp.Release()
 
 	if resp.GetCode() != 40001 {
@@ -119,8 +119,8 @@ func TestRespError_WithPool(t *testing.T) {
 	}
 }
 
-func TestRespErrorWithoutPool(t *testing.T) {
-	resp := RespErrorWithoutPool(50001, "服务器错误")
+func TestErrorWithoutPool(t *testing.T) {
+	resp := ErrorWithoutPool(50001, "服务器错误")
 	if resp.GetCode() != 50001 || resp.GetMsg() != "服务器错误" || resp.GetData() != nil {
 		t.Fatalf("RespErrorWithoutPool字段不匹配")
 	}
@@ -245,7 +245,7 @@ func TestRespInfo_ConcurrentPoolUsage(t *testing.T) {
 }
 
 func TestRespInfo_ConcurrentJSONSerialization(t *testing.T) {
-	resp := RespSuccess(map[string]string{"test": "并发JSON"})
+	resp := SuccessWithData(map[string]string{"test": "并发JSON"})
 	defer resp.Release()
 
 	var wg sync.WaitGroup
@@ -276,7 +276,7 @@ func TestRespInfo_EmptyAndNilValues(t *testing.T) {
 	}
 
 	// nil data
-	resp2 := RespSuccess()
+	resp2 := SuccessWithData()
 	defer resp2.Release()
 	jsonData2 := mustMarshal(t, resp2)
 	if !bytes.Contains(jsonData2, []byte(`"data":null`)) {
@@ -291,7 +291,7 @@ func TestRespInfo_LargeData(t *testing.T) {
 		largeData[i] = strings.Repeat("测试", 10) // 每个元素20个字符
 	}
 
-	resp := RespSuccess(largeData)
+	resp := SuccessWithData(largeData)
 	defer resp.Release()
 
 	jsonData := mustMarshal(t, resp)
@@ -351,7 +351,7 @@ func TestRespInfo_NoMemoryLeak(t *testing.T) {
 		largeData[i] = byte(i % 256)
 	}
 
-	resp := RespSuccess(largeData)
+	resp := SuccessWithData(largeData)
 
 	// 释放后，字段应该被清空
 	resp.Release()

@@ -1,1 +1,0 @@
-# Package response 提供了统一的HTTP响应格式和高性能的响应对象管理功能。

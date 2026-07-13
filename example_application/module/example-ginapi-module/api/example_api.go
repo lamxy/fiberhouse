@@ -61,7 +61,7 @@ func (h *ExampleHandler) HelloWorld(c *gin.Context) {
 	// 获取TestService服务实例
 	if tss, ok := ts.(*service.TestService); ok {
 		// 成功的响应
-		_ = response.RespSuccess(tss.HelloWorld()).JsonWithCtx(adaptorctx.WithGinContext(c), http.StatusOK)
+		_ = response.SuccessWithData(tss.HelloWorld()).JsonWithCtx(adaptorctx.WithGinContext(c), http.StatusOK)
 		return
 	}
 

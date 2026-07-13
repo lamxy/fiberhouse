@@ -3,6 +3,8 @@ package api
 import (
 	"errors"
 	"fmt"
+	"strconv"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse"
@@ -11,8 +13,7 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
-	"net/http"
-	"strconv"
+	"github.com/lamxy/fiberhouse/response"
 )
 
 // ExampleHandler 示例处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
@@ -58,7 +59,7 @@ func (h *ExampleHandler) HelloWorld(c *fiber.Ctx) error {
 	// 获取TestService服务实例
 	if tss, ok := ts.(*service.TestService); ok {
 		// 成功的响应
-		return fiberhouse.Response().SuccessWithData(tss.HelloWorld()).SendWithCtx(fiberhouse.CoreContext(c), http.StatusOK)
+		return fiberhouse.Response().SuccessWithData(tss.HelloWorld()).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
 	}
 
 	// 类型断言失败响应
@@ -110,8 +111,7 @@ func (h *ExampleHandler) GetExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return fiberhouse.Response().SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c))
-	//return response.RespSuccess(resp).JsonWithCtx(adaptorctx.WithFiberContext(c))
+	return response.SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
 }
 
 // GetExampleWithTaskDispatcher godoc

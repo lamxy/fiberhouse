@@ -41,8 +41,6 @@ func DefaultProviders() *DefaultProviderCollection {
 			NewJsonJCodecGinProvider(),    // JSON编解码Gin提供者
 			NewSonicJCodecFiberProvider(), // Sonic编解码Fiber提供者
 			NewSonicJCodecGinProvider(),   // Sonic编解码Gin提供者
-			NewCoreCtxFiberProvider(),     // 核心上下文Fiber适配器提供者
-			NewCoreCtxGinProvider(),       // 核心上下文Gin适配器提供者
 			NewFiberRecoveryProvider(),    // Fiber恢复提供者（框架默认提供）
 			NewGinRecoveryProvider(),      // Gin恢复提供者（框架默认提供）、及其他更多的基于自定义框架的恢复提供者
 			NewRespInfoProtobufProvider(), // Protobuf响应编解码提供者
@@ -150,8 +148,6 @@ func DefaultPManagers(ctx IApplicationContext) *DefaultPManagerCollection {
 			NewCoreStarterPManager(ctx).MountToParent(),
 			// JSON编解码管理器
 			NewJsonCodecPManager(ctx).MountToParent(),
-			// 核心上下文适配器管理器
-			NewCoreCtxPManager(ctx),
 			// 恢复惊慌管理器单例（性能需要）
 			NewRecoveryPManagerOnce(ctx),
 			// 响应编解码管理器

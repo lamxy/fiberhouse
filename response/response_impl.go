@@ -8,9 +8,10 @@
 package response
 
 import (
-	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"net/http"
 	"sync"
+
+	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 )
 
 var _ IResponse = &RespInfo{}
@@ -42,23 +43,23 @@ func NewRespInfo(code int, msg string, data ...interface{}) *RespInfo {
 	return resp.Reset(code, msg, nil).(*RespInfo)
 }
 
-// RespSuccess 创建成功响应（使用对象池）
-func RespSuccess(data ...interface{}) *RespInfo {
+// SuccessWithData 创建成功响应（使用对象池）
+func SuccessWithData(data ...interface{}) *RespInfo {
 	return NewRespInfo(0, "ok", data...)
 }
 
-// RespError 创建错误响应（使用对象池）
-func RespError(code int, msg string) *RespInfo {
+// ErrorCustom 创建错误响应（使用对象池）
+func ErrorCustom(code int, msg string) *RespInfo {
 	return NewRespInfo(code, msg, nil)
 }
 
-// RespSuccessWithoutPool 创建成功响应（直接创建实例）
-func RespSuccessWithoutPool(data ...interface{}) *RespInfo {
+// SuccessWithoutPool 创建成功响应（直接创建实例）
+func SuccessWithoutPool(data ...interface{}) *RespInfo {
 	return NewRespInfoWithoutPool(0, "ok", data...)
 }
 
-// RespErrorWithoutPool 创建错误响应（直接创建实例）
-func RespErrorWithoutPool(code int, msg string) *RespInfo {
+// ErrorWithoutPool 创建错误响应（直接创建实例）
+func ErrorWithoutPool(code int, msg string) *RespInfo {
 	return NewRespInfoWithoutPool(code, msg, nil)
 }
 
@@ -73,16 +74,6 @@ func NewRespInfoWithoutPool(code int, msg string, data ...interface{}) *RespInfo
 		Msg:  msg,
 		Data: d,
 	}
-}
-
-// SuccessWithoutPool 创建成功响应（使用对象池）
-func SuccessWithoutPool(data ...interface{}) *RespInfo {
-	return NewRespInfoWithoutPool(0, "ok", nil)
-}
-
-// ErrorWithoutPool 创建错误响应（使用对象池）
-func ErrorWithoutPool(code int, msg string) *RespInfo {
-	return NewRespInfoWithoutPool(code, msg, nil)
 }
 
 // Release 释放 RespInfo 实例回对象池
