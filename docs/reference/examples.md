@@ -29,7 +29,7 @@
 
 `DefaultProviders()` 和 `DefaultPManagers(ctx)` 是进程级集合。示例在启动期一次性合并它们；不要在服务已开始处理请求后继续调用 `Add` 或 `Except` 重配共享集合。
 
-示例的 Fiber hook 会在关闭时记录日志并清空 GlobalManager，但清空不等于逐一调用资源的 `Close`。数据库、缓存、任务与日志仍需要应用设计可验证的停止顺序。
+示例的 `RegisterFiberAppCoreHook` shutdown hook 只记录一条日志。清空 GlobalManager 并关闭 logger 的是 `CoreWithFiber.RegisterAppHooks` 另行注册的内建 shutdown hook：它调用 `ClearAll(true)` 后调用 logger `Close`。`ClearAll(true)` 不等于逐一调用资源的 `Close`，数据库、缓存和任务仍需要应用设计可验证的停止顺序；在该内建 hook 关闭 logger 之前也必须停止日志生产者。
 
 ## 配置示例
 

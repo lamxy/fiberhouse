@@ -17,7 +17,9 @@ panic ─→ CoreType 对应 recovery middleware ─────┘
 
 其他 Go `error`、`runtime.Error` 和非 error panic 值都走未知错误分支。`exception.Get/VeGet` 从进程级 `GlobalManager` 读取应用异常表；异常表未注册会 panic，key 不存在则构造 `UnknownErrCode/UnknownErrMsg`。示例异常表只是演示数据，不是框架保证的生产错误码目录。
 
-业务可选择返回 `*Exception`，也可调用其 `Panic()`/`exception.Throw`。选择会影响进入“正常错误处理”还是 recovery，但当前 HTTP status 分类对两条路径保持一致。
+业务可选择返回 `*Exception`，也可调用 `exception.Get(key).Panic()`。选择会影响进入“正常错误处理”还是 recovery，但当前 HTTP status 分类对两条路径保持一致。
+
+`exception.Throw(key, ...)` 当前存在源码静态缺陷：它取得异常表后，使用全局容器键 `constant.RegisterKeyPrefix + "exceptions"` 索引该表，而不是使用传入的 `key`，因此通常只会抛出 `UnknownErrCode/UnknownErrMsg`，不能按参数得到预期业务异常。在底层实现修复并补齐测试前，请改用 `exception.Get(key).Panic()`，或返回 `exception.Get(key)` 得到的 `*Exception` 交给正常错误链。
 
 ## Fiber：返回 error
 
