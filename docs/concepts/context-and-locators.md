@@ -101,8 +101,10 @@ type Locator interface {
 根包提供两种类型化读取：
 
 ```go
-service, err := fiberhouse.GetInstance[*UserService](key)
-service := fiberhouse.GetMustInstance[*UserService](key)
+getUserService := fiberhouse.GetInstance[*UserService]
+mustGetUserService := fiberhouse.GetMustInstance[*UserService]
+service, err := getUserService(key)
+mustService := mustGetUserService(key)
 ```
 
 `GetInstance[T]` 在 key 缺失、initializer 失败或类型断言失败时返回错误；`GetMustInstance[T]` 对这些情况 panic。两者都直接取得 `NewGlobalManagerOnce()`，不经过调用方传入的 Context。若代码需要测试隔离、不同容器或明确依赖，优先保留 Context/构造器参数，而不是在深层函数中调用全局 helper。

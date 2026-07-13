@@ -34,7 +34,7 @@ Redis 实际从 `<redis-base>` 读取连接地址、认证、DB、pool 和超时
 
 示例 YAML 当前写有 `IgnoreInternalCost` 和 `idleTimeout`，而构造器读取的是大小写不同的 `ignoreInternalCost` 以及 `connMaxIdleTime`/`connMaxLifetime`。正式配置必须按消费方键名核对，不能把示例字段当作已生效的框架默认。
 
-[`example_application.Application.ConfigGlobalInitializers`](../../example_application/application_impl.go) 展示了把 local、Redis 和 L2 注册到 GlobalManager 的一种方式。`KEY_LOCAL_CACHE` 等名称、哪些 key 被列为启动必需项，以及远程缓存是否复用 Redis 实例，都是示例应用的选择，不是框架默认。
+[`example_application`](../../example_application/) 中的 `Application.ConfigGlobalInitializers` 展示了把 local、Redis 和 L2 注册到 GlobalManager 的一种方式。`KEY_LOCAL_CACHE` 等名称、哪些 key 被列为启动必需项，以及远程缓存是否复用 Redis 实例，都是示例应用的选择，不是框架默认。
 
 ## `CacheOption`
 

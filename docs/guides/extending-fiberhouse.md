@@ -169,7 +169,8 @@ func (p *CoreRegistrationProvider) Initialize(
 	if len(initFuncs) == 0 {
 		return nil, fmt.Errorf("provider %s requires CoreStarter", p.Name())
 	}
-	v, err := initFuncs[0](p)
+	init := initFuncs[0]
+	v, err := init(p)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +285,8 @@ func (p *EchoCoreProvider) Initialize(
 	p.Check()
 	var opts []fh.CoreStarterOption
 	if len(initFuncs) > 0 {
-		v, err := initFuncs[0](p)
+		init := initFuncs[0]
+		v, err := init(p)
 		if err != nil {
 			return nil, err
 		}

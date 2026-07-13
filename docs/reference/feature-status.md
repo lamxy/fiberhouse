@@ -26,46 +26,46 @@
 |---|---|---|---|---|---|
 | Fiber HTTP 内核 | 已接入 | `CoreWithFiber` 负责引擎初始化、中间件、监听信号与关闭 | Fiber core provider 在默认集合中；`Default()` 的 `CoreType` 也选择 Fiber，但集合不会自动传入 | 装配默认 provider/manager，并注册 `ApplicationRegister`、`ModuleRegister`；配置监听参数 | `example_main` 实际选择 Fiber，并追加中间件、hook 与路由 provider |
 | Provider / Manager / Location | 已接入 | 类型、管理器与执行位点驱动启动顺序；未匹配 provider 会交给默认 manager | 提供默认 provider/manager 集合和预定义 location；需显式 `WithProviders`、`WithPManagers` | 自定义能力必须同时提供匹配的类型、target、manager/location 和初始化输入 | `example_main` 展示默认集合与应用 provider/manager 的合并，不是自动发现机制 |
-| bootstrap、配置与日志 | 已接入 | `New()` 调用配置、日志单例；配置支持文件与环境覆盖；日志支持 console、轮转文件及同步/异步 writer | 随 `New()` 初始化，不经过 provider 集合；`Default()` 使用 `./config`、`./logs` | 必须提供可读配置目录；异步日志由配置选择，关闭责任属于应用生命周期 | 示例改用 `./example_config` 与 `./example_main/logs`；详细边界见《配置指南》《日志指南》 |
+| bootstrap、配置与日志 | 已接入 | `New()` 调用配置、日志单例；配置支持文件与环境覆盖；日志支持 console、轮转文件及同步/异步 writer | 随 `New()` 初始化，不经过 provider 集合；`Default()` 使用 `./config`、`./logs` | 必须提供可读配置目录；异步日志由配置选择，关闭责任属于应用生命周期 | 示例改用 `./example_config` 与 `./example_main/logs`；详细边界见[配置指南](../guides/configuration.md)、[日志指南](../guides/logging.md) |
 | JSON 流量编解码与 JSON 响应 | 已接入 | Fiber/Gin 的 Std JSON、Sonic provider，以及统一 `RespInfo` JSON 回退路径 | Std/Sonic provider 与 JSON manager 在默认集合中，但不会自动装配 | `TrafficCodec` 选择实现；应用还需注册 `GetDefaultTrafficCodecKey` 和 `GetFastTrafficCodecKey` 对应实例 | 示例注册两个 Sonic 实例并选择 `sonic_json_codec`；空的 Go JSON 文件不构成第三种实现 |
 | panic recovery 与错误响应 | 已接入 | Fiber、Gin recovery provider 和核心错误处理中间件均有运行路径；调试信息受 recovery 配置控制 | 两种 recovery provider 与 recovery manager 在默认集合中 | 随所选 HTTP 内核和 manager 装配；生产环境应关闭详细错误输出 | 示例配置启用 `debugMode` 仅适合本地演示；错误路径可能记录日志、返回统一响应或在装配失败时 panic |
-| 本地缓存与 Redis 缓存 | 已接入 | `cachelocal`、`cacheremote` 实现统一 `Cache`，包含 TTL、序列化、健康检查与关闭入口 | 不在默认 provider 集合中 | 应用通过 GlobalManager 注册实例；Redis 需要可用服务和配置，调用者持有 `CacheOption` | Web 示例注册本地与 Redis initializer，但只把 Redis 列为启动必需项；完整用法见《缓存指南》 |
-| 参数验证 | 已接入 | `component/validate` 提供 en、zh-cn、zh-tw、错误映射和自定义 tag/translator 注册 | `AppContext`/`CmdContext` 创建 `Wrap`；自定义语言和 tag 不自动注册 | 只在启动期注册，进入请求并发阶段后只读 | 示例追加日语、韩语和自定义 tag；包装器不支持运行期并发读写，详见《验证指南》 |
+| 本地缓存与 Redis 缓存 | 已接入 | `cachelocal`、`cacheremote` 实现统一 `Cache`，包含 TTL、序列化、健康检查与关闭入口 | 不在默认 provider 集合中 | 应用通过 GlobalManager 注册实例；Redis 需要可用服务和配置，调用者持有 `CacheOption` | Web 示例注册本地与 Redis initializer，但只把 Redis 列为启动必需项；完整用法见[缓存指南](../guides/cache.md) |
+| 参数验证 | 已接入 | `component/validate` 提供 en、zh-cn、zh-tw、错误映射和自定义 tag/translator 注册 | `AppContext`/`CmdContext` 创建 `Wrap`；自定义语言和 tag 不自动注册 | 只在启动期注册，进入请求并发阶段后只读 | 示例追加日语、韩语和自定义 tag；包装器不支持运行期并发读写，详见[验证指南](../guides/validation.md) |
 
 ## 实验性或存在明显限制的能力
 
 | 能力 | 状态 | 框架实现 | 默认注册 | 应用启用 | 限制与主指南 |
 |---|---|---|---|---|---|
-| Gin HTTP 内核 | 实验性 | `CoreWithGin`、Gin codec、recovery、中间件和路由 provider 已存在 | Gin core provider 在默认集合中；`Default()` 仍选择 Fiber | 设置 `CoreType` 为 `gin`，并装配 Gin 对应 provider/manager | TLS 分支在证书路径有效时仍会 panic，不能称为完整 HTTPS 能力；见《Web 启动与 HTTP 内核指南》 |
-| MsgPack / Protobuf 响应 | 实验性 | `response` 有两种二进制响应实现，provider 按 MIME type 获取 | 两种 provider 与响应 manager 在默认集合中，但不自动装配 | `EnableBinaryProtocolSupport` 必须为 true，且请求 `Content-Type`/`Accept` 命中 `application/msgpack` 或 `application/x-protobuf` | 未命中或加载失败时回退 JSON，内容协商只取首个媒体类型；这不是通用 RPC；见《响应与编解码指南》 |
-| GlobalManager | 实验性 | 支持注册、懒初始化、健康检查、重建、释放与清空 | `New()` 获取进程级单例；具体资源由应用注册 | initializer 应在启动期注册，运行期以读为主；资源所有者必须规划关闭 | `Release` 存储 nil、失败状态残留、keepalive 无取消和清空时不逐项关闭等边界需规避；见《全局管理器指南》 |
-| L2 缓存与 Redis 保护机制 | 实验性 | 本地/远端组合、回填、同步/异步写、singleflight、Bloom filter、circuit breaker 均有代码 | 不默认创建 | 应用自行构造 local、Redis、L2，并显式选择策略和保护开关 | singleflight 未形成完整 loader 合并，Bloom/breaker miss 语义不一致，L2 关闭状态不完整；见《缓存指南》 |
-| 异步任务 | 实验性 | `TaskWorker`、`TaskDispatcher` 基于 asynq，支持 handler map 与同步/异步启动 | 无默认 task register；只在应用提供 `TaskRegister` 后进入启动链 | 需要 Redis、任务 initializer、handler 注册和 `application.task.enableServer` | 异步启动内部错误只记录，统一关闭与 dispatcher 回收未完整编排；示例依赖外部 Redis；见《异步任务指南》 |
-| CLI | 实验性 | `commandstarter` 基于 urfave/cli，包含上下文、命令注册和错误处理 | 不属于 Web 默认集合 | 单独创建 `CmdContext`、应用注册器和 `CMDLineApplication` | `RunCommandStarter` 丢弃 `AppCoreRun` 返回值，健康检查只执行一次，未统一回收资源；见《命令行指南》 |
-| MySQL / MongoDB | 实验性 | GORM/MySQL、MongoDB v2、连接池、健康检查、模型 locator 与 Mongo decimal codec 已实现 | 不默认创建 | 由应用 initializer 注册并决定是否在启动期强制初始化 | 重建不会关闭旧 client，读侧也没有与替换锁配套；连接失败会使需要该资源的装配失败；见《数据库指南》 |
-| 扩展运行位点与关闭链 | 实验性 | `ServerRunBefore`、`ServerRun`、`ServerRunAfter`、`ServerShutdown` 有部分消费路径 | 没有通用 before/after provider；关闭行为由具体 core 实现决定 | 应用可绑定自定义 manager，但必须验证阻塞、信号与资源所有权 | `ServerShutdownBefore`/`ServerShutdownAfter` 只有 location 声明，Fiber shutdown 直接清空容器；见《Web 生命周期指南》 |
+| Gin HTTP 内核 | 实验性 | `CoreWithGin`、Gin codec、recovery、中间件和路由 provider 已存在 | Gin core provider 在默认集合中；`Default()` 仍选择 Fiber | 设置 `CoreType` 为 `gin`，并装配 Gin 对应 provider/manager | TLS 分支在证书路径有效时仍会 panic，不能称为完整 HTTPS 能力；见[Web 运行时](../guides/web-runtime.md) |
+| MsgPack / Protobuf 响应 | 实验性 | `response` 有两种二进制响应实现，provider 按 MIME type 获取 | 两种 provider 与响应 manager 在默认集合中，但不自动装配 | `EnableBinaryProtocolSupport` 必须为 true，且请求 `Content-Type`/`Accept` 命中 `application/msgpack` 或 `application/x-protobuf` | 未命中或加载失败时回退 JSON，内容协商只取首个媒体类型；这不是通用 RPC；见[响应与序列化](../guides/response-and-serialization.md) |
+| GlobalManager | 实验性 | 支持注册、懒初始化、健康检查、重建、释放与清空 | `New()` 获取进程级单例；具体资源由应用注册 | initializer 应在启动期注册，运行期以读为主；资源所有者必须规划关闭 | `Release` 存储 nil、失败状态残留、keepalive 无取消和清空时不逐项关闭等边界需规避；见[GlobalManager](../guides/global-manager.md) |
+| L2 缓存与 Redis 保护机制 | 实验性 | 本地/远端组合、回填、同步/异步写、singleflight、Bloom filter、circuit breaker 均有代码 | 不默认创建 | 应用自行构造 local、Redis、L2，并显式选择策略和保护开关 | singleflight 未形成完整 loader 合并，Bloom/breaker miss 语义不一致，L2 关闭状态不完整；见[缓存指南](../guides/cache.md) |
+| 异步任务 | 实验性 | `TaskWorker`、`TaskDispatcher` 基于 asynq，支持 handler map 与同步/异步启动 | 无默认 task register；只在应用提供 `TaskRegister` 后进入启动链 | 需要 Redis、任务 initializer、handler 注册和 `application.task.enableServer` | 异步启动内部错误只记录，统一关闭与 dispatcher 回收未完整编排；示例依赖外部 Redis；见[异步任务指南](../guides/background-tasks.md) |
+| CLI | 实验性 | `commandstarter` 基于 urfave/cli，包含上下文、命令注册和错误处理 | 不属于 Web 默认集合 | 单独创建 `CmdContext`、应用注册器和 `CMDLineApplication` | `RunCommandStarter` 丢弃 `AppCoreRun` 返回值，健康检查只执行一次，未统一回收资源；见[命令行指南](../guides/command-line.md) |
+| MySQL / MongoDB | 实验性 | GORM/MySQL、MongoDB v2、连接池、健康检查、模型 locator 与 Mongo decimal codec 已实现 | 不默认创建 | 由应用 initializer 注册并决定是否在启动期强制初始化 | 重建不会关闭旧 client，读侧也没有与替换锁配套；连接失败会使需要该资源的装配失败；见[数据库指南](../guides/database.md) |
+| 扩展运行位点与关闭链 | 实验性 | `ServerRunBefore`、`ServerRun`、`ServerRunAfter`、`ServerShutdown` 有部分消费路径 | 没有通用 before/after provider；关闭行为由具体 core 实现决定 | 应用可绑定自定义 manager，但必须验证阻塞、信号与资源所有权 | `ServerShutdownBefore`/`ServerShutdownAfter` 只有 location 声明，Fiber shutdown 直接清空容器；见[Web 启动生命周期](../concepts/startup-lifecycle.md) |
 
 ## 内部工具
 
 | 能力 | 状态 | 框架中的用途 | 默认/应用边界 | 主指南 |
 |---|---|---|---|---|
-| bufferpool 与对象池 | 内部工具 | 提供分片 `bytes.Buffer` 池和泛型 `sync.Pool`，当前仓库没有生产调用者 | 不注册、不自动启用；池中对象不能被调用方并发复用 | 《组件目录》 |
-| Dig 容器 | 内部工具 | `CmdContext` 持有单例容器，CLI ORM 示例用它在启动/命令执行阶段组装依赖 | Web 运行时不推荐使用；`ResetDigContainer` 非并发安全 | 《组件目录》《命令行指南》 |
-| jsonconvert | 内部工具 | recovery 错误处理把任意数据转换成 JSON 或字符串 | 每次借用后必须 `Release`；单个 wrapper 不是并发对象 | 《组件目录》《错误处理指南》 |
-| mongodecimal | 内部工具 | `dbmongo.NewClient` 将 `decimal.Decimal` 注册到 BSON registry | 随 Mongo client 构造生效，不是独立服务 | 《组件目录》《数据库指南》 |
-| writer 与 tasklog | 内部工具 | bootstrap 的同步/异步文件 writer；示例 asynq 日志适配器 | 异步 writer 可能丢日志，必须在停止生产者后关闭；tasklog 目前由示例任务装配 | 《组件目录》《日志指南》《异步任务指南》 |
+| bufferpool 与对象池 | 内部工具 | 提供分片 `bytes.Buffer` 池和泛型 `sync.Pool`，当前仓库没有生产调用者 | 不注册、不自动启用；池中对象不能被调用方并发复用 | [组件目录](components.md) |
+| Dig 容器 | 内部工具 | `CmdContext` 持有单例容器，CLI ORM 示例用它在启动/命令执行阶段组装依赖 | Web 运行时不推荐使用；`ResetDigContainer` 非并发安全 | [组件目录](components.md)、[命令行指南](../guides/command-line.md) |
+| jsonconvert | 内部工具 | recovery 错误处理把任意数据转换成 JSON 或字符串 | 每次借用后必须 `Release`；单个 wrapper 不是并发对象 | [组件目录](components.md)、[错误与恢复](../guides/errors-and-recovery.md) |
+| mongodecimal | 内部工具 | `dbmongo.NewClient` 将 `decimal.Decimal` 注册到 BSON registry | 随 Mongo client 构造生效，不是独立服务 | [组件目录](components.md)、[数据库指南](../guides/database.md) |
+| writer 与 tasklog | 内部工具 | bootstrap 的同步/异步文件 writer；示例 asynq 日志适配器 | 异步 writer 可能丢日志，必须在停止生产者后关闭；tasklog 目前由示例任务装配 | [组件目录](components.md)、[日志指南](../guides/logging.md)、[异步任务指南](../guides/background-tasks.md) |
 
 ## 预留与占位
 
 | 能力 | 状态 | 当前证据 | 默认/应用边界 | 主指南 |
 |---|---|---|---|---|
-| plugins | 预留/占位 | 只有 `Plugin` 接口；loader、registry 没有实现，且没有应用启动或关闭调用链 | 不在默认集合中，配置中的 `plugins` 字段也不等于插件系统 | 《功能状态》《扩展机制指南》 |
-| RPC | 预留/占位 | 根 `rpc/protosrc` 只有响应结构的 proto 与生成代码；`component/rpc` 没有运行实现 | 没有 client/server、注册、监听或关闭生命周期；二进制 HTTP 响应不能视为 RPC | 《功能状态》《响应与编解码指南》 |
-| MQ | 预留/占位 | `component/mq` 仅有 RabbitMQ 方向说明，配置中 `mq` 为空 | 没有 provider、client、consumer 或生命周期 | 《功能状态》 |
-| i18n | 预留/占位 | `component/i18n` 没有 Go 实现 | 验证消息翻译只属于 validate 组件，不代表通用 i18n | 《功能状态》《验证指南》 |
-| Go JSON codec | 预留/占位 | `component/jsoncodec/gojson.go` 只有 package 声明，默认集合也没有 Go JSON provider | 即使常量存在，当前不能选择为可运行 codec | 《响应与编解码指南》 |
-| 空 component/middleware 目录说明 | 预留/占位 | placeholder 文档和若干示例空分支只表达目录意图 | 不形成可注册中间件或组件 | 《组件目录》《示例目录》 |
-| 未消费的生命周期 hook | 预留/占位 | `ServerShutdownBefore` 与 `ServerShutdownAfter` 已声明但当前启动链未读取 | 自定义代码不能假设这些位点会执行 | 《Web 生命周期指南》 |
+| plugins | 预留/占位 | 只有 `Plugin` 接口；loader、registry 没有实现，且没有应用启动或关闭调用链 | 不在默认集合中，配置中的 `plugins` 字段也不等于插件系统 | 本页、[扩展 FiberHouse](../guides/extending-fiberhouse.md) |
+| RPC | 预留/占位 | 根 `rpc/protosrc` 只有响应结构的 proto 与生成代码；`component/rpc` 没有运行实现 | 没有 client/server、注册、监听或关闭生命周期；二进制 HTTP 响应不能视为 RPC | 本页、[响应与序列化](../guides/response-and-serialization.md) |
+| MQ | 预留/占位 | `component/mq` 仅有 RabbitMQ 方向说明，配置中 `mq` 为空 | 没有 provider、client、consumer 或生命周期 | 本页 |
+| i18n | 预留/占位 | `component/i18n` 没有 Go 实现 | 验证消息翻译只属于 validate 组件，不代表通用 i18n | 本页、[验证指南](../guides/validation.md) |
+| Go JSON codec | 预留/占位 | `component/jsoncodec/gojson.go` 只有 package 声明，默认集合也没有 Go JSON provider | 即使常量存在，当前不能选择为可运行 codec | [响应与序列化](../guides/response-and-serialization.md) |
+| 空 component/middleware 目录说明 | 预留/占位 | placeholder 文档和若干示例空分支只表达目录意图 | 不形成可注册中间件或组件 | [组件目录](components.md)、[示例目录](examples.md) |
+| 未消费的生命周期 hook | 预留/占位 | `ServerShutdownBefore` 与 `ServerShutdownAfter` 已声明但当前启动链未读取 | 自定义代码不能假设这些位点会执行 | [Web 启动生命周期](../concepts/startup-lifecycle.md) |
 
 ## 判断依据
 

@@ -68,7 +68,7 @@ func (app *Application) ConfigGlobalInitializers() globalmanager.InitializerMap 
 
 这些 key 是应用契约，不必与配置路径相同。只有进入 `ConfigRequiredGlobalKeys()` 或第一次 `Get` 的 key 才会初始化；而标准 FrameStarter 对 required key 的失败只记日志并继续，严格 fail-fast 需要应用入口额外处理。
 
-[`example_application/application_impl.go`](../../example_application/application_impl.go) 把 MySQL、MongoDB 都列为 required，因而完整 Web 示例启动会依赖两者。这不是最小 FiberHouse 应用要求，也不是生产环境必须同时采用两种数据库。
+[`example_application`](../../example_application/) 的 `Application.ConfigRequiredGlobalKeys` 把 MySQL、MongoDB 都列为 required，因而完整 Web 示例启动会依赖两者。这不是最小 FiberHouse 应用要求，也不是生产环境必须同时采用两种数据库。
 
 ## Health、Rebuild 与 Close
 

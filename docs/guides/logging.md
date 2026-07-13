@@ -93,7 +93,7 @@ FiberHouse 构造器没有为这些键提供非零 fallback；缺失时把 koanf
 ## 已知限制与测试边界
 
 - channel 与 diode 都可能丢日志，不能描述为 lossless 或 production-ready 保证。
-- 异步 writer 的关闭、flush、无效路径与关闭后写入语义仍有明显边界；当前仓库批准的测试基线包含三项 `component/writer` 失败，本页按运行实现记录行为，不把失配的测试期望当作 API 契约。
+- 异步 writer 的关闭、flush、无效路径与关闭后写入语义仍有明显边界；当前仓库的测试基线在 `component/writer` package 中存在已知失败，且 case 数量会受异步写入时序影响。本页按运行实现记录行为，不把失配的测试期望当作 API 契约。
 - `AsyncChannelWriter.Write` 在超时丢弃后仍报告成功；`AsyncDiodeWriter.Write` 也不把覆盖作为调用错误返回。
 - `Close` 只回收日志 file writer，不会停止 keepalive、任务或其他仍可能记录日志的 goroutine。
 - 配置、日志器、异步 writer initializer 与 Origin 子日志器都连接进程级单例；同进程热切换输出或并行测试多套日志配置不受支持。
