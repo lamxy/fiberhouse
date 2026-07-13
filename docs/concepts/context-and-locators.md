@@ -55,7 +55,9 @@ RunServer → 创建 FrameStarter 与 CoreStarter
 
 ## `GlobalManager` 访问
 
-`GlobalManager` 保存 `KeyName → initializer / instance`。`Register` 只注册 initializer；第一次 `Get` 使用 `sync.Once` 延迟创建实例。initializer 返回错误或 panic 时，错误会被保存，下一次 `Get` 会重置状态后再次尝试。
+`GlobalManager` 保存 `KeyName → initializer / instance`。`Register` 只注册 initializer；第一次 `Get` 使用 `sync.Once` 延迟创建实例。initializer 返回错误或发生 panic 后，后续 `Get` 会重置 `once` 与初始化状态，并重新执行 initializer。
+
+源码静态限制是：成功重试会保存新实例并把状态改为成功，但旧 `initErr` 没有被完整清除；执行这次重试的 `Get` 随后仍可能返回旧错误。再下一次 `Get` 会先命中成功状态并取得已经保存的实例。调用方不能把“第一次重试返回旧错误”直接解释为 initializer 没有成功，也不应把多调用一次当作稳定重试协议。
 
 典型启动顺序是：
 

@@ -60,7 +60,7 @@ flowchart LR
 5. Core Starter 回调应用注册器来安装应用中间件和 hook，回调模块注册器来注册路由与 Swagger。
 6. 请求进入之后，API、Service、Repository 可经 `IContext` / Locator 访问已经装配好的只读基础设施。
 
-`Type` 负责把 Provider 分给 Manager，`Target` 通常负责在同组中选择 Fiber/Gin 或其他实现，`Location` 负责决定 Manager 何时有机会被读取。三者都匹配才形成可达链；只有一个名称或一个目录不代表扩展已执行。
+`Type` 负责 `RunServer` 的初始分发，`Location` 只有被相应消费者读取并执行时，才让 Manager 进入可达链。`Target` 是否参与选择、代表什么条件，则完全由具体 Manager 决定：例如默认 fallback 的 AutoRun 分支不要求 Target，其他 Manager 可以按 Core、版本或自定义维度解释它。因此三者不是框架统一执行的硬性“与”条件；只有一个名称或一个目录同样不代表扩展已执行。
 
 ## 框架、默认装配与业务应用
 
