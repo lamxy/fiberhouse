@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
@@ -54,7 +55,53 @@ type frameTestValidateRegister struct {
 	called *int
 }
 
+type frameTestZeroIntervalConfig struct{ appconfig.IAppConfig }
+
+func (frameTestZeroIntervalConfig) Duration(string, ...time.Duration) time.Duration { return 0 }
+
+func forceFrameTestZeroInterval(t *testing.T, ctx IApplicationContext) {
+	t.Helper()
+	appCtx, ok := ctx.(*AppContext)
+	require.True(t, ok)
+	appCtx.cfg = frameTestZeroIntervalConfig{IAppConfig: appCtx.cfg}
+}
+
 func (r *frameTestValidateRegister) RegisterToWrap(*validate.Wrap) { (*r.called)++ }
+
+type frameTestSavedEntry struct {
+	key        string
+	registered bool
+	value      interface{}
+}
+
+func isolateFrameTestEntries(t *testing.T, manager *globalmanager.GlobalManager, keys []string) {
+	t.Helper()
+	saved := make([]frameTestSavedEntry, 0, len(keys))
+	for _, key := range keys {
+		entry := frameTestSavedEntry{key: key, registered: manager.IsRegistered(key)}
+		if entry.registered {
+			value, err := manager.Get(key)
+			require.NoError(t, err, key)
+			entry.value = value
+		}
+		manager.Unregister(key)
+		saved = append(saved, entry)
+	}
+	t.Cleanup(func() {
+		for i := len(saved) - 1; i >= 0; i-- {
+			entry := saved[i]
+			manager.Unregister(entry.key)
+			if entry.registered {
+				require.True(t, manager.Register(entry.key, func() (interface{}, error) {
+					return entry.value, nil
+				}), entry.key)
+				restored, err := manager.Get(entry.key)
+				require.NoError(t, err, entry.key)
+				assert.Same(t, entry.value, restored, entry.key)
+			}
+		}
+	})
+}
 
 func newFrameTestContext(t *testing.T, values map[string]interface{}) (IApplicationContext, *bytes.Buffer) {
 	t.Helper()
@@ -124,6 +171,18 @@ func TestFrameApplication_ApplicationGlobalsInitializesObservableContracts(t *te
 		},
 	}
 	frame := &FrameApplication{Ctx: ctx, application: application, task: task}
+	originKeys := make([]string, 0, len(ctx.GetConfig().GetLogOriginMap()))
+	for originKey, origin := range ctx.GetConfig().GetLogOriginMap() {
+		if originKey != "" {
+			originKeys = append(originKeys, origin.InstanceKey())
+		}
+	}
+	isolateFrameTestEntries(t, ctx.GetContainer(), originKeys)
+	for originKey, origin := range ctx.GetConfig().GetLogOriginMap() {
+		if originKey != "" {
+			assert.False(t, ctx.GetContainer().IsRegistered(origin.InstanceKey()), originKey)
+		}
+	}
 
 	frame.RegisterApplicationGlobals()
 
@@ -158,6 +217,7 @@ func TestFrameApplication_GuardsAvoidStartupSideEffects(t *testing.T) {
 			"application.globalManage.keepAlive": true,
 		})
 		ctx.RegisterAppState(true)
+		forceFrameTestZeroInterval(t, ctx)
 		application := &frameTestApplication{}
 		task := &frameTestTask{}
 		frame := &FrameApplication{Ctx: ctx, application: application, task: task}
@@ -170,7 +230,7 @@ func TestFrameApplication_GuardsAvoidStartupSideEffects(t *testing.T) {
 		frame.RegisterValidatorCustomTags()
 		frame.RegisterLoggerWithOriginToContainer()
 		frame.RegisterTaskServer()
-		frame.RegisterGlobalsKeepalive()
+		assert.NotPanics(t, func() { frame.RegisterGlobalsKeepalive() })
 
 		assert.Nil(t, ctx.GetStarterApp())
 		assert.Zero(t, task.serverRegistrations)
@@ -182,9 +242,10 @@ func TestFrameApplication_GuardsAvoidStartupSideEffects(t *testing.T) {
 			"application.task.enableServer":      false,
 			"application.globalManage.keepAlive": false,
 		})
+		forceFrameTestZeroInterval(t, disabledCtx)
 		disabled := &FrameApplication{Ctx: disabledCtx, task: &frameTestTask{}}
 		disabled.RegisterTaskServer()
-		disabled.RegisterGlobalsKeepalive()
+		assert.NotPanics(t, func() { disabled.RegisterGlobalsKeepalive() })
 
 		enabledCtx, _ := newFrameTestContext(t, map[string]interface{}{"application.task.enableServer": true})
 		enabled := &FrameApplication{Ctx: enabledCtx}

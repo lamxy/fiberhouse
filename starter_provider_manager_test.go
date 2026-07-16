@@ -3,6 +3,7 @@ package fiberhouse
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -14,6 +15,136 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type task7LocationSnapshot struct {
+	location *PLocation
+	managers []IProviderManager
+}
+
+func task7DefaultLocations(t *testing.T) []*PLocation {
+	t.Helper()
+	locations := ProviderLocationDefault()
+	interfaces := []IProviderLocation{
+		locations.ZeroLocation,
+		locations.LocationAdaptCoreCtxChoose,
+		locations.LocationBootStrapConfig,
+		locations.LocationFrameStarterOptionInit,
+		locations.LocationCoreStarterOptionInit,
+		locations.LocationFrameStarterCreate,
+		locations.LocationCoreStarterCreate,
+		locations.LocationGlobalInit,
+		locations.LocationGlobalKeepaliveInit,
+		locations.LocationCoreEngineInit,
+		locations.LocationCoreHookInit,
+		locations.LocationAppMiddlewareInit,
+		locations.LocationModuleMiddlewareInit,
+		locations.LocationRouteRegisterInit,
+		locations.LocationTaskServerInit,
+		locations.LocationModuleSwaggerInit,
+		locations.LocationServerRunBefore,
+		locations.LocationServerRun,
+		locations.LocationServerRunAfter,
+		locations.LocationServerShutdownBefore,
+		locations.LocationServerShutdown,
+		locations.LocationServerShutdownAfter,
+		locations.LocationResponseInfoInit,
+	}
+	result := make([]*PLocation, 0, len(interfaces))
+	for _, location := range interfaces {
+		concrete, ok := location.(*PLocation)
+		require.True(t, ok, location.GetLocationName())
+		result = append(result, concrete)
+	}
+	return result
+}
+
+func isolateTask7ProviderGlobals(t *testing.T) {
+	t.Helper()
+	locationSnapshots := make([]task7LocationSnapshot, 0)
+	for _, location := range task7DefaultLocations(t) {
+		location.mu.RLock()
+		managers := append([]IProviderManager(nil), location.managers...)
+		location.mu.RUnlock()
+		locationSnapshots = append(locationSnapshots, task7LocationSnapshot{location: location, managers: managers})
+	}
+	previousDefaultProviders := defaultProvidersInstance
+	previousDefaultManagers := defaultPManagersInstance
+	previousRecoveryManager := recoveryManagerInstance
+
+	t.Cleanup(func() {
+		for _, snapshot := range locationSnapshots {
+			snapshot.location.mu.Lock()
+			snapshot.location.managers = append([]IProviderManager(nil), snapshot.managers...)
+			snapshot.location.mu.Unlock()
+		}
+
+		defaultProvidersInstance = previousDefaultProviders
+		defaultProvidersOnce = sync.Once{}
+		if previousDefaultProviders != nil {
+			defaultProvidersOnce.Do(func() {})
+		}
+		defaultPManagersInstance = previousDefaultManagers
+		defaultPManagersOnce = sync.Once{}
+		if previousDefaultManagers != nil {
+			defaultPManagersOnce.Do(func() {})
+		}
+		recoveryManagerInstance = previousRecoveryManager
+		recoveryManagerOnce = sync.Once{}
+		if previousRecoveryManager != nil {
+			recoveryManagerOnce.Do(func() {})
+		}
+	})
+}
+
+func assertTask7ManagersSame(t *testing.T, expected, actual []IProviderManager) {
+	t.Helper()
+	require.Len(t, actual, len(expected))
+	for index := range expected {
+		assert.Same(t, expected[index], actual[index], index)
+	}
+}
+
+func TestTask7ProviderGlobalFixtures_RestoreLocationsAndSingletons(t *testing.T) {
+	locations := task7DefaultLocations(t)
+	beforeManagers := make(map[*PLocation][]IProviderManager, len(locations))
+	for _, location := range locations {
+		beforeManagers[location] = location.GetManagers()
+	}
+	beforeProviders := defaultProvidersInstance
+	beforeManagersSingleton := defaultPManagersInstance
+	beforeRecovery := recoveryManagerInstance
+
+	t.Run("isolated constructors", func(t *testing.T) {
+		isolateTask7ProviderGlobals(t)
+		ctx, _ := newFrameTestContext(t, nil)
+		_ = NewFrameDefaultPManager(ctx)
+		_ = NewCoreStarterPManager(ctx)
+		_ = NewJsonCodecPManager(ctx)
+		_ = NewRespInfoPManager(ctx)
+		_ = NewRecoveryPManagerOnce(ctx)
+		_ = DefaultProviders()
+		_ = DefaultPManagers(ctx)
+	})
+
+	for _, location := range locations {
+		assertTask7ManagersSame(t, beforeManagers[location], location.GetManagers())
+	}
+	if beforeProviders == nil {
+		assert.Nil(t, defaultProvidersInstance)
+	} else {
+		assert.Same(t, beforeProviders, defaultProvidersInstance)
+	}
+	if beforeManagersSingleton == nil {
+		assert.Nil(t, defaultPManagersInstance)
+	} else {
+		assert.Same(t, beforeManagersSingleton, defaultPManagersInstance)
+	}
+	if beforeRecovery == nil {
+		assert.Nil(t, recoveryManagerInstance)
+	} else {
+		assert.Same(t, beforeRecovery, recoveryManagerInstance)
+	}
+}
 
 func TestFrameDefaultProvider_ValidatesCallbackAndBuildsFrame(t *testing.T) {
 	ctx, _ := newFrameTestContext(t, nil)
@@ -41,6 +172,7 @@ func TestFrameDefaultProvider_ValidatesCallbackAndBuildsFrame(t *testing.T) {
 }
 
 func TestStarterManagers_ValidatePayloadSelectTargetAndReportMissing(t *testing.T) {
+	isolateTask7ProviderGlobals(t)
 	t.Run("frame manager", func(t *testing.T) {
 		ctx, _ := newFrameTestContext(t, nil)
 		ctx.GetBootConfig().FrameType = "custom-frame"
@@ -103,6 +235,7 @@ func TestStarterManagers_ValidatePayloadSelectTargetAndReportMissing(t *testing.
 }
 
 func TestResponseProvidersAndManager_SelectByContentType(t *testing.T) {
+	isolateTask7ProviderGlobals(t)
 	ctx, _ := newFrameTestContext(t, nil)
 	protobufProvider := NewRespInfoProtobufProvider()
 	msgpackProvider := NewRespInfoMsgpackProvider()
@@ -140,6 +273,7 @@ func TestResponseProvidersAndManager_SelectByContentType(t *testing.T) {
 }
 
 func TestJsonCodecManager_CallbackAndConfiguredSelection(t *testing.T) {
+	isolateTask7ProviderGlobals(t)
 	ctx, _ := newFrameTestContext(t, nil)
 	manager := NewJsonCodecPManager(ctx)
 	_, err := manager.LoadProvider()
@@ -173,6 +307,29 @@ func TestJsonCodecManager_CallbackAndConfiguredSelection(t *testing.T) {
 	assert.Same(t, manager, manager.MountToParent())
 }
 
+type layerTestModel struct {
+	*Service
+	dbName string
+	table  string
+}
+
+func (m *layerTestModel) SetName(name string) Locator {
+	m.Service.SetName(name)
+	return m
+}
+func (m *layerTestModel) GetDbName() string { return m.dbName }
+func (m *layerTestModel) SetDbName(name string) Modeler {
+	m.dbName = name
+	return m
+}
+func (m *layerTestModel) GetTable() string { return m.table }
+func (m *layerTestModel) SetTable(table string, namespace ...string) Modeler {
+	m.table = RegisterKeyName(table, namespace...)
+	return m
+}
+
+var _ Modeler = (*layerTestModel)(nil)
+
 func TestLayerLocators_FluentNamesContextAndContainerLookup(t *testing.T) {
 	ctx, _ := newFrameTestContext(t, nil)
 	key := globalmanager.KeyName(fmt.Sprintf("task7-layer-%s", t.Name()))
@@ -196,6 +353,18 @@ func TestLayerLocators_FluentNamesContextAndContainerLookup(t *testing.T) {
 	var _ ApiLocator = NewApi(ctx)
 	var _ ServiceLocator = NewService(ctx)
 	var _ RepositoryLocator = NewRepository(ctx)
+
+	model := &layerTestModel{Service: NewService(ctx)}
+	assert.Same(t, model, model.SetName("model"))
+	assert.Equal(t, "model", model.GetName())
+	assert.Same(t, ctx, model.GetContext())
+	assert.Same(t, model, model.SetDbName("application"))
+	assert.Equal(t, "application", model.GetDbName())
+	assert.Same(t, model, model.SetTable("users", "tenant", "model"))
+	assert.Equal(t, "tenant.model.users", model.GetTable())
+	got, err := model.GetInstance(key)
+	require.NoError(t, err)
+	assert.Same(t, value, got)
 }
 
 func TestGlobalUtilities_NamespacesInstancesRecoveryAndMongoErrors(t *testing.T) {
@@ -237,7 +406,9 @@ func TestGlobalUtilities_NamespacesInstancesRecoveryAndMongoErrors(t *testing.T)
 	wasRegistered := manager.IsRegistered(notFoundKey)
 	var prior interface{}
 	if wasRegistered {
-		prior, _ = manager.Get(notFoundKey)
+		var err error
+		prior, err = manager.Get(notFoundKey)
+		require.NoError(t, err)
 	}
 	manager.Unregister(notFoundKey)
 	require.True(t, manager.Register(notFoundKey, func() (interface{}, error) {
@@ -246,7 +417,10 @@ func TestGlobalUtilities_NamespacesInstancesRecoveryAndMongoErrors(t *testing.T)
 	t.Cleanup(func() {
 		manager.Unregister(notFoundKey)
 		if wasRegistered {
-			manager.Register(notFoundKey, func() (interface{}, error) { return prior, nil })
+			require.True(t, manager.Register(notFoundKey, func() (interface{}, error) { return prior, nil }))
+			restored, err := manager.Get(notFoundKey)
+			require.NoError(t, err)
+			assert.Equal(t, prior, restored)
 		}
 	})
 	zero, mapped := GetNoDocumentsError[string](mongo.ErrNoDocuments)
@@ -266,6 +440,7 @@ func TestGlobalUtilities_NamespacesInstancesRecoveryAndMongoErrors(t *testing.T)
 }
 
 func TestDefaultCollections_ReturnCopiesFilterAndAppend(t *testing.T) {
+	isolateTask7ProviderGlobals(t)
 	first := newTask2Provider("first", "fiber", ProviderTypeDefault().GroupCoreStarterChoose)
 	second := newTask2Provider("second", "gin", ProviderTypeDefault().GroupCoreStarterChoose)
 	providers := &DefaultProviderCollection{providers: []IProvider{first}}

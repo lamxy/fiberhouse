@@ -235,8 +235,23 @@ func TestAppConfig_ContainerIntegration(t *testing.T) {
 	gm := ac.GetContainer()
 	require.NotNil(t, gm)
 	const key = "demoObj"
+	wasRegistered := gm.IsRegistered(key)
+	var previous interface{}
+	if wasRegistered {
+		var err error
+		previous, err = gm.Get(key)
+		require.NoError(t, err)
+	}
 	gm.Unregister(key)
-	t.Cleanup(func() { gm.Unregister(key) })
+	t.Cleanup(func() {
+		gm.Unregister(key)
+		if wasRegistered {
+			require.True(t, gm.Register(key, func() (interface{}, error) { return previous, nil }))
+			restored, err := gm.Get(key)
+			require.NoError(t, err)
+			assert.Equal(t, previous, restored)
+		}
+	})
 
 	// 通过全局管理器注册一个对象
 	type demo struct{ Name string }

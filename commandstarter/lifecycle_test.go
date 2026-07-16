@@ -8,6 +8,7 @@ import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
+	"github.com/lamxy/fiberhouse/globalmanager"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,6 +65,23 @@ func (a *commandTestApplication) RegisterCoreGlobalOptional(core interface{}) {
 }
 func (a *commandTestApplication) RegisterApplicationGlobals() { a.applicationGlobals++ }
 
+type commandTestContext struct {
+	fiberhouse.ICommandContext
+	cfg       appconfig.IAppConfig
+	logger    bootstrap.LoggerWrapper
+	container *globalmanager.GlobalManager
+	starter   fiberhouse.CommandStarter
+}
+
+func (c *commandTestContext) GetConfig() appconfig.IAppConfig            { return c.cfg }
+func (c *commandTestContext) GetLogger() bootstrap.LoggerWrapper         { return c.logger }
+func (c *commandTestContext) GetContainer() *globalmanager.GlobalManager { return c.container }
+func (c *commandTestContext) GetStarter() fiberhouse.IStarter            { return c.starter }
+func (c *commandTestContext) RegisterStarterApp(starter fiberhouse.CommandStarter) {
+	c.starter = starter
+}
+func (c *commandTestContext) GetStarterApp() fiberhouse.CommandStarter { return c.starter }
+
 func newCommandTestContext() fiberhouse.ICommandContext {
 	cfg := appconfig.NewAppConfig()
 	cfg.LoadDefault(map[string]interface{}{
@@ -76,7 +94,11 @@ func newCommandTestContext() fiberhouse.ICommandContext {
 	})
 	cfg.Initialize()
 	logger := zerolog.Nop()
-	return fiberhouse.NewCmdContextOnce(cfg, bootstrap.NewLoggerWrap(&logger))
+	return &commandTestContext{
+		cfg:       cfg,
+		logger:    bootstrap.NewLoggerWrap(&logger),
+		container: globalmanager.NewGlobalManager(),
+	}
 }
 
 func TestRunCommandStarter_UsesDocumentedOrder(t *testing.T) {
@@ -177,6 +199,11 @@ func TestFrameCmdApplication_RegistrationLoggerOriginsAndGlobals(t *testing.T) {
 	assert.Same(t, ctx, frame.GetContext())
 	assert.Same(t, frame, frame.GetFrameCmdApp())
 	assert.Same(t, application, frame.GetApplication())
+	for key, origin := range ctx.GetConfig().GetLogOriginMap() {
+		if key != "" {
+			assert.False(t, ctx.GetContainer().IsRegistered(origin.InstanceKey()), key)
+		}
+	}
 	frame.RegisterApplicationGlobals()
 	assert.Equal(t, 1, application.applicationGlobals)
 	for key, origin := range ctx.GetConfig().GetLogOriginMap() {

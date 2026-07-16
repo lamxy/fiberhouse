@@ -137,3 +137,37 @@ func TestAppContext_LoggerOriginMissingAndSuccess(t *testing.T) {
 	assert.Same(t, &originLogger, gotOrigin)
 	assert.Same(t, &originLogger, ctx.GetMustLoggerWithOrigin(registeredOrigin))
 }
+
+func isolateTask7CommandContext(t *testing.T) {
+	t.Helper()
+	previous := commandContext
+	commandContext = nil
+	onceCmd = sync.Once{}
+	t.Cleanup(func() {
+		commandContext = previous
+		onceCmd = sync.Once{}
+		if previous != nil {
+			onceCmd.Do(func() {})
+		}
+	})
+}
+
+func TestCmdContextOnce_IsSingletonWithoutLeakingTestInstance(t *testing.T) {
+	previous := commandContext
+	t.Run("isolated singleton", func(t *testing.T) {
+		isolateTask7CommandContext(t)
+		cfg := appconfig.NewAppConfig()
+		logger := zerolog.Nop()
+		first := NewCmdContextOnce(cfg, bootstrap.NewLoggerWrap(&logger))
+		second := NewCmdContextOnce(appconfig.NewAppConfig(), bootstrap.NewLoggerWrap(&logger))
+
+		assert.NotNil(t, first)
+		assert.Same(t, first, second)
+		assert.Same(t, cfg, first.GetConfig())
+	})
+	if previous == nil {
+		assert.Nil(t, commandContext)
+	} else {
+		assert.Same(t, previous, commandContext)
+	}
+}
