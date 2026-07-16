@@ -202,44 +202,64 @@ func TestUnregisterIfExists(t *testing.T) {
 	}
 }
 
-func TestRebuildIfSupported(t *testing.T) {
-	m := newMgr()
-	type rebuildable interface {
-		Rebuild(name KeyName) (interface{}, error)
-	}
-	rb, ok := any(m).(rebuildable)
-	if !ok {
-		t.Skip("Rebuild 方法不存在，跳过")
-	}
+type rebuildableResource struct {
+	version int
+	path    string
+	err     error
+}
 
-	var counter int32
-	m.Register("re_svc", func() (interface{}, error) {
-		return fmt.Sprintf("V%d", atomic.AddInt32(&counter, 1)), nil
-	})
+func (r *rebuildableResource) Rebuild(args ...interface{}) (interface{}, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	path, _ := args[0].(string)
+	return &rebuildableResource{version: r.version + 1, path: path}, nil
+}
+
+func (r *rebuildableResource) GetConfPath() string { return r.path }
+
+func TestRebuild_UsesRebuilderContractAndReplacesInstance(t *testing.T) {
+	m := newMgr()
+	original := &rebuildableResource{version: 1, path: "config/resource.yml"}
+	m.Register("re_svc", func() (interface{}, error) { return original, nil })
 	inst1, err := m.Get("re_svc")
 	if err != nil {
 		t.Fatalf("初次获取失败: %v", err)
 	}
-	if counter != 1 {
-		t.Fatalf("初始化次数应=1, got=%d", counter)
+	if inst1 != original {
+		t.Fatalf("初次获取实例 = %p, want %p", inst1, original)
 	}
-	inst2, err := rb.Rebuild("re_svc")
-	if err != nil {
+	if err := m.Rebuild("re_svc"); err != nil {
 		t.Fatalf("Rebuild 失败: %v", err)
 	}
-	if counter != 2 {
-		t.Fatalf("Rebuild 后计数应=2, got=%d", counter)
+	inst2, err := m.Get("re_svc")
+	if err != nil {
+		t.Fatalf("Rebuild 后 Get 失败: %v", err)
 	}
 	if inst1 == inst2 {
 		t.Fatalf("Rebuild 应返回全新实例")
 	}
-	// 再次 Get 不应再创建新实例
+	rebuilt := inst2.(*rebuildableResource)
+	if rebuilt.version != 2 || rebuilt.path != original.path {
+		t.Fatalf("重建实例 = %#v", rebuilt)
+	}
 	inst3, err := m.Get("re_svc")
 	if err != nil {
 		t.Fatalf("Get 失败: %v", err)
 	}
 	if inst3 != inst2 {
 		t.Fatalf("Rebuild 后的 Get 应复用新实例")
+	}
+
+	m.Register("rebuild_error", func() (interface{}, error) {
+		return &rebuildableResource{err: errors.New("rebuild failed")}, nil
+	})
+	_, err = m.Get("rebuild_error")
+	if err != nil {
+		t.Fatalf("初始化失败: %v", err)
+	}
+	if err = m.Rebuild("rebuild_error"); err == nil || !contains(err.Error(), "rebuild failed") {
+		t.Fatalf("Rebuild 应传播错误, got: %v", err)
 	}
 }
 

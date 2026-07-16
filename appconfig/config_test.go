@@ -121,14 +121,9 @@ application:
 	ac.SetVersion(ac.String("application.version"))
 	assert.Equal(t, "YAML-ID", ac.GetAppId())
 
-	// 中间件开关
-	coreSwitch := ac.GetMiddlewareSwitch("coreHttp") ||
-		ac.GetCore().(*koanf.Koanf).Bool("application.middleware.coreHttp")
-	assert.True(t, coreSwitch)
-
-	monitorSwitch := ac.GetMiddlewareSwitch("monitor") ||
-		ac.GetCore().(*koanf.Koanf).Bool("application.middleware.monitor")
-	assert.False(t, monitorSwitch)
+	// Initialize must project the loaded values into the public middleware view.
+	assert.True(t, ac.GetMiddlewareSwitch("coreHttp"))
+	assert.False(t, ac.GetMiddlewareSwitch("monitor"))
 }
 
 func TestAppConfig_ConfPath(t *testing.T) {
@@ -171,12 +166,11 @@ func TestAppConfig_GetLogOriginMap(t *testing.T) {
 	assert.Contains(t, m, "testA")
 	assert.Contains(t, m, "testB")
 
-	// map 为副本还是原始（期望最好是副本；这里防御性修改后再取值校验不影响内部）
+	// The caller must not be able to mutate the configuration's registry.
 	m["hack"] = "X"
 	m2 := ac.GetLogOriginMap()
-	_, exists := m2["hack"]
-	// 不做强制断言；若希望是副本可断言 exists=false
-	_ = exists
+	assert.NotContains(t, m2, "hack")
+	assert.Equal(t, LogOrigin("T-A"), m2["testA"])
 }
 
 func TestAppConfig_SafeSetSafeGet_Concurrent(t *testing.T) {
@@ -240,13 +234,16 @@ func TestAppConfig_ContainerIntegration(t *testing.T) {
 	ac := NewAppConfig()
 	gm := ac.GetContainer()
 	require.NotNil(t, gm)
+	const key = "demoObj"
+	gm.Unregister(key)
+	t.Cleanup(func() { gm.Unregister(key) })
 
 	// 通过全局管理器注册一个对象
 	type demo struct{ Name string }
-	ok := gm.Register("demoObj", func() (interface{}, error) { return &demo{Name: "X"}, nil })
+	ok := gm.Register(key, func() (interface{}, error) { return &demo{Name: "X"}, nil })
 	require.True(t, ok)
 
-	inst, err := gm.Get("demoObj")
+	inst, err := gm.Get(key)
 	require.NoError(t, err)
 	require.IsType(t, &demo{}, inst)
 	assert.Equal(t, "X", inst.(*demo).Name)
@@ -273,9 +270,20 @@ func TestGetCoreWithConfig_Generic(t *testing.T) {
 
 func TestAppConfig_Initialize_Idempotent(t *testing.T) {
 	ac := NewAppConfig()
-	// 调用多次不应 panic
+	ac.LoadDefault(map[string]interface{}{
+		"application.appId":                    "idempotent-id",
+		"application.appName":                  "idempotent-name",
+		"application.version":                  "7.0.0",
+		"application.middleware.coreHttp":      true,
+		"application.recover.enablePrintStack": true,
+	})
 	ac.Initialize()
+	firstApplication := ac.GetApplication()
+	firstRecover := ac.GetRecover()
 	ac.Initialize()
+	assert.Equal(t, firstApplication, ac.GetApplication())
+	assert.Equal(t, firstRecover, ac.GetRecover())
+	assert.True(t, ac.GetMiddlewareSwitch("coreHttp"))
 }
 
 func TestAppConfig_LogOrigin_InstanceKeyPrefix(t *testing.T) {
@@ -291,14 +299,10 @@ func TestAppConfig_MiddlewareSwitch_LoadDefault(t *testing.T) {
 		"application.middleware.monitor":  false,
 		"middleware.basicAuth":            true,
 	})
+	ac.Initialize()
 
-	coreOn := ac.GetMiddlewareSwitch("coreHttp") ||
-		ac.GetCore().(*koanf.Koanf).Bool("application.middleware.coreHttp")
-	assert.True(t, coreOn)
-
-	monitorOff := ac.GetMiddlewareSwitch("monitor") ||
-		ac.GetCore().(*koanf.Koanf).Bool("application.middleware.monitor")
-	assert.False(t, monitorOff)
+	assert.True(t, ac.GetMiddlewareSwitch("coreHttp"))
+	assert.False(t, ac.GetMiddlewareSwitch("monitor"))
 
 	// 不存在 => false
 	assert.False(t, ac.GetMiddlewareSwitch("absent_xxx"))
@@ -342,6 +346,7 @@ func TestAppConfig_ParallelSafeGet(t *testing.T) {
 	ac.LoadDefault(map[string]interface{}{"p.val": 100})
 	parallel := runtime.NumCPU() * 4
 	var wg sync.WaitGroup
+	errs := make(chan error, parallel)
 	wg.Add(parallel)
 	for i := 0; i < parallel; i++ {
 		go func() {
@@ -349,10 +354,14 @@ func TestAppConfig_ParallelSafeGet(t *testing.T) {
 			_, err := ac.SafeGet("p.val", func(key string, c IAppConfig) (interface{}, error) {
 				return c.Int("p.val"), nil
 			})
-			require.NoError(t, err)
+			errs <- err
 		}()
 	}
 	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
 }
 
 func TestAppConfig_SafeSet_ErrorPropagation(t *testing.T) {

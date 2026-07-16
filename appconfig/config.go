@@ -457,7 +457,11 @@ func (ac *AppConfig) LogOriginCustom(key string) LogOrigin {
 
 // GetLogOriginMap 获取日志器来源map
 func (ac *AppConfig) GetLogOriginMap() map[string]LogOrigin {
-	return ac.logOriginEnum
+	result := make(map[string]LogOrigin, len(ac.logOriginEnum))
+	for key, origin := range ac.logOriginEnum {
+		result[key] = origin
+	}
+	return result
 }
 
 func (ac *AppConfig) GetMiddlewareSwitch(key string) bool {
