@@ -7,7 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // helper: 获取 *GlobalManager 全新实例
@@ -83,11 +82,14 @@ func TestRegistersBatch(t *testing.T) {
 func TestGetSuccessLazyInitOnce(t *testing.T) {
 	m := newMgr()
 	var initCount int32
+	initializerStarted := make(chan struct{})
+	releaseInitializer := make(chan struct{})
 	type Obj struct {
 		ID int
 	}
 	m.Register("once_obj", func() (interface{}, error) {
-		time.Sleep(10 * time.Millisecond)
+		close(initializerStarted)
+		<-releaseInitializer
 		atomic.AddInt32(&initCount, 1)
 		return &Obj{ID: 7}, nil
 	})
@@ -95,18 +97,24 @@ func TestGetSuccessLazyInitOnce(t *testing.T) {
 	// 并发获取
 	const n = 40
 	var wg sync.WaitGroup
+	var callersReady sync.WaitGroup
 	wg.Add(n)
+	callersReady.Add(n)
 	results := make([]interface{}, n)
 	errs := make([]error, n)
 
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			defer wg.Done()
+			callersReady.Done()
 			inst, err := m.Get("once_obj")
 			results[i] = inst
 			errs[i] = err
 		}(i)
 	}
+	callersReady.Wait()
+	<-initializerStarted
+	close(releaseInitializer)
 	wg.Wait()
 
 	for i, e := range errs {

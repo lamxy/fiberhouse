@@ -155,6 +155,9 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 			}
 		}()
 		instance, err = entity.initializer()
+		if err == nil && instance == nil {
+			err = fmt.Errorf("initializer returned nil instance")
+		}
 		if err != nil {
 			e := fmt.Errorf("failed to initialize global object '%s': %v", name, err)
 			entity.initErr.Store(&storedError{err: e})
@@ -228,6 +231,9 @@ func (gm *GlobalManager) Rebuild(name KeyName) error {
 		newInstance, err := rebuilder.Rebuild(rebuilder.GetConfPath())
 		if err != nil {
 			return fmt.Errorf("failed to rebuild global object '%s': %v", name, err)
+		}
+		if newInstance == nil {
+			return fmt.Errorf("failed to rebuild global object '%s': rebuilder returned nil instance", name)
 		}
 		entity.instance.Store(&storedValue{value: newInstance})
 		return nil

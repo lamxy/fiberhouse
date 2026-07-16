@@ -73,6 +73,34 @@ func TestGet_TransientFailureThenSuccessClearsCachedError(t *testing.T) {
 	}
 }
 
+func TestGet_NilInstanceIsRetryableInitializationFailure(t *testing.T) {
+	manager := NewGlobalManager()
+	calls := 0
+	manager.Register("nil-resource", func() (interface{}, error) {
+		calls++
+		return nil, nil
+	})
+
+	var firstMessage string
+	for attempt := 1; attempt <= 2; attempt++ {
+		instance, err := manager.Get("nil-resource")
+		if err == nil {
+			t.Fatalf("Get() attempt %d error = nil, instance = %#v", attempt, instance)
+		}
+		if instance != nil {
+			t.Fatalf("Get() attempt %d instance = %#v, want nil", attempt, instance)
+		}
+		if attempt == 1 {
+			firstMessage = err.Error()
+		} else if err.Error() != firstMessage {
+			t.Fatalf("Get() errors differ: first %q, second %q", firstMessage, err.Error())
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("initializer calls = %d, want 2", calls)
+	}
+}
+
 func TestGet_FailurePublishesErrorBeforeConcurrentRetry(t *testing.T) {
 	previousProcs := runtime.GOMAXPROCS(2)
 	defer runtime.GOMAXPROCS(previousProcs)
@@ -279,6 +307,26 @@ func TestRebuild_SuccessErrorAndTypeChange(t *testing.T) {
 	}
 	if got, _ := errorManager.Get("resource"); got != failing {
 		t.Fatal("failed rebuild replaced the current resource")
+	}
+}
+
+func TestRebuild_NilResultReturnsErrorAndRetainsCurrentInstance(t *testing.T) {
+	manager := NewGlobalManager()
+	current := &lifecycleRebuilder{path: "config.yml", next: nil}
+	manager.Register("resource", func() (interface{}, error) { return current, nil })
+	if _, err := manager.Get("resource"); err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+
+	if err := manager.Rebuild("resource"); err == nil {
+		t.Fatal("Rebuild() nil result error = nil")
+	}
+	got, err := manager.Get("resource")
+	if err != nil {
+		t.Fatalf("Get() after rejected rebuild error = %v", err)
+	}
+	if got != current {
+		t.Fatalf("Get() after rejected rebuild = %#v, want original %#v", got, current)
 	}
 }
 

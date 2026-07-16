@@ -2,13 +2,14 @@ package cache
 
 import (
 	"errors"
-	"github.com/sony/gobreaker/v2"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/sony/gobreaker/v2"
 )
 
 // TestCircuitBreakerWrap_Basic 成功执行
@@ -56,16 +57,29 @@ func TestCircuitBreakerWrap_TripAndRecover(t *testing.T) {
 		t.Fatalf("expect error message contains 'open', got=%v", msg)
 	}
 
-	// 等待超时 -> 半开再成功
-	time.Sleep(150 * time.Millisecond)
-	out, err2 := wrap.Call(func() (string, error) {
-		return "recovered", nil
-	})
-	if err2 != nil {
-		t.Fatalf("expect recovery success got err=%v", err2)
-	}
-	if out.(string) != "recovered" {
-		t.Fatalf("expect 'recovered' got=%v", out)
+	// 轮询直到超时进入半开状态并成功，deadline 仅用于阻止测试永久挂起。
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	var lastErr error
+	for {
+		select {
+		case <-ticker.C:
+			out, callErr := wrap.Call(func() (string, error) {
+				return "recovered", nil
+			})
+			if callErr != nil {
+				lastErr = callErr
+				continue
+			}
+			if out.(string) != "recovered" {
+				t.Fatalf("expect 'recovered' got=%v", out)
+			}
+			return
+		case <-deadline.C:
+			t.Fatalf("circuit breaker did not recover before deadline, last error=%v", lastErr)
+		}
 	}
 }
 
@@ -103,17 +117,19 @@ func TestShardedBloomFilter_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	var misses atomic.Int32
 	totalKeys := 3000
+	writerDone := make(chan struct{})
 
 	// writer
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer close(writerDone)
 		for i := 0; i < totalKeys; i++ {
 			sb.Add([]byte(keyStr(i)))
 		}
 	}()
 
-	time.Sleep(1 * time.Second)
+	<-writerDone
 
 	// readers
 	readers := 8
@@ -133,9 +149,8 @@ func TestShardedBloomFilter_Concurrent(t *testing.T) {
 	}
 
 	wg.Wait()
-	// 不作强硬断言，只要不出现极大数量的 miss
-	if m := misses.Load(); m > int32(totalKeys/3) {
-		t.Logf("warning: high misses=%d (可能测试过早读取或实现尚未强同步)", m)
+	if m := misses.Load(); m != 0 {
+		t.Fatalf("completed bloom writes produced %d false negatives", m)
 	}
 }
 
