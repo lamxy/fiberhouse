@@ -41,6 +41,9 @@ Every task used an implementer report, focused RED/GREEN evidence, package-level
    - `c83c2a7` — real duplicate-registration and deterministic Reset review fixes.
 7. Application lifecycle orchestration
    - `b2f4a33` — boot/frame/provider/command lifecycle, stronger legacy assertions and pure high-value paths.
+   - `3a119e2` — ticker-proof and process-global test isolation review fixes.
+8. Whole-branch review
+   - `acfc893` — reject nil GlobalManager initializer/rebuilder results and replace legacy fixed-sleep synchronization.
 
 ## Important RED-driven production corrections
 
@@ -75,7 +78,7 @@ git diff --check
 All test commands passed. Coverage from the final profile:
 
 - whole repository: **46.5%** (official `go tool cover` total);
-- library scope: **2,528 / 4,123 statements = 61.3%**;
-- hermetic scope: **2,528 / 3,758 statements = 67.3%**.
+- library scope: **2,532 / 4,127 statements = 61.4%**;
+- hermetic scope: **2,532 / 3,762 statements = 67.3%**.
 
 The library and hermetic exclusions are defined in `design.md`. Database wrappers, remote cache, generated protobuf, placeholder plugins and example applications remain visible in the whole-repository figure rather than being hidden.
