@@ -40,6 +40,7 @@
 - [功能状态](reference/feature-status.md)：定义“已接入”“实验性”“内部工具”“预留/占位”，并逐项说明默认注册和应用启用条件。
 - [组件目录](reference/components.md)：`component/`、数据库辅助和内部工具的调用者、并发与生命周期索引。
 - [示例目录](reference/examples.md)：`example_main`、`example_config`、`example_application` 的可借鉴部分与不完善处。
+- [已知测试失败](reference/known-test-failures.md)：记录当前完整测试套件中的既有失败、复现边界和后续处理方向。
 
 ## 文档约定
 
