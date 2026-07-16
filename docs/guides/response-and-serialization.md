@@ -78,7 +78,7 @@ JSON 写出错误的接口语义并不对称：`FiberContext.JSON` 直接返回 
 | MIME | 实现 | 当前结构 |
 |---|---|---|
 | `application/msgpack` | `RespInfoMagPack` | map 中始终有 `code`、`msg`，`data != nil` 时才加入 `data` |
-| `application/x-protobuf` | `RespInfoPB` | `RespInfoProto{code,msg,data}`，data 通过 `structpb.Value` 包进 `Any` |
+| `application/x-protobuf` | `RespInfoPB` | `response/pb.RespInfoProto{code,msg,data}`，data 通过 `structpb.Value` 包进 `Any` |
 
 MsgPack 和 Protobuf 只改变响应 body 编码，不改变 HTTP status 或业务 code。Protobuf 的 `Reset` 在 `structpb.NewValue` / `anypb.New` 失败时不会向调用方返回转换错误，而是留下 nil/旧值边界；复杂自定义 Go 类型不应假定都能无损转成 `structpb.Value`。MsgPack 客户端解析 helper 对字段具体类型做直接断言，面对不受信任或不同 schema 的数据可能 panic，调用方需要额外校验。
 

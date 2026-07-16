@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        v6.33.0
-// source: rpc/protosrc/resp_info.proto
+// source: response/pb/resp_info.proto
 
-package protosrc
+package responsepb
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -34,7 +34,7 @@ type RespInfoProto struct {
 
 func (x *RespInfoProto) Reset() {
 	*x = RespInfoProto{}
-	mi := &file_rpc_protosrc_resp_info_proto_msgTypes[0]
+	mi := &file_response_pb_resp_info_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -46,7 +46,7 @@ func (x *RespInfoProto) String() string {
 func (*RespInfoProto) ProtoMessage() {}
 
 func (x *RespInfoProto) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_protosrc_resp_info_proto_msgTypes[0]
+	mi := &file_response_pb_resp_info_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,7 +59,7 @@ func (x *RespInfoProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RespInfoProto.ProtoReflect.Descriptor instead.
 func (*RespInfoProto) Descriptor() ([]byte, []int) {
-	return file_rpc_protosrc_resp_info_proto_rawDescGZIP(), []int{0}
+	return file_response_pb_resp_info_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RespInfoProto) GetCode() int32 {
@@ -83,34 +83,34 @@ func (x *RespInfoProto) GetData() *anypb.Any {
 	return nil
 }
 
-var File_rpc_protosrc_resp_info_proto protoreflect.FileDescriptor
+var File_response_pb_resp_info_proto protoreflect.FileDescriptor
 
-const file_rpc_protosrc_resp_info_proto_rawDesc = "" +
+const file_response_pb_resp_info_proto_rawDesc = "" +
 	"\n" +
-	"\x1crpc/protosrc/resp_info.proto\x12\bresponse\x1a\x19google/protobuf/any.proto\"_\n" +
+	"\x1bresponse/pb/resp_info.proto\x12\bresponse\x1a\x19google/protobuf/any.proto\"_\n" +
 	"\rRespInfoProto\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\x12\x10\n" +
 	"\x03msg\x18\x02 \x01(\tR\x03msg\x12(\n" +
-	"\x04data\x18\x03 \x01(\v2\x14.google.protobuf.AnyR\x04dataB3Z1github.com/lamxy/fiberhouse/rpc/protosrc;protosrcb\x06proto3"
+	"\x04data\x18\x03 \x01(\v2\x14.google.protobuf.AnyR\x04dataB4Z2github.com/lamxy/fiberhouse/response/pb;responsepbb\x06proto3"
 
 var (
-	file_rpc_protosrc_resp_info_proto_rawDescOnce sync.Once
-	file_rpc_protosrc_resp_info_proto_rawDescData []byte
+	file_response_pb_resp_info_proto_rawDescOnce sync.Once
+	file_response_pb_resp_info_proto_rawDescData []byte
 )
 
-func file_rpc_protosrc_resp_info_proto_rawDescGZIP() []byte {
-	file_rpc_protosrc_resp_info_proto_rawDescOnce.Do(func() {
-		file_rpc_protosrc_resp_info_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rpc_protosrc_resp_info_proto_rawDesc), len(file_rpc_protosrc_resp_info_proto_rawDesc)))
+func file_response_pb_resp_info_proto_rawDescGZIP() []byte {
+	file_response_pb_resp_info_proto_rawDescOnce.Do(func() {
+		file_response_pb_resp_info_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_response_pb_resp_info_proto_rawDesc), len(file_response_pb_resp_info_proto_rawDesc)))
 	})
-	return file_rpc_protosrc_resp_info_proto_rawDescData
+	return file_response_pb_resp_info_proto_rawDescData
 }
 
-var file_rpc_protosrc_resp_info_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
-var file_rpc_protosrc_resp_info_proto_goTypes = []any{
+var file_response_pb_resp_info_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_response_pb_resp_info_proto_goTypes = []any{
 	(*RespInfoProto)(nil), // 0: response.RespInfoProto
 	(*anypb.Any)(nil),     // 1: google.protobuf.Any
 }
-var file_rpc_protosrc_resp_info_proto_depIdxs = []int32{
+var file_response_pb_resp_info_proto_depIdxs = []int32{
 	1, // 0: response.RespInfoProto.data:type_name -> google.protobuf.Any
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
@@ -119,26 +119,26 @@ var file_rpc_protosrc_resp_info_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_rpc_protosrc_resp_info_proto_init() }
-func file_rpc_protosrc_resp_info_proto_init() {
-	if File_rpc_protosrc_resp_info_proto != nil {
+func init() { file_response_pb_resp_info_proto_init() }
+func file_response_pb_resp_info_proto_init() {
+	if File_response_pb_resp_info_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_protosrc_resp_info_proto_rawDesc), len(file_rpc_protosrc_resp_info_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_response_pb_resp_info_proto_rawDesc), len(file_response_pb_resp_info_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_rpc_protosrc_resp_info_proto_goTypes,
-		DependencyIndexes: file_rpc_protosrc_resp_info_proto_depIdxs,
-		MessageInfos:      file_rpc_protosrc_resp_info_proto_msgTypes,
+		GoTypes:           file_response_pb_resp_info_proto_goTypes,
+		DependencyIndexes: file_response_pb_resp_info_proto_depIdxs,
+		MessageInfos:      file_response_pb_resp_info_proto_msgTypes,
 	}.Build()
-	File_rpc_protosrc_resp_info_proto = out.File
-	file_rpc_protosrc_resp_info_proto_goTypes = nil
-	file_rpc_protosrc_resp_info_proto_depIdxs = nil
+	File_response_pb_resp_info_proto = out.File
+	file_response_pb_resp_info_proto_goTypes = nil
+	file_response_pb_resp_info_proto_depIdxs = nil
 }

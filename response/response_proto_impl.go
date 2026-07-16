@@ -7,14 +7,14 @@
 package response
 
 import (
-	"google.golang.org/protobuf/proto"
+	"net/http"
 	"sync"
 
 	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
-	pb "github.com/lamxy/fiberhouse/rpc/protosrc"
+	pb "github.com/lamxy/fiberhouse/response/pb"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
-	"net/http"
 )
 
 type RespInfoPB struct {

@@ -26,7 +26,7 @@
 | `component/database/dbmongo/internal/mongodecimal` | 在 `decimal.Decimal` 与 BSON Decimal128 间转换 | 仅 `dbmongo.NewClient` 的 BSON registry | dbmongo 私有无状态 codec；类型不符、解析或读写失败均返回错误 | 内部实现 | [数据库指南](../guides/database.md) |
 | `component/i18n` | 通用国际化的目录意图 | 无 Go 调用者 | 无初始化、错误、并发或关闭语义；validate 翻译不等于通用 i18n | 预留/占位 | [功能状态](feature-status.md)、[验证指南](../guides/validation.md) |
 | `component/mq` | 消息队列的目录意图 | 无 Go 调用者 | 只有 RabbitMQ 方向说明，没有 client、consumer 或生命周期 | 预留/占位 | [功能状态](feature-status.md) |
-| `component/rpc` | RPC 的目录意图 | 无 Go 调用者 | 无 RPC client/server；根目录生成的响应 proto 也不提供 RPC 生命周期 | 预留/占位 | [功能状态](feature-status.md)、[响应与序列化](../guides/response-and-serialization.md) |
+| `component/rpc` | RPC 的目录意图 | 无 Go 调用者 | 无 RPC client/server；`response/pb` 仅提供 HTTP 统一响应的 Protobuf 数据契约，不提供 RPC 生命周期 | 预留/占位 | [功能状态](feature-status.md)、[响应与序列化](../guides/response-and-serialization.md) |
 
 组件装配应在服务进入并发处理前完成。对象池条目、Dig 容器、验证器注册表和异步 writer 的可变状态具有不同并发语义，不能把 package 级单例等同于任意时刻都可安全重配。数据库、日志与任务组件的关闭错误也不会由目录结构自动汇总；应用需要为资源建立明确的创建者、停止顺序和错误出口。
 

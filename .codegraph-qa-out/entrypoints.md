@@ -109,7 +109,7 @@
   - Swagger docs 的 `init()` 入口。
   - 註冊 `SwaggerInfo`。
 
-- `rpc/protosrc/resp_info.pb.go:122`
+- `response/pb/resp_info.pb.go:122`
   - protobuf generated code 的 `init()` 入口。
   - 初始化 proto descriptor。
 

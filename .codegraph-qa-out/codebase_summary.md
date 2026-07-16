@@ -95,7 +95,7 @@ fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 3. **全局對象統一管理**：`GlobalManager` 作為單例容器，通過 `InstanceKey` 訪問 DB/Cache 等實例，支持健康保活機制（`RegisterGlobalsKeepalive`）。
 4. **二級緩存支持**：本地（ristretto）+ 遠端（Redis），通過 `GetLocalCacheKey` / `GetRemoteCacheKey` / `GetLevel2CacheKey` 訪問。
 5. **CLI 支持**：除 Web 應用外，有獨立的 `ICommandContext` + `CommandStarter` 體系（`commandstarter/` 目錄）。
-6. **RPC 擴展**：`rpc/` 目錄 + protobuf 依賴，具備 RPC 擴展能力。
+6. **Protobuf 響應編碼**：`response/pb` 包含 HTTP 統一響應的 protobuf schema 與生成消息，不是 RPC runtime。
 
 ---
 
@@ -114,10 +114,8 @@ fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 | `bootstrap/` | 配置加載、日誌初始化 |
 | `component/` | 內置可選組件命名空間，包含 container、cache、database、validate、codec 等能力 |
 | `middleware/` | 內置中間件 |
-| `response/` | 統一響應結構 |
-| `rpc/` | RPC 支持 |
+| `response/` | 統一響應結構；`pb/` 子目錄保存 Protobuf schema 與生成消息 |
 | `commandstarter/` | CLI 應用啟動器 |
 | `example_application/` | ⭐ 完整示例，理解用法的最佳入口 |
 | `example_main/main.go` | ⭐ 啟動示例，展示完整組裝方式 |
 | `plugins/` | 插件目錄（目前為佔位符，尚未實現） |
-
