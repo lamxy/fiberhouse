@@ -171,6 +171,7 @@ func OptionPoolPut(co *CacheOption) {
 // Clone 克隆CacheOption实例，可以传入新的context.Context
 func (c *CacheOption) Clone(ctx ...context.Context) *CacheOption {
 	coNew := OptionPoolGet(c.AppCtx)
+	coNew.ctx = c.ctx
 	if len(ctx) > 0 {
 		coNew.ctx = ctx[0]
 	}

@@ -5,6 +5,13 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/appconfig"
+	"github.com/lamxy/fiberhouse/bootstrap"
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // helper: 采样断言
@@ -18,6 +25,98 @@ func sampleRange(t *testing.T, n int, f func() time.Duration, min, max time.Dura
 		s = append(s, v)
 	}
 	return s
+}
+
+func newCacheOptionTestContext() fiberhouse.IContext {
+	logger := zerolog.Nop()
+	return fiberhouse.NewAppContext(appconfig.NewAppConfig(), bootstrap.NewLoggerWrap(&logger))
+}
+
+func TestCacheOption_ClonePreservesContextAndOwnsTTLConfigs(t *testing.T) {
+	appCtx := newCacheOptionTestContext()
+	requestCtx := context.WithValue(context.Background(), struct{}{}, "request")
+	original := NewCacheOption(appCtx).
+		SetContextCtx(requestCtx).
+		Level2().
+		SetSyncStrategyAsyncWriteBoth().
+		SetCacheKey("key").
+		SetLocalTTLWithRandom(time.Minute, time.Second).
+		SetRemoteTTLWithRandom(2*time.Minute, 2*time.Second).
+		EnableProtectionAll()
+
+	clone := original.Clone()
+	defer clone.Release()
+	assert.Equal(t, requestCtx, clone.GetContextCtx())
+	assert.Same(t, appCtx, clone.GetContext())
+	assert.Equal(t, original.GetCacheLevel(), clone.GetCacheLevel())
+	assert.Equal(t, original.GetSyncStrategy(), clone.GetSyncStrategy())
+	assert.Equal(t, original.GetCacheKey(), clone.GetCacheKey())
+	assert.True(t, clone.GetSingleFlightState())
+	assert.True(t, clone.GetBloomFilterState())
+	assert.True(t, clone.GetCircuitBreakerState())
+
+	clone.SetLocalTTL(time.Second).SetRemoteTTL(2 * time.Second)
+	assert.Equal(t, time.Minute, original.GetLocalBaseTTL())
+	assert.Equal(t, 2*time.Minute, original.GetRemoteBaseTTL())
+}
+
+func TestCacheOption_CloneAllowsContextOverride(t *testing.T) {
+	originalCtx := context.Background()
+	override := context.WithValue(context.Background(), struct{}{}, "override")
+	clone := NewCacheOption(newCacheOptionTestContext()).SetContextCtx(originalCtx).Clone(override)
+	defer clone.Release()
+	assert.Equal(t, override, clone.GetContextCtx())
+}
+
+func TestCacheOption_ResetAndPoolReuseClearRequestState(t *testing.T) {
+	appCtx := newCacheOptionTestContext()
+	co := OptionPoolGet(appCtx)
+	co.SetContextCtx(context.Background()).Level2().SetCacheKey("stale").
+		SetLocalTTL(time.Minute).SetRemoteTTL(time.Minute).EnableProtectionAll().DisableCache()
+	OptionPoolPut(co)
+
+	reused := OptionPoolGet(appCtx)
+	defer OptionPoolPut(reused)
+	assert.Same(t, appCtx, reused.GetContext())
+	assert.Nil(t, reused.GetContextCtx())
+	assert.Empty(t, reused.GetCacheKey())
+	assert.Zero(t, reused.GetCacheLevel())
+	assert.Equal(t, WriteRemoteOnly, reused.GetSyncStrategy())
+	assert.Zero(t, reused.GetLocalBaseTTL())
+	assert.Zero(t, reused.GetRemoteBaseTTL())
+	assert.False(t, reused.GetSingleFlightState())
+	assert.False(t, reused.GetBloomFilterState())
+	assert.False(t, reused.GetCircuitBreakerState())
+	assert.True(t, reused.IsCache())
+}
+
+func TestCacheOption_TTLBoundsAndInvalidRanges(t *testing.T) {
+	co := NewCacheOption(nil)
+	co.SetLocalTTLRandomPercent(10*time.Second, -1)
+	assert.Equal(t, 10*time.Second, co.GetLocalTTL())
+	co.SetRemoteTTLRandomPercent(10*time.Second, 2)
+	for i := 0; i < 100; i++ {
+		assert.Greater(t, co.GetRemoteTTL(), time.Duration(0))
+		assert.LessOrEqual(t, co.GetRemoteTTL(), 20*time.Second)
+	}
+	co.SetLocalTTLWithRandom(5*time.Second, -time.Second)
+	assert.Equal(t, 5*time.Second, co.GetLocalTTL())
+}
+
+func TestCacheOption_DisabledCacheInvokesLoaderWithConfiguredContext(t *testing.T) {
+	appCtx := newCacheOptionTestContext()
+	ctx := context.WithValue(context.Background(), struct{}{}, "loader-context")
+	co := NewCacheOption(appCtx).Local().SetCacheKey("disabled").SetContextCtx(ctx).DisableCache()
+
+	called := 0
+	got, err := GetCached(co, func(gotCtx context.Context) (string, error) {
+		called++
+		assert.Same(t, ctx, gotCtx)
+		return "loaded", nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "loaded", got)
+	assert.Equal(t, 1, called)
 }
 
 // TestCacheOption_LocalTTL_Fixed 固定 TTL

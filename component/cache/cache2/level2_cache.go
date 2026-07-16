@@ -8,6 +8,7 @@ package cache2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -325,12 +326,8 @@ func (l2c *Level2Cache) Delete(ctx context.Context, keys ...string) error {
 
 // Close 关闭缓存实例，释放资源（应用退出时调用Close关闭资源）
 func (l2c *Level2Cache) Close() error {
-	//if !l2c.closed.CompareAndSwap(false, true) {
-	//	return nil // 已关闭
-	//}
-
-	if l2c.closed.Load() {
-		return nil
+	if !l2c.closed.CompareAndSwap(false, true) {
+		return nil // 已关闭
 	}
 
 	// 停止接收新任务
@@ -352,18 +349,14 @@ func (l2c *Level2Cache) Close() error {
 	l2c.remotePool.Release()
 
 	// 关闭底层缓存
-	var errors []error
+	var closeErrors []error
 	if err := l2c.local.Close(); err != nil {
-		errors = append(errors, fmt.Errorf("local cache close error: %w", err))
+		closeErrors = append(closeErrors, fmt.Errorf("local cache close error: %w", err))
 	}
 	if err := l2c.remote.Close(); err != nil {
-		errors = append(errors, fmt.Errorf("remote cache close error: %w", err))
+		closeErrors = append(closeErrors, fmt.Errorf("remote cache close error: %w", err))
 	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("close errors: %v", errors)
-	}
-	return nil
+	return errors.Join(closeErrors...)
 }
 
 // Wait 当写入后立即读取时，等待底层缓存完成写入操作
@@ -373,20 +366,30 @@ func (l2c *Level2Cache) Wait() error {
 	}
 
 	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		_ = l2c.local.Wait()
+		if err := l2c.local.Wait(); err != nil {
+			errCh <- fmt.Errorf("local cache wait error: %w", err)
+		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		_ = l2c.remote.Wait()
+		if err := l2c.remote.Wait(); err != nil {
+			errCh <- fmt.Errorf("remote cache wait error: %w", err)
+		}
 	}()
 
 	wg.Wait()
-	return nil
+	close(errCh)
+	waitErrors := make([]error, 0, 2)
+	for err := range errCh {
+		waitErrors = append(waitErrors, err)
+	}
+	return errors.Join(waitErrors...)
 }
 
 // GetLocalMetrics 获取本地缓存指标
