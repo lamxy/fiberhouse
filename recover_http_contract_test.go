@@ -196,3 +196,51 @@ func TestRecoverHTTPContract_FiberAndGin(t *testing.T) {
 		})
 	}
 }
+
+func TestRecoverHTTPContract_RealRouterNotFoundAndMethodMismatch(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		method     string
+		target     string
+		wantStatus int
+	}{
+		{name: "missing route", method: http.MethodGet, target: "/missing", wantStatus: http.StatusNotFound},
+		{name: "method mismatch", method: http.MethodPost, target: "/registered", wantStatus: http.StatusMethodNotAllowed},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			for _, core := range []string{"fiber", "gin"} {
+				t.Run(core, func(t *testing.T) {
+					ctx := newTask5AppContext(t, false, false)
+					installTask5ResponseManager(t, ctx)
+					installTask5Exceptions(t, ctx)
+					cfg := RecoverConfig{JsonCodec: json.Marshal}
+					var status int
+
+					switch core {
+					case "fiber":
+						handler := newTask5ErrorHandler(ctx, NewFiberRecovery(ctx))
+						app := fiber.New(fiber.Config{ErrorHandler: adaptorerrorhandler.FiberErrorHandler(handler.ErrorHandler)})
+						app.Use(NewFiberRecovery(ctx).RecoverPanic(cfg).(fiber.Handler))
+						app.Get("/registered", func(c *fiber.Ctx) error { return c.SendStatus(http.StatusNoContent) })
+						response, err := app.Test(httptest.NewRequest(testCase.method, testCase.target, nil))
+						require.NoError(t, err)
+						defer response.Body.Close()
+						status = response.StatusCode
+					case "gin":
+						preserveTask4GinMode(t)
+						gin.SetMode(gin.TestMode)
+						engine := gin.New()
+						engine.HandleMethodNotAllowed = true
+						engine.Use(gin.HandlerFunc(NewGinRecovery(ctx).RecoverPanic(cfg).(func(*gin.Context))))
+						engine.GET("/registered", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+						recorder := httptest.NewRecorder()
+						engine.ServeHTTP(recorder, httptest.NewRequest(testCase.method, testCase.target, nil))
+						status = recorder.Code
+					}
+
+					assert.Equal(t, testCase.wantStatus, status)
+				})
+			}
+		})
+	}
+}

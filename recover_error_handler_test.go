@@ -3,6 +3,7 @@ package fiberhouse
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -39,13 +40,27 @@ func newTask5ErrorHandler(ctx IApplicationContext, recovery IRecover) *ErrorHand
 func installTask5Exceptions(t *testing.T, ctx IApplicationContext) {
 	t.Helper()
 	key := constant.RegisterKeyPrefix + "exceptions"
+	wasRegistered := ctx.GetContainer().IsRegistered(key)
+	var previous interface{}
+	if wasRegistered {
+		var err error
+		previous, err = ctx.GetContainer().Get(key)
+		require.NoError(t, err)
+	}
 	ctx.GetContainer().Unregister(key)
 	require.True(t, ctx.GetContainer().Register(key, func() (interface{}, error) {
 		return exception.ExceptionMap{
 			"UnknownError": {Code: constant.UnknownErrCode, Msg: constant.UnknownErrMsg},
 		}, nil
 	}))
-	t.Cleanup(func() { ctx.GetContainer().Unregister(key) })
+	t.Cleanup(func() {
+		ctx.GetContainer().Unregister(key)
+		if wasRegistered {
+			require.True(t, ctx.GetContainer().Register(key, func() (interface{}, error) {
+				return previous, nil
+			}))
+		}
+	})
 }
 
 func TestErrorHandler_PreservesFiberHTTPStatusAcrossCores(t *testing.T) {
@@ -156,6 +171,47 @@ func TestErrorHandler_LogsFiberErrorValueAndPointer(t *testing.T) {
 	require.NoError(t, err)
 	response.Body.Close()
 	assert.Equal(t, http.StatusNoContent, response.StatusCode)
+}
+
+func TestErrorHandler_TypedNilFiberErrorFallsBackToUnknown(t *testing.T) {
+	for _, core := range []string{"fiber", "gin"} {
+		t.Run(core, func(t *testing.T) {
+			ctx := newTask5AppContext(t, false, false)
+			installTask5ResponseManager(t, ctx)
+			installTask5Exceptions(t, ctx)
+			handler := newTask5ErrorHandler(ctx, NewFiberRecovery(ctx))
+			var typedNil *fiber.Error
+
+			var status int
+			var body []byte
+			switch core {
+			case "fiber":
+				app := fiber.New(fiber.Config{ErrorHandler: adaptorerrorhandler.FiberErrorHandler(handler.ErrorHandler)})
+				app.Get("/typed-nil", func(*fiber.Ctx) error { return typedNil })
+				response, err := app.Test(httptest.NewRequest(http.MethodGet, "/typed-nil", nil))
+				require.NoError(t, err)
+				defer response.Body.Close()
+				status = response.StatusCode
+				body, err = io.ReadAll(response.Body)
+				require.NoError(t, err)
+			case "gin":
+				preserveTask4GinMode(t)
+				gin.SetMode(gin.TestMode)
+				engine := gin.New()
+				engine.Use(adaptorerrorhandler.GinErrorHandler(handler.ErrorHandler))
+				engine.GET("/typed-nil", func(c *gin.Context) { c.Set("error", typedNil) })
+				recorder := httptest.NewRecorder()
+				engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/typed-nil", nil))
+				status, body = recorder.Code, recorder.Body.Bytes()
+			}
+
+			assert.Equal(t, http.StatusInternalServerError, status)
+			var envelope map[string]interface{}
+			require.NoError(t, json.Unmarshal(body, &envelope))
+			assert.EqualValues(t, constant.UnknownErrCode, envelope["code"])
+			assert.Equal(t, constant.UnknownErrMsg, envelope["msg"])
+		})
+	}
 }
 
 func TestErrorHandler_RejectsMissingOrInvalidRecoveryManager(t *testing.T) {

@@ -59,6 +59,7 @@ func newTask5AppContext(t *testing.T, debugMode, binarySupport bool) IApplicatio
 
 func installTask5ResponseManager(t *testing.T, ctx IApplicationContext) *RespInfoPManager {
 	t.Helper()
+	previous := respInfoPManagerInstance
 	base := NewProviderManager(ctx).
 		SetName("task5-response-manager").
 		SetType(ProviderTypeDefault().GroupResponseInfoChoose)
@@ -71,8 +72,11 @@ func installTask5ResponseManager(t *testing.T, ctx IApplicationContext) *RespInf
 	respInfoPManagerOnce = sync.Once{}
 	respInfoPManagerOnce.Do(func() {})
 	t.Cleanup(func() {
-		respInfoPManagerInstance = nil
+		respInfoPManagerInstance = previous
 		respInfoPManagerOnce = sync.Once{}
+		if previous != nil {
+			respInfoPManagerOnce.Do(func() {})
+		}
 	})
 	return manager
 }

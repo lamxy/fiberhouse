@@ -302,6 +302,10 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 		case *fiber.Error:
 			fiberErr = typed
 		}
+		if fiberErr == nil {
+			logEvent.Str("Msg", "typed-nil *fiber.Error").Msg("typed-nil *fiber.Error")
+			break
+		}
 		code := fiber.StatusInternalServerError
 		if fiberErr.Code == 0 {
 			fiberErr.Code = code

@@ -68,26 +68,24 @@ func TestCacheOption_CloneAllowsContextOverride(t *testing.T) {
 	assert.Equal(t, override, clone.GetContextCtx())
 }
 
-func TestCacheOption_ResetAndPoolReuseClearRequestState(t *testing.T) {
+func TestCacheOption_ResetClearsRequestState(t *testing.T) {
 	appCtx := newCacheOptionTestContext()
-	co := OptionPoolGet(appCtx)
+	co := NewCacheOption(appCtx)
 	co.SetContextCtx(context.Background()).Level2().SetCacheKey("stale").
 		SetLocalTTL(time.Minute).SetRemoteTTL(time.Minute).EnableProtectionAll().DisableCache()
-	OptionPoolPut(co)
 
-	reused := OptionPoolGet(appCtx)
-	defer OptionPoolPut(reused)
-	assert.Same(t, appCtx, reused.GetContext())
-	assert.Nil(t, reused.GetContextCtx())
-	assert.Empty(t, reused.GetCacheKey())
-	assert.Zero(t, reused.GetCacheLevel())
-	assert.Equal(t, WriteRemoteOnly, reused.GetSyncStrategy())
-	assert.Zero(t, reused.GetLocalBaseTTL())
-	assert.Zero(t, reused.GetRemoteBaseTTL())
-	assert.False(t, reused.GetSingleFlightState())
-	assert.False(t, reused.GetBloomFilterState())
-	assert.False(t, reused.GetCircuitBreakerState())
-	assert.True(t, reused.IsCache())
+	assert.Same(t, co, co.Reset(), "Reset must support method chaining")
+	assert.Same(t, appCtx, co.GetContext())
+	assert.Nil(t, co.GetContextCtx())
+	assert.Empty(t, co.GetCacheKey())
+	assert.Zero(t, co.GetCacheLevel())
+	assert.Equal(t, WriteRemoteOnly, co.GetSyncStrategy())
+	assert.Zero(t, co.GetLocalBaseTTL())
+	assert.Zero(t, co.GetRemoteBaseTTL())
+	assert.False(t, co.GetSingleFlightState())
+	assert.False(t, co.GetBloomFilterState())
+	assert.False(t, co.GetCircuitBreakerState())
+	assert.True(t, co.IsCache())
 }
 
 func TestCacheOption_TTLBoundsAndInvalidRanges(t *testing.T) {

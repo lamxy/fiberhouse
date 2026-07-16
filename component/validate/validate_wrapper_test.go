@@ -1,7 +1,6 @@
 package validate
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/go-playground/validator/v10"
@@ -27,7 +26,9 @@ func installValidateTestExceptions(t *testing.T) {
 	wasRegistered := manager.IsRegistered(key)
 	var previous interface{}
 	if wasRegistered {
-		previous, _ = manager.Get(key)
+		var err error
+		previous, err = manager.Get(key)
+		require.NoError(t, err)
 	}
 	manager.Clear(key)
 	require.True(t, manager.Register(key, func() (interface{}, error) {
@@ -36,7 +37,7 @@ func installValidateTestExceptions(t *testing.T) {
 	t.Cleanup(func() {
 		manager.Clear(key)
 		if wasRegistered {
-			manager.Register(key, func() (interface{}, error) { return previous, nil })
+			require.True(t, manager.Register(key, func() (interface{}, error) { return previous, nil }))
 		}
 	})
 }
@@ -92,21 +93,58 @@ func TestValidate_StructVarAndMapTranslations(t *testing.T) {
 	}
 }
 
-func TestValidate_RegisterCustomTagsAggregatesErrorsAndDuplicateRegistration(t *testing.T) {
+func TestValidate_RegisterCustomTagsAggregatesRealRegistryErrors(t *testing.T) {
 	w := newValidateTestWrap()
-	first := errors.New("first registration")
-	second := errors.New("duplicate registration")
+	translator := w.GetTranslator()
 	calls := 0
 	errs := w.RegisterCustomTags([]RegisterValidatorTagFunc{
-		func(*Wrap) error { calls++; return nil },
-		func(*Wrap) error { calls++; return first },
-		func(*Wrap) error { calls++; return second },
+		func(wrap *Wrap) error {
+			calls++
+			return wrap.GetValidate().RegisterValidation("task6_real_registry", func(validator.FieldLevel) bool { return true })
+		},
+		func(*Wrap) error {
+			calls++
+			return translator.Add("task6_real_registry", "first", false)
+		},
+		func(*Wrap) error {
+			calls++
+			return translator.Add("task6_real_registry", "duplicate", false)
+		},
 	})
 	assert.Equal(t, 3, calls)
-	require.Len(t, errs, 2)
-	assert.ErrorIs(t, errs[0], first)
-	assert.ErrorIs(t, errs[1], second)
+	require.Len(t, errs, 1)
+	assert.Error(t, errs[0])
 	assert.Nil(t, w.RegisterCustomTags(nil))
+}
+
+func TestValidate_DuplicateRegistrationContracts(t *testing.T) {
+	w := newValidateTestWrap()
+	first := validator.New()
+	second := validator.New()
+	translator := w.GetTranslator()
+
+	w.RegisterValidator("task6-duplicate", first)
+	w.RegisterValidator("task6-duplicate", second)
+	w.RegisterTranslator("task6-duplicate", translator)
+	w.RegisterTranslator("task6-duplicate", translator)
+	w.RegisterLangFlag("task6-duplicate")
+	w.RegisterLangFlag("task6-duplicate")
+
+	assert.Same(t, second, w.GetValidate("task6-duplicate"), "validator registration is last-write-wins")
+	assert.Same(t, translator, w.GetTranslator("task6-duplicate"), "translator registration is last-write-wins")
+	assert.Equal(t, 2, countLangFlag(w.GetLangList(), "task6-duplicate"), "language registration currently preserves duplicates")
+	require.NoError(t, second.RegisterValidation("task6-validator-duplicate", func(validator.FieldLevel) bool { return true }))
+	require.NoError(t, second.RegisterValidation("task6-validator-duplicate", func(validator.FieldLevel) bool { return false }))
+}
+
+func countLangFlag(flags []LangFlag, target LangFlag) int {
+	count := 0
+	for _, flag := range flags {
+		if flag == target {
+			count++
+		}
+	}
+	return count
 }
 
 func TestValidate_FreshInstancesDoNotShareRegistrationState(t *testing.T) {
