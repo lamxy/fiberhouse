@@ -3,7 +3,7 @@ package model
 import (
 	"context"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/database/dbmongo"
+	"github.com/lamxy/fiberhouse/component/database/dbmongo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/utils"

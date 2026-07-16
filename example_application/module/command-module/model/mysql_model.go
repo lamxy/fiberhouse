@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/database/dbmysql"
+	"github.com/lamxy/fiberhouse/component/database/dbmysql"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"gorm.io/gorm"

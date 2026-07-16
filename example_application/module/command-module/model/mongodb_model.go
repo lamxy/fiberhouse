@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/database/dbmongo"
+	"github.com/lamxy/fiberhouse/component/database/dbmongo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 )
 

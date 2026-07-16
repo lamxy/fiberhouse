@@ -11,7 +11,7 @@ import (
 	"context"
 	"github.com/govalues/decimal"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/component/mongodecimal"
+	"github.com/lamxy/fiberhouse/component/database/dbmongo/internal/mongodecimal"
 	"github.com/lamxy/fiberhouse/constant"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
