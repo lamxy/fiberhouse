@@ -11,7 +11,7 @@ import (
 
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
-	"github.com/lamxy/fiberhouse/component"
+	"github.com/lamxy/fiberhouse/component/container"
 	"github.com/lamxy/fiberhouse/component/validate"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/globalmanager"
@@ -170,7 +170,7 @@ type CmdContext struct {
 	logger       bootstrap.LoggerWrapper
 	container    *globalmanager.GlobalManager // 全局管理器
 	starterApp   CommandStarter
-	digContainer *component.DigContainer // uber dig 依赖注入器
+	digContainer *container.DigContainer // uber dig 依赖注入器
 }
 
 // NewCmdContextOnce 获取命令行应用上下文对象单例
@@ -181,7 +181,7 @@ func NewCmdContextOnce(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper)
 			Cfg:          cfg,
 			logger:       logger,
 			container:    globalmanager.NewGlobalManagerOnce(),
-			digContainer: component.NewDigContainerOnce(),
+			digContainer: container.NewDigContainerOnce(),
 		}
 	})
 	return commandContext
@@ -231,7 +231,7 @@ func (c *CmdContext) GetContainer() *globalmanager.GlobalManager {
 }
 
 // GetDigContainer 获取依赖注入容器
-func (c *CmdContext) GetDigContainer() *component.DigContainer {
+func (c *CmdContext) GetDigContainer() *container.DigContainer {
 	return c.digContainer
 }
 

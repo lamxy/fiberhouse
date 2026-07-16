@@ -9,7 +9,7 @@ package fiberhouse
 import (
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
-	"github.com/lamxy/fiberhouse/component"
+	"github.com/lamxy/fiberhouse/component/container"
 	"github.com/lamxy/fiberhouse/component/validate"
 	"github.com/lamxy/fiberhouse/globalmanager"
 	"github.com/rs/zerolog"
@@ -54,7 +54,7 @@ type IApplicationContext interface {
 type ICommandContext interface {
 	IContext
 	// GetDigContainer 获取依赖注入容器
-	GetDigContainer() *component.DigContainer
+	GetDigContainer() *container.DigContainer
 	// RegisterStarterApp 挂载框架启动器app
 	RegisterStarterApp(app CommandStarter)
 	// GetStarterApp 获取框架启动器实例(CommandStarter)

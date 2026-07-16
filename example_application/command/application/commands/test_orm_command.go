@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/component"
+	"github.com/lamxy/fiberhouse/component/container"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/model"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/service"
 	"github.com/urfave/cli/v2"
@@ -48,7 +48,7 @@ func (m *TestOrmCMD) GetCommand() interface{} {
 		Action: func(cCtx *cli.Context) error {
 			var (
 				ems  *service.ExampleMysqlService
-				warp = component.NewWrap[*service.ExampleMysqlService]()
+				warp = container.NewWrap[*service.ExampleMysqlService]()
 			)
 
 			// 使用dig依赖注入组件
@@ -70,7 +70,7 @@ func (m *TestOrmCMD) GetCommand() interface{} {
 				return nil
 			})*/
 
-			err := component.Invoke[*service.ExampleMysqlService](warp)
+			err := container.Invoke[*service.ExampleMysqlService](warp)
 			if err != nil {
 				return err
 			}

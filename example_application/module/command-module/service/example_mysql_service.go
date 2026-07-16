@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/component"
+	"github.com/lamxy/fiberhouse/component/container"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/model"
 	"gorm.io/gorm"
@@ -35,7 +35,7 @@ func RegisterKeyExampleMysqlService(ctx fiberhouse.ICommandContext, ns ...string
 		// 示例: 推荐命令应用中使用依赖注入的方式初始化服务对象
 		var (
 			zero *ExampleMysqlService
-			wrap = component.NewWrap[*ExampleMysqlService]()
+			wrap = container.NewWrap[*ExampleMysqlService]()
 		)
 		dc := ctx.GetDigContainer().Provide(func() fiberhouse.ICommandContext { return ctx }).
 			Provide(model.NewExampleMysqlModel).
@@ -45,7 +45,7 @@ func RegisterKeyExampleMysqlService(ctx fiberhouse.ICommandContext, ns ...string
 			return zero, fmt.Errorf("ExampleMysqlService RegisterKeyExampleMysqlService error: %v", dc.GetProvideErrs())
 		}
 		// 解析实例
-		err := component.Invoke[*ExampleMysqlService](wrap)
+		err := container.Invoke[*ExampleMysqlService](wrap)
 		return wrap.Get(), err
 	})
 }
