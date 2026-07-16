@@ -19,7 +19,7 @@ import (
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/v2"
 	"github.com/lamxy/fiberhouse/appconfig"
-	"github.com/lamxy/fiberhouse/component/writer"
+	"github.com/lamxy/fiberhouse/component/logging/writer"
 	"github.com/lamxy/fiberhouse/constant"
 	frameUtils "github.com/lamxy/fiberhouse/utils"
 	"github.com/rs/zerolog"
