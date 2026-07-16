@@ -7,12 +7,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type task2IncomparableManager struct {
+	IProviderManager
+	name    string
+	markers []string
+}
+
+func (m task2IncomparableManager) Name() string { return m.name }
+
 func newProviderLocationRegistryForTest() *ProviderLocationRegistry {
 	return &ProviderLocationRegistry{
 		defaultLocations: make(map[string]IProviderLocation),
 		customLocations:  make(map[string]IProviderLocation),
-		nextDefaultID:    DefaultLocationStart,
-		nextCustomID:     CustomLocationStart,
+		nextDefaultID:    uint16(DefaultLocationStart),
+		nextCustomID:     uint16(CustomLocationStart),
 	}
 }
 
@@ -59,7 +67,7 @@ func TestProviderLocationRegistry_RejectsDuplicateNamesAcrossNamespaces(t *testi
 
 func TestProviderLocationRegistry_IDBoundaries(t *testing.T) {
 	defaultRegistry := newProviderLocationRegistryForTest()
-	defaultRegistry.nextDefaultID = DefaultLocationEnd
+	defaultRegistry.nextDefaultID = uint16(DefaultLocationEnd)
 	lastDefault, err := defaultRegistry.Default("last-default")
 	require.NoError(t, err)
 	assert.Equal(t, DefaultLocationEnd, lastDefault.GetLocationID())
@@ -67,10 +75,12 @@ func TestProviderLocationRegistry_IDBoundaries(t *testing.T) {
 	assert.ErrorContains(t, err, "exhausted")
 
 	customRegistry := newProviderLocationRegistryForTest()
-	customRegistry.nextCustomID = CustomLocationEnd
+	customRegistry.nextCustomID = uint16(CustomLocationEnd)
 	lastCustom, err := customRegistry.Custom("last-custom")
 	require.NoError(t, err)
 	assert.Equal(t, CustomLocationEnd, lastCustom.GetLocationID())
+	_, err = customRegistry.Custom("custom-exhausted")
+	assert.ErrorContains(t, err, "exhausted")
 }
 
 func TestPLocationBind_AllowsDistinctManagersAtSameLocation(t *testing.T) {
@@ -90,6 +100,26 @@ func TestPLocationBind_RejectsNilAndExactDuplicate(t *testing.T) {
 	assert.ErrorContains(t, location.Bind(nil), "cannot be nil")
 	require.NoError(t, location.Bind(manager))
 	assert.ErrorContains(t, location.Bind(manager), "already bound")
+}
+
+func TestPLocationBind_RejectsTypedNilManager(t *testing.T) {
+	location := &PLocation{id: CustomLocationStart, name: "typed-nil"}
+	var manager *ProviderManager
+
+	assert.ErrorContains(t, location.Bind(manager), "cannot be nil")
+	assert.Empty(t, location.GetManagers())
+}
+
+func TestPLocationBind_AllowsManagersWithIncomparableDynamicValues(t *testing.T) {
+	location := &PLocation{id: CustomLocationStart, name: "incomparable"}
+	first := task2IncomparableManager{name: "first", markers: []string{"first"}}
+	second := task2IncomparableManager{name: "second", markers: []string{"second"}}
+
+	require.NoError(t, location.Bind(first))
+	assert.NotPanics(t, func() {
+		require.NoError(t, location.Bind(second))
+	})
+	assert.Equal(t, []IProviderManager{first, second}, location.GetManagers())
 }
 
 func TestPLocationGetManagers_ReturnsOrderedCopy(t *testing.T) {

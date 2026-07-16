@@ -111,8 +111,8 @@ type ProviderTypeRegistry struct {
 	mu            sync.RWMutex
 	defaultTypes  map[string]IProviderType // 默认类型: 名称 -> 类型实例
 	customTypes   map[string]IProviderType // 自定义类型: 名称 -> 类型实例
-	nextDefaultID uint8                    // 下一个可用的默认类型ID
-	nextCustomID  uint8                    // 下一个可用的自定义类型ID
+	nextDefaultID uint16                   // 下一个可用的默认类型ID（需要表达耗尽哨兵值）
+	nextCustomID  uint16                   // 下一个可用的自定义类型ID（需要表达耗尽哨兵值）
 }
 
 var (
@@ -126,8 +126,8 @@ func ProviderTypeGen() *ProviderTypeRegistry {
 		registryInstance = &ProviderTypeRegistry{
 			defaultTypes:  make(map[string]IProviderType),
 			customTypes:   make(map[string]IProviderType),
-			nextDefaultID: DefaultTypeStart,
-			nextCustomID:  CustomTypeStart,
+			nextDefaultID: uint16(DefaultTypeStart),
+			nextCustomID:  uint16(CustomTypeStart),
 		}
 	})
 	return registryInstance
@@ -149,13 +149,13 @@ func (r *ProviderTypeRegistry) Default(name string) (IProviderType, error) {
 	}
 
 	// 检查ID是否超出范围
-	if r.nextDefaultID > DefaultTypeEnd {
+	if r.nextDefaultID > uint16(DefaultTypeEnd) {
 		return nil, errors.New("default type ID exhausted (max 63)")
 	}
 
 	// 创建默认类型实例
 	t := &PType{
-		id:   r.nextDefaultID,
+		id:   uint8(r.nextDefaultID),
 		name: name,
 	}
 	r.nextDefaultID++
@@ -190,13 +190,13 @@ func (r *ProviderTypeRegistry) Custom(name string) (IProviderType, error) {
 	}
 
 	// 检查ID是否超出范围
-	if r.nextCustomID > CustomTypeEnd {
+	if r.nextCustomID > uint16(CustomTypeEnd) {
 		return nil, errors.New("custom type ID exhausted (max 255)")
 	}
 
 	// 创建自定义类型实例
 	t := &PType{
-		id:   r.nextCustomID,
+		id:   uint8(r.nextCustomID),
 		name: name,
 	}
 	r.nextCustomID++

@@ -3,6 +3,7 @@ package fiberhouse
 import (
 	"errors"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -89,7 +90,22 @@ func preserveTask4GinMode(t *testing.T) {
 	t.Cleanup(func() { gin.SetMode(oldMode) })
 }
 
+func isolateTask4ErrorHandlerSingleton(t *testing.T) {
+	t.Helper()
+	oldInstance := errorHandlerInstance
+	errorHandlerInstance = nil
+	errorHandlerOnce = sync.Once{}
+	t.Cleanup(func() {
+		errorHandlerInstance = oldInstance
+		errorHandlerOnce = sync.Once{}
+		if oldInstance != nil {
+			errorHandlerOnce.Do(func() {})
+		}
+	})
+}
+
 func TestCoreInit_CreatesFiberAndGinAppsUsingSelectedManager(t *testing.T) {
+	isolateTask4ErrorHandlerSingleton(t)
 	preserveTask4GinMode(t)
 	ctx := newTask4InternalAppContext(t, nil)
 	frame := &task4Frame{}
@@ -99,6 +115,7 @@ func TestCoreInit_CreatesFiberAndGinAppsUsingSelectedManager(t *testing.T) {
 	fiberCore.InitCoreApp(frame, fiberWrong, fiberManager)
 	assert.IsType(t, &fiber.App{}, fiberCore.GetCoreApp())
 	assert.Same(t, fiberManager.result, fiberCore.json)
+	assert.Same(t, ctx, errorHandlerInstance.AppCtx)
 	assert.Zero(t, fiberWrong.loadCalls)
 	assert.Equal(t, 1, fiberManager.loadCalls)
 
@@ -113,16 +130,20 @@ func TestCoreInit_CreatesFiberAndGinAppsUsingSelectedManager(t *testing.T) {
 }
 
 func TestCoreInit_NoManagerUsesApplicationDefaultCodec(t *testing.T) {
+	isolateTask4ErrorHandlerSingleton(t)
 	preserveTask4GinMode(t)
 	oldGinJSON := ginJson.API
 	t.Cleanup(func() { ginJson.API = oldGinJSON })
 	ctx := newTask4InternalAppContext(t, nil)
 	key := "task4-default-codec"
+	defaultCodec := jsoncodec.StdJsonDefault()
+	factoryCalls := 0
 	manager := ctx.GetContainer()
 	manager.Unregister(key)
 	t.Cleanup(func() { manager.Unregister(key) })
 	require.True(t, manager.Register(key, func() (interface{}, error) {
-		return jsoncodec.StdJsonDefault(), nil
+		factoryCalls++
+		return defaultCodec, nil
 	}))
 	frame := &task4Frame{application: &task4Application{defaultKey: key}}
 
@@ -130,11 +151,14 @@ func TestCoreInit_NoManagerUsesApplicationDefaultCodec(t *testing.T) {
 	fiberCore.InitCoreApp(frame)
 	assert.IsType(t, jsoncodec.StdJsonDefault(), fiberCore.json)
 	assert.NotNil(t, fiberCore.coreApp)
+	assert.Same(t, ctx, errorHandlerInstance.AppCtx)
 
 	ginCore := NewCoreWithGin(ctx).(*CoreWithGin)
 	ginCore.InitCoreApp(frame)
 	assert.NotNil(t, ginCore.coreApp)
 	assert.NotNil(t, ginCore.httpServer)
+	assert.Equal(t, 1, factoryCalls)
+	assert.Same(t, defaultCodec, ginJson.API)
 }
 
 func TestCoreInit_AppStateStopsInitializationAndRegistration(t *testing.T) {
@@ -264,7 +288,11 @@ func TestCoreRegistration_ModuleSwaggerAndApplicationHooks(t *testing.T) {
 	}
 
 	disabledCtx := newTask4InternalAppContext(t, map[string]interface{}{"application.swagger.enable": false})
-	disabledModule := &task4Module{}
-	NewCoreWithGin(disabledCtx).RegisterModuleSwagger(&task4Frame{module: disabledModule})
-	assert.Zero(t, disabledModule.swaggerCalls)
+	disabledGinModule := &task4Module{}
+	NewCoreWithGin(disabledCtx).RegisterModuleSwagger(&task4Frame{module: disabledGinModule})
+	assert.Zero(t, disabledGinModule.swaggerCalls)
+
+	disabledFiberModule := &task4Module{}
+	NewCoreWithFiber(disabledCtx).RegisterModuleSwagger(&task4Frame{module: disabledFiberModule})
+	assert.Zero(t, disabledFiberModule.swaggerCalls)
 }

@@ -9,6 +9,7 @@ package fiberhouse
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 )
 
@@ -49,7 +50,7 @@ func (l *PLocation) IsDefaultLocation() bool {
 
 // Bind 绑定管理器到该位点的管理器列表中
 func (l *PLocation) Bind(manager IProviderManager) error {
-	if manager == nil {
+	if isNilProviderManager(manager) {
 		return errors.New("manager cannot be nil")
 	}
 
@@ -58,13 +59,39 @@ func (l *PLocation) Bind(manager IProviderManager) error {
 
 	// 检查同一管理器实例是否已绑定（同一位点允许按顺序绑定多个不同管理器）
 	for _, m := range l.managers {
-		if m == manager {
+		if sameProviderManagerInstance(m, manager) {
 			return fmt.Errorf("manager '%s' already bound to location '%s'", manager.Name(), l.name)
 		}
 	}
 
 	l.managers = append(l.managers, manager)
 	return nil
+}
+
+func isNilProviderManager(manager IProviderManager) bool {
+	if manager == nil {
+		return true
+	}
+	value := reflect.ValueOf(manager)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
+func sameProviderManagerInstance(left, right IProviderManager) bool {
+	leftValue, rightValue := reflect.ValueOf(left), reflect.ValueOf(right)
+	if !leftValue.IsValid() || !rightValue.IsValid() || leftValue.Type() != rightValue.Type() {
+		return false
+	}
+	switch leftValue.Kind() {
+	case reflect.Chan, reflect.Map, reflect.Pointer:
+		return leftValue.Pointer() == rightValue.Pointer()
+	default:
+		return false
+	}
 }
 
 // GetManagers 获取已绑定到该位点的管理器列表（返回副本，确保外部修改不影响内部数据）
@@ -172,8 +199,8 @@ type ProviderLocationRegistry struct {
 	mu               sync.RWMutex
 	defaultLocations map[string]IProviderLocation // 默认位点: 名称 -> 位点实例
 	customLocations  map[string]IProviderLocation // 自定义位点: 名称 -> 位点实例
-	nextDefaultID    uint8                        // 下一个可用的默认位点ID
-	nextCustomID     uint8                        // 下一个可用的自定义位点ID
+	nextDefaultID    uint16                       // 下一个可用的默认位点ID（需要表达耗尽哨兵值）
+	nextCustomID     uint16                       // 下一个可用的自定义位点ID（需要表达耗尽哨兵值）
 }
 
 var (
@@ -187,8 +214,8 @@ func ProviderLocationGen() *ProviderLocationRegistry {
 		locationRegistryInstance = &ProviderLocationRegistry{
 			defaultLocations: make(map[string]IProviderLocation),
 			customLocations:  make(map[string]IProviderLocation),
-			nextDefaultID:    DefaultLocationStart,
-			nextCustomID:     CustomLocationStart,
+			nextDefaultID:    uint16(DefaultLocationStart),
+			nextCustomID:     uint16(CustomLocationStart),
 		}
 	})
 	return locationRegistryInstance
@@ -210,13 +237,13 @@ func (r *ProviderLocationRegistry) Default(name string) (IProviderLocation, erro
 	}
 
 	// 检查ID是否超出范围
-	if r.nextDefaultID > DefaultLocationEnd {
+	if r.nextDefaultID > uint16(DefaultLocationEnd) {
 		return nil, errors.New("default location ID exhausted (max 63)")
 	}
 
 	// 创建默认位点实例
 	l := &PLocation{
-		id:   r.nextDefaultID,
+		id:   uint8(r.nextDefaultID),
 		name: name,
 	}
 	r.nextDefaultID++
@@ -251,13 +278,13 @@ func (r *ProviderLocationRegistry) Custom(name string) (IProviderLocation, error
 	}
 
 	// 检查ID是否超出范围
-	if r.nextCustomID > CustomLocationEnd {
+	if r.nextCustomID > uint16(CustomLocationEnd) {
 		return nil, errors.New("custom location ID exhausted (max 255)")
 	}
 
 	// 创建自定义位点实例
 	l := &PLocation{
-		id:   r.nextCustomID,
+		id:   uint8(r.nextCustomID),
 		name: name,
 	}
 	r.nextCustomID++

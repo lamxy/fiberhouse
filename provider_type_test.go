@@ -11,8 +11,8 @@ func newProviderTypeRegistryForTest() *ProviderTypeRegistry {
 	return &ProviderTypeRegistry{
 		defaultTypes:  make(map[string]IProviderType),
 		customTypes:   make(map[string]IProviderType),
-		nextDefaultID: DefaultTypeStart,
-		nextCustomID:  CustomTypeStart,
+		nextDefaultID: uint16(DefaultTypeStart),
+		nextCustomID:  uint16(CustomTypeStart),
 	}
 }
 
@@ -61,7 +61,7 @@ func TestProviderTypeRegistry_RejectsDuplicateNamesAcrossNamespaces(t *testing.T
 
 func TestProviderTypeRegistry_IDBoundaries(t *testing.T) {
 	defaultRegistry := newProviderTypeRegistryForTest()
-	defaultRegistry.nextDefaultID = DefaultTypeEnd
+	defaultRegistry.nextDefaultID = uint16(DefaultTypeEnd)
 	lastDefault, err := defaultRegistry.Default("last-default")
 	require.NoError(t, err)
 	assert.Equal(t, DefaultTypeEnd, lastDefault.GetTypeID())
@@ -69,10 +69,12 @@ func TestProviderTypeRegistry_IDBoundaries(t *testing.T) {
 	assert.ErrorContains(t, err, "exhausted")
 
 	customRegistry := newProviderTypeRegistryForTest()
-	customRegistry.nextCustomID = CustomTypeEnd
+	customRegistry.nextCustomID = uint16(CustomTypeEnd)
 	lastCustom, err := customRegistry.Custom("last-custom")
 	require.NoError(t, err)
 	assert.Equal(t, CustomTypeEnd, lastCustom.GetTypeID())
+	_, err = customRegistry.Custom("custom-exhausted")
+	assert.ErrorContains(t, err, "exhausted")
 }
 
 func TestPType_GettersAndDefaultBoundary(t *testing.T) {
