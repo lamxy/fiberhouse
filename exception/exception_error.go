@@ -81,7 +81,7 @@ func Throw(key string, d ...interface{}) {
 		panic(fmt.Errorf("exceptions: %s not found, please make sure you have registered exceptions in global manager", k))
 	}
 	exceptions := v.(ExceptionMap)
-	if respInfo, ok := exceptions[k]; ok {
+	if respInfo, ok := exceptions[key]; ok {
 		if len(d) > 0 {
 			if errData, ok := d[0].(error); ok {
 				respInfo.Data = errData.Error()
@@ -244,7 +244,7 @@ func VeThrow(key string, d ...interface{}) {
 		panic(fmt.Errorf("exceptions: %s not found, please make sure you have registered exceptions in global manager", k))
 	}
 	exceptions := v.(ExceptionMap)
-	if respInfo, ok := exceptions[k]; ok {
+	if respInfo, ok := exceptions[key]; ok {
 		if len(d) > 0 {
 			if errData, ok := d[0].(error); ok {
 				respInfo.Data = errData.Error()

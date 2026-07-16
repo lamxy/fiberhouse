@@ -65,6 +65,9 @@ func (p *BufferPool) Get(n int) *bytes.Buffer {
 // binaryCeil 将给定的 uint32 值向上取整到最近的 2 的幂
 // rounds up the given uint32 value to the nearest power of 2
 func binaryCeil(v uint32) uint32 {
+	if v <= 1 {
+		return 1
+	}
 	v--
 	v |= v >> 1
 	v |= v >> 2

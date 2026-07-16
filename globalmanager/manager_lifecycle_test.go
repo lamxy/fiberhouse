@@ -1,0 +1,286 @@
+package globalmanager
+
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+type lifecycleClosable struct {
+	closed *int
+	err    error
+}
+
+func (c *lifecycleClosable) Close() error {
+	*c.closed++
+	return c.err
+}
+
+func TestRelease_ClosableClosesAndCanReinitialize(t *testing.T) {
+	manager := NewGlobalManager()
+	initializations := 0
+	closed := 0
+	manager.Register("resource", func() (interface{}, error) {
+		initializations++
+		return &lifecycleClosable{closed: &closed}, nil
+	})
+
+	first, err := manager.Get("resource")
+	if err != nil {
+		t.Fatalf("first Get() error = %v", err)
+	}
+	if err := manager.Release("resource"); err != nil {
+		t.Fatalf("Release() error = %v", err)
+	}
+	if closed != 1 {
+		t.Fatalf("Close() calls = %d, want 1", closed)
+	}
+
+	second, err := manager.Get("resource")
+	if err != nil {
+		t.Fatalf("second Get() error = %v", err)
+	}
+	if first == second {
+		t.Fatal("Get() after Release() returned the released instance")
+	}
+	if initializations != 2 {
+		t.Fatalf("initializer calls = %d, want 2", initializations)
+	}
+}
+
+func TestGet_TransientFailureThenSuccessClearsCachedError(t *testing.T) {
+	manager := NewGlobalManager()
+	attempts := 0
+	manager.Register("transient", func() (interface{}, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, errors.New("transient failure")
+		}
+		return "ready", nil
+	})
+
+	if _, err := manager.Get("transient"); err == nil {
+		t.Fatal("first Get() error = nil, want transient failure")
+	}
+	got, err := manager.Get("transient")
+	if err != nil {
+		t.Fatalf("second Get() error = %v, want nil", err)
+	}
+	if got != "ready" {
+		t.Fatalf("second Get() = %v, want ready", got)
+	}
+}
+
+type lifecycleHealth struct{ healthy bool }
+
+func (h *lifecycleHealth) IsHealthy() bool { return h.healthy }
+
+type lifecycleRebuilder struct {
+	path string
+	next interface{}
+	err  error
+}
+
+func (r *lifecycleRebuilder) Rebuild(arguments ...interface{}) (interface{}, error) {
+	if len(arguments) != 1 || arguments[0] != r.path {
+		return nil, errors.New("unexpected rebuild path")
+	}
+	return r.next, r.err
+}
+
+func (r *lifecycleRebuilder) GetConfPath() string { return r.path }
+
+func TestGet_CachesSuccessfulInitialization(t *testing.T) {
+	manager := NewGlobalManager()
+	calls := 0
+	manager.Register("cached", func() (interface{}, error) {
+		calls++
+		return &struct{ value int }{value: calls}, nil
+	})
+
+	first, err := manager.Get("cached")
+	if err != nil {
+		t.Fatalf("first Get() error = %v", err)
+	}
+	second, err := manager.Get("cached")
+	if err != nil {
+		t.Fatalf("second Get() error = %v", err)
+	}
+	if first != second || calls != 1 {
+		t.Fatalf("cached values = (%p, %p), initializer calls = %d", first, second, calls)
+	}
+}
+
+func TestGet_PanicCanRetryWithoutAffectingAnotherEntry(t *testing.T) {
+	manager := NewGlobalManager()
+	attempts := 0
+	manager.Register("panic", func() (interface{}, error) {
+		attempts++
+		if attempts == 1 {
+			panic("first attempt")
+		}
+		return "recovered", nil
+	})
+	manager.Register("healthy", func() (interface{}, error) { return "healthy", nil })
+
+	if _, err := manager.Get("panic"); err == nil || !strings.Contains(err.Error(), "first attempt") {
+		t.Fatalf("first panic Get() error = %v", err)
+	}
+	if got, err := manager.Get("healthy"); err != nil || got != "healthy" {
+		t.Fatalf("unrelated Get() = (%v, %v)", got, err)
+	}
+	if got, err := manager.Get("panic"); err != nil || got != "recovered" {
+		t.Fatalf("retry Get() = (%v, %v)", got, err)
+	}
+}
+
+func TestRelease_CloseErrorRetainsInitializedResource(t *testing.T) {
+	manager := NewGlobalManager()
+	closed := 0
+	wantErr := errors.New("close failed")
+	resource := &lifecycleClosable{closed: &closed, err: wantErr}
+	manager.Register("resource", func() (interface{}, error) { return resource, nil })
+	if _, err := manager.Get("resource"); err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+
+	if err := manager.Release("resource"); err == nil || !strings.Contains(err.Error(), wantErr.Error()) {
+		t.Fatalf("Release() error = %v", err)
+	}
+	got, err := manager.Get("resource")
+	if err != nil || got != resource {
+		t.Fatalf("Get() after failed Release() = (%v, %v)", got, err)
+	}
+	if closed != 1 {
+		t.Fatalf("Close() calls = %d, want 1", closed)
+	}
+}
+
+func TestCheckHealth_InitializedCheckerAndDefaults(t *testing.T) {
+	manager := NewGlobalManager()
+	manager.Register("checker", func() (interface{}, error) { return &lifecycleHealth{healthy: false}, nil })
+	manager.Register("plain", func() (interface{}, error) { return "value", nil })
+	if _, err := manager.Get("checker"); err != nil {
+		t.Fatalf("Get(checker) error = %v", err)
+	}
+	if healthy, err := manager.CheckHealth("checker"); err != nil || healthy {
+		t.Fatalf("CheckHealth(checker) = (%v, %v), want false, nil", healthy, err)
+	}
+	if _, err := manager.Get("plain"); err != nil {
+		t.Fatalf("Get(plain) error = %v", err)
+	}
+	if healthy, err := manager.CheckHealth("plain"); err != nil || !healthy {
+		t.Fatalf("CheckHealth(plain) = (%v, %v), want true, nil", healthy, err)
+	}
+	if healthy, err := manager.CheckHealth("missing"); err == nil || !healthy {
+		t.Fatalf("CheckHealth(missing) = (%v, %v), want true and error", healthy, err)
+	}
+}
+
+func TestRebuild_SuccessErrorAndTypeChange(t *testing.T) {
+	manager := NewGlobalManager()
+	rebuilder := &lifecycleRebuilder{path: "config.yml", next: "new type"}
+	manager.Register("resource", func() (interface{}, error) { return rebuilder, nil })
+	if _, err := manager.Get("resource"); err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if err := manager.Rebuild("resource"); err != nil {
+		t.Fatalf("Rebuild() type change error = %v", err)
+	}
+	if got, err := manager.Get("resource"); err != nil || got != "new type" {
+		t.Fatalf("Get() rebuilt value = (%v, %v)", got, err)
+	}
+
+	errorManager := NewGlobalManager()
+	wantErr := errors.New("rebuild failed")
+	failing := &lifecycleRebuilder{path: "config.yml", err: wantErr}
+	errorManager.Register("resource", func() (interface{}, error) { return failing, nil })
+	if _, err := errorManager.Get("resource"); err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if err := errorManager.Rebuild("resource"); err == nil || !strings.Contains(err.Error(), wantErr.Error()) {
+		t.Fatalf("Rebuild() error = %v", err)
+	}
+	if got, _ := errorManager.Get("resource"); got != failing {
+		t.Fatal("failed rebuild replaced the current resource")
+	}
+}
+
+func TestLifecycle_ErrorBranchesAndRemoval(t *testing.T) {
+	manager := NewGlobalManager()
+	if err := manager.Release("missing"); err == nil {
+		t.Fatal("Release(missing) error = nil")
+	}
+	if err := manager.Rebuild("missing"); err == nil {
+		t.Fatal("Rebuild(missing) error = nil")
+	}
+	manager.Register("uninitialized", func() (interface{}, error) { return "value", nil })
+	if err := manager.Release("uninitialized"); err != nil {
+		t.Fatalf("Release(uninitialized) error = %v", err)
+	}
+	if err := manager.Rebuild("uninitialized"); err == nil {
+		t.Fatal("Rebuild(uninitialized) error = nil")
+	}
+	manager.container.Store("broken", "not an entry")
+	if _, err := manager.Get("broken"); err == nil {
+		t.Fatal("Get(broken) error = nil")
+	}
+	if err := manager.Release("broken"); err == nil {
+		t.Fatal("Release(broken) error = nil")
+	}
+	if err := manager.Rebuild("broken"); err == nil {
+		t.Fatal("Rebuild(broken) error = nil")
+	}
+	if _, err := manager.CheckHealth("broken"); err == nil {
+		t.Fatal("CheckHealth(broken) error = nil")
+	}
+
+	manager.Register("clear", func() (interface{}, error) { return 1, nil })
+	manager.Clear("clear")
+	if manager.IsRegistered("clear") {
+		t.Fatal("Clear() retained key")
+	}
+	manager.Register("unregister", func() (interface{}, error) { return 1, nil })
+	manager.Unregister("unregister")
+	if manager.IsRegistered("unregister") {
+		t.Fatal("Unregister() retained key")
+	}
+}
+
+func TestReleaseAllAndClearAll_RequireConfirmation(t *testing.T) {
+	manager := NewGlobalManager()
+	closed := 0
+	for _, key := range []string{"one", "two"} {
+		manager.Register(key, func() (interface{}, error) {
+			return &lifecycleClosable{closed: &closed}, nil
+		})
+		if _, err := manager.Get(key); err != nil {
+			t.Fatalf("Get(%s) error = %v", key, err)
+		}
+	}
+	manager.ReleaseAll()
+	if closed != 0 {
+		t.Fatalf("ReleaseAll() without confirmation closed %d resources", closed)
+	}
+	manager.ReleaseAll(true)
+	if closed != 2 {
+		t.Fatalf("ReleaseAll(true) closed %d resources, want 2", closed)
+	}
+
+	visited := 0
+	manager.Range(func(_, _ interface{}) bool {
+		visited++
+		return true
+	})
+	if visited != 2 {
+		t.Fatalf("Range() visited %d entries, want 2", visited)
+	}
+	manager.ClearAll()
+	if !manager.IsRegistered("one") {
+		t.Fatal("ClearAll() without confirmation removed entries")
+	}
+	manager.ClearAll(true)
+	if manager.IsRegistered("one") || manager.IsRegistered("two") {
+		t.Fatal("ClearAll(true) retained entries")
+	}
+}

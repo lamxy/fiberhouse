@@ -7,6 +7,7 @@
 package response
 
 import (
+	"fmt"
 	"sync"
 
 	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
@@ -120,14 +121,9 @@ func (r *RespInfoMagPack) From(resp IResponse, needToRelease bool) IResponse {
 
 // ParseMsgPackResponse Go客户端解析MessagePack响应
 func ParseMsgPackResponse(data []byte) (*RespInfo, error) {
-	var result map[string]interface{}
-	if err := msgpack.Unmarshal(data, &result); err != nil {
+	result, resp, err := parseMsgPackEnvelope(data)
+	if err != nil {
 		return nil, err
-	}
-
-	resp := &RespInfo{
-		Code: int(result["code"].(int64)),
-		Msg:  result["msg"].(string),
 	}
 
 	if dataValue, ok := result["data"]; ok {
@@ -139,14 +135,9 @@ func ParseMsgPackResponse(data []byte) (*RespInfo, error) {
 
 // ParseMsgPackResponseWithType Go客户端解析MessagePack响应并指定Data类型
 func ParseMsgPackResponseWithType(data []byte, dataType interface{}) (*RespInfo, error) {
-	var result map[string]interface{}
-	if err := msgpack.Unmarshal(data, &result); err != nil {
+	result, resp, err := parseMsgPackEnvelope(data)
+	if err != nil {
 		return nil, err
-	}
-
-	resp := &RespInfo{
-		Code: int(result["code"].(int64)),
-		Msg:  result["msg"].(string),
 	}
 
 	if dataValue, ok := result["data"]; ok && dataType != nil {
@@ -163,6 +154,67 @@ func ParseMsgPackResponseWithType(data []byte, dataType interface{}) (*RespInfo,
 	}
 
 	return resp, nil
+}
+
+func parseMsgPackEnvelope(data []byte) (map[string]interface{}, *RespInfo, error) {
+	var result map[string]interface{}
+	if err := msgpack.Unmarshal(data, &result); err != nil {
+		return nil, nil, err
+	}
+
+	codeValue, ok := result["code"]
+	if !ok {
+		return nil, nil, fmt.Errorf("msgpack response is missing code")
+	}
+	var code int
+	maxInt := uint64(^uint(0) >> 1)
+	switch value := codeValue.(type) {
+	case int:
+		code = value
+	case int8:
+		code = int(value)
+	case int16:
+		code = int(value)
+	case int32:
+		code = int(value)
+	case int64:
+		if value < -int64(maxInt)-1 || value > int64(maxInt) {
+			return nil, nil, fmt.Errorf("msgpack response code %d overflows int", value)
+		}
+		code = int(value)
+	case uint:
+		if uint64(value) > maxInt {
+			return nil, nil, fmt.Errorf("msgpack response code %d overflows int", value)
+		}
+		code = int(value)
+	case uint8:
+		code = int(value)
+	case uint16:
+		code = int(value)
+	case uint32:
+		if uint64(value) > maxInt {
+			return nil, nil, fmt.Errorf("msgpack response code %d overflows int", value)
+		}
+		code = int(value)
+	case uint64:
+		if value > maxInt {
+			return nil, nil, fmt.Errorf("msgpack response code %d overflows int", value)
+		}
+		code = int(value)
+	default:
+		return nil, nil, fmt.Errorf("msgpack response code has type %T, want integer", codeValue)
+	}
+
+	msgValue, ok := result["msg"]
+	if !ok {
+		return nil, nil, fmt.Errorf("msgpack response is missing msg")
+	}
+	msg, ok := msgValue.(string)
+	if !ok {
+		return nil, nil, fmt.Errorf("msgpack response msg has type %T, want string", msgValue)
+	}
+
+	return result, &RespInfo{Code: code, Msg: msg}, nil
 }
 
 // SuccessWithData 成功时的响应，重置data字段

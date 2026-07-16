@@ -47,10 +47,18 @@ type GlobalManager struct {
 type entry struct {
 	initializer InitializerFunc           // 对象初始化器函数，用于延迟实例化
 	once        atomic.Pointer[sync.Once] // 实现对象单例化，原子指针，确保读安全性，重置once的写时使用锁(多条原子操作)
-	instance    atomic.Value              // 类型安全的原子值，原子化读写实例
-	initErr     atomic.Value              // 存储 error
-	initialized int32                     // 原子标志位：0 未初始化，1 初始化成功，-1 初始化失败，使用atomic原子操作
-	mu          sync.Mutex                // 用于保护重置操作(如多条原子操作)
+	instance    atomic.Pointer[storedValue]
+	initErr     atomic.Pointer[storedError]
+	initialized int32      // 原子标志位：0 未初始化，1 初始化成功，-1 初始化失败，使用atomic原子操作
+	mu          sync.Mutex // 用于保护重置操作(如多条原子操作)
+}
+
+type storedValue struct {
+	value interface{}
+}
+
+type storedError struct {
+	err error
 }
 
 // 全局管理器实例
@@ -116,7 +124,8 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 	// 如果已经初始化过，直接返回已有实例
 	if atomic.LoadInt32(&entity.initialized) == 1 {
 		// 先尝试获取已有实例
-		if instance = entity.instance.Load(); instance != nil {
+		if stored := entity.instance.Load(); stored != nil && stored.value != nil {
+			instance = stored.value
 			return
 		} else {
 			err = fmt.Errorf("instance '%s' from GlobalManager is nil, but initialized flag is set to 1", name)
@@ -142,7 +151,7 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 				// 捕获 panic 并设置初始化状态为-1
 				atomic.StoreInt32(&entity.initialized, -1)
 				e := fmt.Errorf("panic occurred while initializing global object '%s': %v", name, r)
-				entity.initErr.Store(e)
+				entity.initErr.Store(&storedError{err: e})
 			}
 		}()
 		instance, err = entity.initializer()
@@ -150,19 +159,22 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 			// 初始化失败，设置初始化状态为-1
 			atomic.StoreInt32(&entity.initialized, -1)
 			e := fmt.Errorf("failed to initialize global object '%s': %v", name, err)
-			entity.initErr.Store(e)
+			entity.initErr.Store(&storedError{err: e})
 			return
 		}
-		entity.instance.Store(instance)
+		entity.instance.Store(&storedValue{value: instance})
+		entity.initErr.Store(nil)
 		// 初始化成功，设置初始化状态为1
 		atomic.StoreInt32(&entity.initialized, 1)
 	})
 
-	if er, ok := entity.initErr.Load().(error); ok && er != nil {
-		err = er
+	if stored := entity.initErr.Load(); stored != nil && stored.err != nil {
+		err = stored.err
 		return
 	}
-	instance = entity.instance.Load()
+	if stored := entity.instance.Load(); stored != nil {
+		instance = stored.value
+	}
 	return
 }
 
@@ -182,7 +194,10 @@ func (gm *GlobalManager) CheckHealth(name KeyName) (bool, error) {
 		return false, fmt.Errorf("global entry '%s' type assertion failure with CheckHealth method", name)
 	}
 	// 检查是否实现了 HealthChecker 接口
-	instance := entity.instance.Load()
+	var instance interface{}
+	if stored := entity.instance.Load(); stored != nil {
+		instance = stored.value
+	}
 	if checker, ok := instance.(HealthChecker); ok {
 		return checker.IsHealthy(), nil
 	}
@@ -202,7 +217,10 @@ func (gm *GlobalManager) Rebuild(name KeyName) error {
 		return fmt.Errorf("global entry '%s' type assertion failed with rebuild method", name)
 	}
 
-	currentInstance := entity.instance.Load()
+	var currentInstance interface{}
+	if stored := entity.instance.Load(); stored != nil {
+		currentInstance = stored.value
+	}
 	if currentInstance == nil {
 		return fmt.Errorf("global object '%s' not initialized with rebuild method", name)
 	}
@@ -211,7 +229,7 @@ func (gm *GlobalManager) Rebuild(name KeyName) error {
 		if err != nil {
 			return fmt.Errorf("failed to rebuild global object '%s': %v", name, err)
 		}
-		entity.instance.Store(newInstance)
+		entity.instance.Store(&storedValue{value: newInstance})
 		return nil
 	}
 
@@ -231,7 +249,11 @@ func (gm *GlobalManager) Release(name KeyName) error {
 	}
 
 	// 检查是否实现了 Closable 接口
-	if closable, ok := entity.instance.Load().(Closable); ok {
+	var instance interface{}
+	if stored := entity.instance.Load(); stored != nil {
+		instance = stored.value
+	}
+	if closable, ok := instance.(Closable); ok {
 		err := closable.Close()
 		if err != nil {
 			return fmt.Errorf("unable to close object resource by key '%s' : %v", name, err)
@@ -240,6 +262,7 @@ func (gm *GlobalManager) Release(name KeyName) error {
 		entity.mu.Lock()
 		// 清空实例
 		entity.instance.Store(nil)
+		entity.initErr.Store(nil)
 		// 重置初始化状态
 		atomic.StoreInt32(&entity.initialized, 0)
 		// 重置once以便下次可以重新初始化

@@ -53,9 +53,15 @@ func ValidConstant(constName interface{}, isZero ...bool) bool {
 	if !v.IsValid() {
 		return false
 	}
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice, reflect.UnsafePointer:
+		if v.IsNil() {
+			return false
+		}
+	}
 	if len(isZero) > 0 {
 		if isZero[0] {
-			if v.IsZero() || v.IsNil() {
+			if v.IsZero() {
 				return false
 			}
 		}
@@ -106,7 +112,6 @@ func UnsafeString(b []byte) string {
 func UnsafeBytes(s string) []byte {
 	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
-
 
 // StackMsg 获取当前 goroutine 的完整调用栈信息，需将字节切片转为字符串
 func StackMsg() string {
