@@ -108,7 +108,7 @@ m.GetDB().Client.Table(m.GetTable()).Where(...)
 
 ## `MongoDecimal` registry
 
-每次 `dbmongo.NewClient` 都创建 BSON registry，并为 `govalues/decimal.Decimal` 注册 [`mongodecimal.MongoDecimal`](../../component/mongodecimal/mongo_decimal.go) encoder/decoder。它在 Go decimal 字符串与 BSON Decimal128 之间转换；类型不符、Decimal128 解析以及 BSON reader/writer 错误会原样包装返回。
+每次 `dbmongo.NewClient` 都创建 BSON registry，并为 `govalues/decimal.Decimal` 注册 [`mongodecimal.MongoDecimal`](../../component/database/dbmongo/internal/mongodecimal/mongo_decimal.go) encoder/decoder。它在 Go decimal 字符串与 BSON Decimal128 之间转换；类型不符、Decimal128 解析以及 BSON reader/writer 错误会原样包装返回。
 
 该 codec 随 Mongo client options 生效，不是 GlobalManager 中的独立服务，也不代表其他 decimal package 或任意数值类型会自动转换。自定义 registry 时若覆盖当前 registry，需要重新考虑这项注册。
 
@@ -122,4 +122,4 @@ m.GetDB().Client.Table(m.GetTable()).Where(...)
 - 为查询停流、worker 停止、client close 和日志 close 指定顺序；记录关闭错误。
 - 不在有并发读者时直接调用当前 `Rebuild`。
 
-源码入口：[`database/dbmysql/mysql.go`](../../database/dbmysql/mysql.go)、[`database/dbmysql/mysql_model_impl.go`](../../database/dbmysql/mysql_model_impl.go)、[`database/dbmongo/mongo.go`](../../database/dbmongo/mongo.go) 与 [`database/dbmongo/mongo_model_impl.go`](../../database/dbmongo/mongo_model_impl.go)。
+源码入口：[`component/database/dbmysql/mysql.go`](../../component/database/dbmysql/mysql.go)、[`component/database/dbmysql/mysql_model_impl.go`](../../component/database/dbmysql/mysql_model_impl.go)、[`component/database/dbmongo/mongo.go`](../../component/database/dbmongo/mongo.go) 与 [`component/database/dbmongo/mongo_model_impl.go`](../../component/database/dbmongo/mongo_model_impl.go)。

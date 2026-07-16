@@ -112,9 +112,7 @@ fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 | `globalmanager/` | 全局對象容器實現 |
 | `appconfig/` | 應用配置結構定義 |
 | `bootstrap/` | 配置加載、日誌初始化 |
-| `component/` | 通用組件（validate、dig 容器等） |
-| `cache/` | 緩存抽象層 |
-| `database/` | DB 初始化 |
+| `component/` | 內置可選組件命名空間，包含 container、cache、database、validate、codec 等能力 |
 | `middleware/` | 內置中間件 |
 | `response/` | 統一響應結構 |
 | `rpc/` | RPC 支持 |

@@ -69,7 +69,7 @@
 
 ## 判断依据
 
-本页以 `default.go`、`boot.go`、具体 core starter、`component/`、`cache/`、`database/`、`plugins/`、`rpc/` 和三个示例目录的当前调用路径为准。判断时遵循以下规则：
+本页以 `default.go`、`boot.go`、具体 core starter、`component/`（包含 `component/container/`、`component/cache/`、`component/database/` 等组件）、`plugins/`、`rpc/` 和三个示例目录的当前调用路径为准。判断时遵循以下规则：
 
 1. 有类型或配置键不算接入；必须能从框架或应用入口到达初始化、运行和关闭路径。
 2. 在默认集合中不算自动启用；应用必须显式把集合交给 `FiberHouse`。这些集合是进程级单例，`Add`/`Except` 虽有锁，仍应只在启动装配期修改。

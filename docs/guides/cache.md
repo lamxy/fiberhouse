@@ -1,6 +1,6 @@
 # 缓存
 
-FiberHouse 在 [`cache`](../../cache/) 下定义统一 `Cache` 接口，并分别提供基于 Ristretto 的本地缓存、基于 go-redis 的远程缓存，以及组合二者的 L2 缓存。框架不会自动创建这些实例：应用需要在启动期为自己的实例 key 注册 initializer，并通过 `IApplication` 的 `GetLocalCacheKey`、`GetRemoteCacheKey`、`GetLevel2CacheKey` 让读缓存工具定位它们。
+FiberHouse 在 [`component/cache`](../../component/cache/) 下定义统一 `Cache` 接口，并分别提供基于 Ristretto 的本地缓存、基于 go-redis 的远程缓存，以及组合二者的 L2 缓存。框架不会自动创建这些实例：应用需要在启动期为自己的实例 key 注册 initializer，并通过 `IApplication` 的 `GetLocalCacheKey`、`GetRemoteCacheKey`、`GetLevel2CacheKey` 让读缓存工具定位它们。
 
 缓存代码已有可用路径，但 L2 生命周期和保护机制仍有明显限制。[功能状态](../reference/feature-status.md) 因此把本地/Redis 基础实现列为已接入，把 L2 与保护机制列为实验性能力。
 
@@ -124,4 +124,4 @@ Local metrics 只有在 `<local-base>.metrics=true` 时可用；默认 `<local-b
 
 Local `Close` 重复调用返回 nil；Redis 第二次 `Close` 返回 `ErrCacheClosed`。这些不对称意味着应用必须指定唯一所有者并只关闭一次。GlobalManager 的 `ClearAll(true)` 不会逐项调用 `Close`，`Release` 又有已知 panic 风险，不能替代显式缓存回收；详见[《GlobalManager》](global-manager.md)。
 
-源码入口：[`cache/cache_interface.go`](../../cache/cache_interface.go)、[`cache/cache_option.go`](../../cache/cache_option.go)、[`cache/cache_utility.go`](../../cache/cache_utility.go)、[`cache/cachelocal`](../../cache/cachelocal/)、[`cache/cacheremote`](../../cache/cacheremote/) 与 [`cache/cache2`](../../cache/cache2/)。
+源码入口：[`component/cache/cache_interface.go`](../../component/cache/cache_interface.go)、[`component/cache/cache_option.go`](../../component/cache/cache_option.go)、[`component/cache/cache_utility.go`](../../component/cache/cache_utility.go)、[`component/cache/cachelocal`](../../component/cache/cachelocal/)、[`component/cache/cacheremote`](../../component/cache/cacheremote/) 与 [`component/cache/cache2`](../../component/cache/cache2/)。
