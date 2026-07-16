@@ -1,7 +1,7 @@
 package fiberhouse
 
 import (
-	"github.com/lamxy/fiberhouse/component/jsoncodec"
+	"github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/lamxy/fiberhouse/constant"
 )
 

@@ -10,7 +10,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/hibiken/asynq"
-	"github.com/lamxy/fiberhouse/component/jsoncodec"
+	"github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/redis/go-redis/v9"
 )
 

@@ -9,7 +9,7 @@ import (
 	"github.com/lamxy/fiberhouse/component/cache/cacheremote"
 	"github.com/lamxy/fiberhouse/component/database/dbmongo"
 	"github.com/lamxy/fiberhouse/component/database/dbmysql"
-	"github.com/lamxy/fiberhouse/component/jsoncodec"
+	"github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/lamxy/fiberhouse/component/validate"
 	"github.com/lamxy/fiberhouse/example_application/providers/exceptions"
 	"github.com/lamxy/fiberhouse/example_application/providers/validatecustom"

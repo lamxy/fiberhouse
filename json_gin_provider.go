@@ -2,7 +2,7 @@ package fiberhouse
 
 import (
 	ginJson "github.com/gin-gonic/gin/codec/json"
-	"github.com/lamxy/fiberhouse/component/jsoncodec"
+	"github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/lamxy/fiberhouse/constant"
 )
 
