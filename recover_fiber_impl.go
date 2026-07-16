@@ -94,7 +94,7 @@ func (f *FiberRecovery) RecoverPanic(config ...RecoverConfig) any {
 		}
 
 		// Catch panics
-		defer RecoverPanicInternal(pCtx, cfg)
+		defer recoverPanicInternal(pCtx, cfg)
 
 		// Return err if existed, else move to next handler
 		return c.Next()
