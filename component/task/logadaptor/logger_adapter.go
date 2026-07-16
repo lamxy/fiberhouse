@@ -4,7 +4,7 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy
 
-package tasklog
+package logadaptor
 
 import (
 	"github.com/lamxy/fiberhouse"

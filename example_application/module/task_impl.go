@@ -6,7 +6,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/cache"
-	"github.com/lamxy/fiberhouse/component/tasklog"
+	"github.com/lamxy/fiberhouse/component/task/logadaptor"
 	exampleTaskHandler "github.com/lamxy/fiberhouse/example_application/module/example-module/task/handler"
 )
 
@@ -86,7 +86,7 @@ func (ta *TaskAsync) RegisterTaskServerToContainer() {
 				"default":  3,
 				"low":      1,
 			},
-			Logger:   tasklog.NewTaskLoggerAdapter(ta.Ctx), // 任务日志适配器，统一接入框架系统日志器
+			Logger:   logadaptor.NewTaskLoggerAdapter(ta.Ctx), // 任务日志适配器，统一接入框架系统日志器
 			LogLevel: asynq.WarnLevel,                      // 指定日志级别
 		})
 		return worker, nil
