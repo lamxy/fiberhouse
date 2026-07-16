@@ -19,7 +19,7 @@
 
 - 迁移前完整测试已经复现除 `ConcurrentWrites` 外的五项失败。
 - `ConcurrentWrites` 曾在相同代码下通过，也曾在完整套件和聚焦运行中失败；失败均发生在约 1 秒边界。
-- 除路径和 package identity 外，组件迁移分支没有修改 writer 的生产代码或测试内容；`bootstrap/` 也没有跟踪文件差异。
+- 除路径和 package identity 外，组件迁移分支没有修改 writer 的生产代码或测试内容；`bootstrap/bootstrap.go` 只更新 writer import path，没有修改日志装配逻辑或 bootstrap 测试。
 - 迁移后的八个目标包可以被 `go list` 正确解析，三组聚焦测试通过，完整构建通过。
 
 因此，这六项应作为独立测试债务处理，不应在没有对应源码差异的情况下归因为组件目录或 import path 迁移回归。

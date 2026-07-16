@@ -53,7 +53,7 @@
 | Dig 容器 | 内部工具 | `CmdContext` 持有单例容器，CLI ORM 示例用它在启动/命令执行阶段组装依赖 | Web 运行时不推荐使用；`ResetDigContainer` 非并发安全 | [组件目录](components.md)、[命令行指南](../guides/command-line.md) |
 | jsonconvert | 内部工具 | recovery 错误处理把任意数据转换成 JSON 或字符串 | 每次借用后必须 `Release`；单个 wrapper 不是并发对象 | [组件目录](components.md)、[错误与恢复](../guides/errors-and-recovery.md) |
 | mongodecimal | 内部工具 | `dbmongo.NewClient` 将 `decimal.Decimal` 注册到 BSON registry | 随 Mongo client 构造生效，不是独立服务 | [组件目录](components.md)、[数据库指南](../guides/database.md) |
-| writer 与 tasklog | 内部工具 | bootstrap 的同步/异步文件 writer；示例 asynq 日志适配器 | 异步 writer 可能丢日志，必须在停止生产者后关闭；tasklog 目前由示例任务装配 | [组件目录](components.md)、[日志指南](../guides/logging.md)、[异步任务指南](../guides/background-tasks.md) |
+| logging writer 与 task logger adaptor | 内部工具 | bootstrap 的同步/异步文件 writer；示例 asynq 日志适配器 | 异步 writer 可能丢日志，必须在停止生产者后关闭；task logger adaptor 目前由示例任务装配 | [组件目录](components.md)、[日志指南](../guides/logging.md)、[异步任务指南](../guides/background-tasks.md) |
 
 ## 预留与占位
 
