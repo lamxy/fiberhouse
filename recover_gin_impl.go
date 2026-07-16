@@ -94,15 +94,22 @@ func (g *GinRecovery) RecoverPanic(config ...RecoverConfig) any {
 	// Return new handler
 	return func(c *gin.Context) {
 		pCtx := adaptorctx.WithGinContext(c)
-		// Don't execute middleware if Cfg Next returns true
-		if cfg.Next != nil && cfg.Next(pCtx) {
+		completed := false
+		func() {
+			defer recoverPanicInternal(pCtx, cfg)
+			// Don't execute middleware if Cfg Next returns true
+			if cfg.Next != nil && cfg.Next(pCtx) {
+				c.Next()
+				completed = true
+				return
+			}
+
 			c.Next()
+			completed = true
+		}()
+		if completed {
+			releaseCoreContext(pCtx)
 		}
-
-		// Catch panics
-		defer recoverPanicInternal(pCtx, cfg)
-
-		c.Next()
 	}
 }
 

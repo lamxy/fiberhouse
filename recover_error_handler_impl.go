@@ -294,15 +294,22 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 			}
 		}
 		dw.Release()
-	case fiber.Error:
+	case fiber.Error, *fiber.Error:
+		var fiberErr *fiber.Error
+		switch typed := err.(type) {
+		case fiber.Error:
+			fiberErr = &typed
+		case *fiber.Error:
+			fiberErr = typed
+		}
 		code := fiber.StatusInternalServerError
-		if err.Code == 0 {
-			err.Code = code
+		if fiberErr.Code == 0 {
+			fiberErr.Code = code
 		}
 		if debugMode || enablePrintStack || (enableDebugFlag && debugFlagFromHeader == debugFlagValue) { // 输出堆栈信息
 			msg := ErrorStack()
 
-			logEvent.Int("Code", err.Code).Str("Msg", err.Error()).Str("PrintStack", "true")
+			logEvent.Int("Code", fiberErr.Code).Str("Msg", fiberErr.Error()).Str("PrintStack", "true")
 
 			if len(reqParamsJson) > 0 {
 				logEvent.RawJSON("reqParams", reqParamsJson)
@@ -322,7 +329,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 			}
 			logEvent.Msg(msg)
 		} else {
-			logEvent.Int("Code", err.Code).Msg(err.Error())
+			logEvent.Int("Code", fiberErr.Code).Msg(fiberErr.Error())
 		}
 	case error:
 		if debugMode || enablePrintStack || (enableDebugFlag && debugFlagFromHeader == debugFlagValue) { // 输出堆栈信息
@@ -357,6 +364,9 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 func (r *ErrorHandler) ErrorHandler(ctx adaptorctx.ICoreContext, err error) error {
 	// 记录日志 & 堆栈
 	r.DefaultStackTraceHandler(ctx, err)
+	if code, message, ok := fiberHTTPError(err); ok {
+		return Response().Reset(code, message, nil).SendWithCtx(ctx, code)
+	}
 
 	// ValidateException
 	var (
@@ -383,4 +393,29 @@ func (r *ErrorHandler) ErrorHandler(ctx adaptorctx.ICoreContext, err error) erro
 		return Response().From(exception.GetUnknownError().RespData(err.Error()), true).SendWithCtx(ctx, http.StatusInternalServerError)
 	}
 	return Response().From(exception.GetUnknownError(), true).SendWithCtx(ctx, http.StatusInternalServerError)
+}
+
+func fiberHTTPError(err error) (int, string, bool) {
+	var code int
+	var message string
+	switch typed := err.(type) {
+	case *fiber.Error:
+		if typed == nil {
+			return 0, "", false
+		}
+		code, message = typed.Code, typed.Message
+	default:
+		var fiberErr *fiber.Error
+		if !errors.As(err, &fiberErr) || fiberErr == nil {
+			return 0, "", false
+		}
+		code, message = fiberErr.Code, fiberErr.Message
+	}
+	if code == 0 {
+		code = http.StatusInternalServerError
+	}
+	if message == "" {
+		message = http.StatusText(code)
+	}
+	return code, message, true
 }

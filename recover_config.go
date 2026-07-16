@@ -94,16 +94,15 @@ var ConfigConfigured RecoverConfig
 func configDefault(config ...RecoverConfig) RecoverConfig {
 	// 如果未提供任何配置，则返回默认配置
 	if len(config) < 1 {
-		ConfigConfigured = RecoverConfigDefault
-		return ConfigConfigured
+		return RecoverConfigDefault
 	}
 
 	// 覆盖默认配置
-	ConfigConfigured = config[0]
+	configured := config[0]
 
-	if ConfigConfigured.EnableStackTrace && ConfigConfigured.StackTraceHandler == nil {
-		ConfigConfigured.StackTraceHandler = RecoverConfigDefault.StackTraceHandler
+	if configured.EnableStackTrace && configured.StackTraceHandler == nil {
+		configured.StackTraceHandler = RecoverConfigDefault.StackTraceHandler
 	}
 
-	return ConfigConfigured
+	return configured
 }

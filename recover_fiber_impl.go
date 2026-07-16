@@ -88,16 +88,31 @@ func (f *FiberRecovery) RecoverPanic(config ...RecoverConfig) any {
 	// Return new handler
 	return func(c *fiber.Ctx) error {
 		pCtx := adaptorctx.WithFiberContext(c)
-		// Don't execute middleware if Next returns true
-		if cfg.Next != nil && cfg.Next(pCtx) {
-			return c.Next()
+		var err error
+		completed := false
+		func() {
+			defer recoverPanicInternal(pCtx, cfg)
+			// Don't execute middleware if Next returns true
+			if cfg.Next != nil && cfg.Next(pCtx) {
+				err = c.Next()
+				completed = true
+				return
+			}
+
+			// Return err if existed, else move to next handler
+			err = c.Next()
+			completed = true
+		}()
+		if completed {
+			releaseCoreContext(pCtx)
 		}
+		return err
+	}
+}
 
-		// Catch panics
-		defer recoverPanicInternal(pCtx, cfg)
-
-		// Return err if existed, else move to next handler
-		return c.Next()
+func releaseCoreContext(ctx adaptorctx.ICoreContext) {
+	if releasable, ok := ctx.(interface{ Release() }); ok {
+		releasable.Release()
 	}
 }
 
