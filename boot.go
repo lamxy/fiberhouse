@@ -93,6 +93,8 @@ func (bc *BootConfig) Finally() *BootConfig {
 
 // GetValue 获取键值存储中的值
 func (bc *BootConfig) GetValue(key string) (any, error) {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
 	if bc.kvStorage == nil {
 		return nil, errors.New("BootConfig kvStorage is nil")
 	}

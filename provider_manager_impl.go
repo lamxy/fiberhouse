@@ -109,15 +109,11 @@ func (m *ProviderManager) Register(provider IProvider) error {
 
 // Unregister 注销一个 provider
 func (m *ProviderManager) Unregister(name string) error {
-	//m.lock.Lock()
-	//defer m.lock.Unlock()
-	//
-	//if _, exists := m.providers[name]; !exists {
-	//	return ErrProviderNotFound
-	//}
-	//
-	//delete(m.providers, name)
-	//return nil
+	if _, exists := m.providers[name]; !exists {
+		return ErrProviderNotFound
+	}
+
+	delete(m.providers, name)
 	return nil
 }
 
@@ -268,7 +264,9 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 				}
 				return nil, nil
 			})
-			errs = append(errs, err)
+			if err != nil {
+				errs = append(errs, err)
+			}
 		} else if provider.Target() == bootCfg.CoreType {
 			// 目标类型匹配启动配置的核心类型的提供者，进行初始化
 			_, err := provider.Initialize(m.GetContext(), func(provider IProvider) (any, error) {
@@ -280,7 +278,9 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 				}
 				return nil, nil
 			})
-			errs = append(errs, err)
+			if err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 

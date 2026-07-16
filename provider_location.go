@@ -56,9 +56,9 @@ func (l *PLocation) Bind(manager IProviderManager) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// 检查是否已绑定（避免重复绑定）
+	// 检查同一管理器实例是否已绑定（同一位点允许按顺序绑定多个不同管理器）
 	for _, m := range l.managers {
-		if m.Location().GetLocationID() == manager.Location().GetLocationID() {
+		if m == manager {
 			return fmt.Errorf("manager '%s' already bound to location '%s'", manager.Name(), l.name)
 		}
 	}
