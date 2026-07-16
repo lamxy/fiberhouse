@@ -92,4 +92,4 @@ worker 和 dispatcher 都依赖调用方传入的 `*redis.Client`。框架不验
 - Context 注入的是共享应用对象；其配置、validator、provider 集合等仍遵守“启动期写、运行期读”。
 - 示例任务 logger 只是 asynq 日志适配器，不拥有 server；其 `Fatal` 行为也不适合作为普通任务错误出口。
 
-源码入口：[`task.go`](../../task.go)、[`application_interface.go`](../../application_interface.go)、[`frame_starter_impl.go`](../../frame_starter_impl.go) 与 [`component/tasklog`](../../component/tasklog/)。完整错误响应边界见[《错误与恢复》](errors-and-recovery.md)，容器清理限制见[《GlobalManager》](global-manager.md)。
+源码入口：[`task.go`](../../task.go)、[`application_interface.go`](../../application_interface.go)、[`frame_starter_impl.go`](../../frame_starter_impl.go) 与 [`component/task/logadaptor`](../../component/task/logadaptor/)。完整错误响应边界见[《错误与恢复》](errors-and-recovery.md)，容器清理限制见[《GlobalManager》](global-manager.md)。

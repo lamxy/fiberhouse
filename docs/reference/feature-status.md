@@ -63,7 +63,7 @@
 | RPC | 预留/占位 | `component/rpc` 只有空占位文件；统一响应的 Protobuf schema 与生成代码位于 `response/pb` | 没有 client/server、注册、监听或关闭生命周期；二进制 HTTP 响应不能视为 RPC | 本页、[响应与序列化](../guides/response-and-serialization.md) |
 | MQ | 预留/占位 | `component/mq` 仅有 RabbitMQ 方向说明，配置中 `mq` 为空 | 没有 provider、client、consumer 或生命周期 | 本页 |
 | i18n | 预留/占位 | `component/i18n` 没有 Go 实现 | 验证消息翻译只属于 validate 组件，不代表通用 i18n | 本页、[验证指南](../guides/validation.md) |
-| Go JSON codec | 预留/占位 | `component/jsoncodec/gojson.go` 只有 package 声明，默认集合也没有 Go JSON provider | 即使常量存在，当前不能选择为可运行 codec | [响应与序列化](../guides/response-and-serialization.md) |
+| Go JSON codec | 预留/占位 | `component/codec/json/gojson.go` 只有 package 声明，默认集合也没有 Go JSON provider | 即使常量存在，当前不能选择为可运行 codec | [响应与序列化](../guides/response-and-serialization.md) |
 | 空 component/middleware 目录说明 | 预留/占位 | placeholder 文档和若干示例空分支只表达目录意图 | 不形成可注册中间件或组件 | [组件目录](components.md)、[示例目录](examples.md) |
 | 未消费的生命周期 hook | 预留/占位 | `ServerShutdownBefore` 与 `ServerShutdownAfter` 已声明但当前启动链未读取 | 自定义代码不能假设这些位点会执行 | [Web 启动生命周期](../concepts/startup-lifecycle.md) |
 

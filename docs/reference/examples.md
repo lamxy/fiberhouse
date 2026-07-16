@@ -79,7 +79,7 @@ MongoDB command service 与 cron wrapper 当前没有入口。若要采用，应
 - Web 路径把 MySQL、MongoDB 和 Redis 都列为启动必需项；这体现调用链，不是最小应用要求。
 - Gin TLS 路径存在会主动 panic 的分支，示例配置中的 TLS 节点不能视为可直接部署的 HTTPS 方案。
 - CLI 的 MongoDB service、cron wrapper 和若干 command/module 目录没有可达入口，MySQL service 也保留许多未被命令调用的方法。
-- `component/jsoncodec/gojson.go`、通用 i18n/MQ/RPC 目录以及 plugins loader/registry 没有完整实现；配置或常量名称不改变这一状态。
+- `component/codec/json/gojson.go`、通用 i18n/MQ/RPC 目录以及 plugins loader/registry 没有完整实现；配置或常量名称不改变这一状态。
 - 二进制响应只展示基于 MIME type 的 HTTP 响应选择，不包含 RPC server 生命周期。
 - 任务异步启动、GlobalManager keepalive、日志 writer、缓存/数据库连接的停止顺序没有在示例中形成统一关闭编排。
 

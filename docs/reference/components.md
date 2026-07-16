@@ -2,9 +2,9 @@
 
 `component/` 既包含已进入框架调用链的实现，也包含内部辅助代码和空目录意图。下表按当前主调用者与生命周期归类；“内部工具”不表示对外稳定 API，也不建议业务代码仅因其导出而直接依赖。
 
-`component/` 是 FiberHouse 提供的内置、可选装配、可复用能力的命名空间，不是严格的底层依赖层。根目录不提供 Go API；每个一级子目录代表可独立理解和装配的能力。
+`component/` 是 FiberHouse 提供的内置、可选装配、可复用能力的命名空间，不是严格的底层依赖层。根目录不提供 Go API。一级目录既可以是可直接导入的能力 package，也可以是不包含 `.go` 文件的纯领域命名空间；可装配 API 位于叶子 package。
 
-子组件可以依赖 FiberHouse 核心接口，但依赖 root package 的组件必须由应用注册器或 Provider 装配，root package 和父级命名空间不得反向聚合导入。仅服务于单个组件的辅助实现放入该组件的 `internal/` 子树。
+子组件可以依赖 FiberHouse 核心接口，但依赖 root package 的组件必须由应用注册器或 Provider 装配，root package 和父级命名空间不得反向聚合导入。纯领域命名空间不创建 facade 或 re-export package；仅服务于单个组件的辅助实现放入该组件的 `internal/` 子树。
 
 目录名不是成熟度信号。判断一个组件是否可用，需要同时找到构造入口、实际调用者、错误出口和资源结束方式。
 
@@ -16,10 +16,10 @@
 | `component/cache/cachelocal` | 基于 Ristretto 的本地缓存 | Web/CLI 应用 initializer 与 L2 cache | 应用持有实例；异步写入后可调用 `Wait`，关闭后操作返回缓存关闭错误 | 实验性 | [缓存指南](../guides/cache.md) |
 | `component/cache/cacheremote` | 基于 go-redis 的远程缓存、Redis client 与缓存定位辅助 | Web/CLI initializer、任务系统与 L2 cache | 应用持有 Redis client；连接、重建、熔断及关闭语义保持由实现暴露 | 实验性 | [缓存指南](../guides/cache.md) |
 | `component/cache/cache2` | 组合 local/remote 的二级缓存和异步同步策略 | Web 应用的 GlobalManager initializer | 持有两个 ants pool；应用负责创建依赖 cache 并在停止阶段关闭 | 实验性 | [缓存指南](../guides/cache.md) |
-| `component/jsoncodec` | Std JSON 与 Sonic 的 `JsonWrapper`/Gin codec 实现 | JSON provider、HTTP core、task payload；示例注册 Sonic 实例 | 实例通常在启动期构造后只读；Sonic 解码失败回退标准库并返回最终错误；`gojson.go` 无实现 | 已接入（Std/Sonic）；预留/占位（Go JSON） | [响应与序列化](../guides/response-and-serialization.md) |
+| `component/codec/json` | Std JSON 与 Sonic 的 `JsonWrapper`/Gin codec 实现 | JSON provider、HTTP core、task payload；示例注册 Sonic 实例 | 实例通常在启动期构造后只读；Sonic 解码失败回退标准库并返回最终错误；`gojson.go` 无实现 | 已接入（Std/Sonic）；预留/占位（Go JSON） | [响应与序列化](../guides/response-and-serialization.md) |
 | `component/jsonconvert` | 把 recovery 数据分类为 JSON、标量字符串或不可序列化值 | Gin recovery 与统一错误处理器 | `DataWrap` 来自 `sync.Pool`，调用后必须 `Release`；单个实例明确用于非并发场景；编码错误由 `GetJson` 返回 | 内部工具 | [错误与恢复](../guides/errors-and-recovery.md) |
-| `component/writer` | lumberjack 同步 writer、channel/diode 异步 writer | `bootstrap.NewLoggerOnce` 的文件输出装配 | 异步实现各自启动后台 goroutine；channel 满或 diode 覆盖会计数丢日志；应停止生产者后只调用一次 `Close`，等待排空和 flush，不能承诺无损 | 内部工具（异步路径有明显限制） | [日志指南](../guides/logging.md) |
-| `component/tasklog` | 把 asynq `Logger` 转到 FiberHouse 日志来源 | `example_application` 的 `TaskAsync` | 与 TaskWorker/应用上下文同寿命；只读取上下文；`Fatal` 沿用全局日志器的 fatal 语义，当前框架默认任务链不自动安装该 adapter | 内部工具（示例装配） | [异步任务指南](../guides/background-tasks.md)、[示例目录](examples.md) |
+| `component/logging/writer` | lumberjack 同步 writer、channel/diode 异步 writer | `bootstrap.NewLoggerOnce` 的文件输出装配 | 异步实现各自启动后台 goroutine；channel 满或 diode 覆盖会计数丢日志；应停止生产者后只调用一次 `Close`，等待排空和 flush，不能承诺无损 | 内部工具（异步路径有明显限制） | [日志指南](../guides/logging.md) |
+| `component/task/logadaptor` | 把 asynq `Logger` 转到 FiberHouse 日志来源 | `example_application` 的 `TaskAsync` | 与 TaskWorker/应用上下文同寿命；只读取上下文；`Fatal` 沿用全局日志器的 fatal 语义，当前框架默认任务链不自动安装该 adapter | 内部工具（示例装配） | [异步任务指南](../guides/background-tasks.md)、[示例目录](examples.md) |
 | `component/validate` | 多语言 validator、translator、自定义 tag 和错误响应映射 | Web `AppContext`/`FrameStarter`、请求 DTO；CLI 自建 wrapper 时按需使用 | Web `AppContext` 创建时按 `application.validate.langFlags` 注册 en/zh-cn/zh-tw 中被选中的语言，未配置时仅注册 en；`CmdContext.GetValidateWrap()` 固定返回 nil，CLI 需自行构造和持有；内部 map 不支持运行期并发读写，服务开始后只读 | 已接入 | [验证指南](../guides/validation.md) |
 | `component/database/dbmysql` | GORM/MySQL client、连接池、健康检查及 model locator | 示例 Web/CLI 的 GlobalManager initializer 与 MySQL model/service | 应用持有并负责 `Close`；初始化会校验 DSN、连接并 ping；`Rebuild` 替换 client 但不关闭旧连接，读侧未与替换锁配套 | 实验性 | [数据库指南](../guides/database.md)、[GlobalManager](../guides/global-manager.md) |
 | `component/database/dbmongo` | MongoDB v2 client、连接选项、健康检查及 model locator | 示例 Web/CLI initializer 与 Mongo model | 应用持有并负责 `Disconnect`；连接/命令错误向上传递；`Rebuild` 同样不关闭旧 client，读侧未与替换锁配套 | 实验性 | [数据库指南](../guides/database.md)、[GlobalManager](../guides/global-manager.md) |

@@ -212,7 +212,7 @@ go test ./...
 go vet ./...
 ```
 
-当前 `go test ./...` 的已知失败集中在 `bootstrap` 与 `component/writer` 两个 package；本次文档整理没有新增失败 package 或编译错误，也不修复这些测试。writer 的失败 case 数量会受异步写入时序影响，不宜作为固定基线。
+当前 `go test ./...` 的已知失败集中在 `bootstrap` 与 `component/logging/writer` 两个 package；分层命名空间迁移只移动 writer package，没有修改或修复这些测试。writer 的失败 case 数量会受异步写入时序影响，不宜作为固定基线。
 
 `Makefile` 还提供 `build`、`lint` 和交叉构建目标，但使用前应先核对其目标路径与本机工具。示例需要外部服务的运行验证与纯框架构建是两件事。
 
