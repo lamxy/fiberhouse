@@ -49,6 +49,7 @@ func (r *RespInfoMagPack) GetData() interface{} {
 
 // SendWithCtx 使用MessagePack格式发送响应
 func (r *RespInfoMagPack) SendWithCtx(c adaptorctx.ICoreContext, status ...int) error {
+	defer r.Release()
 	statusCode := 200
 	if len(status) > 0 {
 		statusCode = status[0]
@@ -72,6 +73,7 @@ func (r *RespInfoMagPack) SendWithCtx(c adaptorctx.ICoreContext, status ...int) 
 
 // JsonWithCtx 使用JSON格式发送响应
 func (r *RespInfoMagPack) JsonWithCtx(c adaptorctx.ICoreContext, status ...int) error {
+	defer r.Release()
 	statusCode := 200
 	if len(status) > 0 {
 		statusCode = status[0]

@@ -7,12 +7,13 @@
 package fiberhouse
 
 import (
+	"strings"
+	"sync"
+
 	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/exception"
 	"github.com/lamxy/fiberhouse/response"
-	"strings"
-	"sync"
 )
 
 var (
@@ -58,8 +59,10 @@ type ResponseWrap struct {
 // Response 从对象池获取 ResponseWrap
 func Response() *ResponseWrap {
 	r := responseWrapPool.Get().(*ResponseWrap)
-	// 从新从对象池获取一个 IResponse 实例，确保是干净的对象
-	r.IResponse = response.GetRespInfo()
+	if r.IResponse == nil {
+		// 从新从对象池获取一个 IResponse 实例，确保是干净的对象
+		r.IResponse = response.GetRespInfo()
+	}
 	return r
 }
 
@@ -101,11 +104,14 @@ func (r *ResponseWrap) SendWithCtx(c adaptorctx.ICoreContext, status ...int) err
 	return r.IResponse.JsonWithCtx(c, status...)
 }
 
+// JsonWithCtx 使用核心上下文接口响应 JSON 数据
+func (r *ResponseWrap) JsonWithCtx(c adaptorctx.ICoreContext, status ...int) error {
+	defer r.Release()
+	return r.IResponse.JsonWithCtx(c, status...)
+}
+
 // Release 释放 ResponseWrap 回对象池
 func (r *ResponseWrap) Release() {
-	if r.IResponse != nil {
-		r.IResponse.Release()
-	}
 	r.IResponse = nil
 	responseWrapPool.Put(r)
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
-	"github.com/lamxy/fiberhouse/response"
 )
 
 // ExampleHandler 示例处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
@@ -111,7 +110,9 @@ func (h *ExampleHandler) GetExample(c *fiber.Ctx) error {
 	}
 
 	// 返回成功响应
-	return response.SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
+	//return response.SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)  // json协议 响应
+	//return response.GetRespInfoMsgPack().SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK) // msgpack 协议响应
+	return fiberhouse.Response().SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK) // 自动处理响应
 }
 
 // GetExampleWithTaskDispatcher godoc
