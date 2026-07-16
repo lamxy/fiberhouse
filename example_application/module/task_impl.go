@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/cache"
+	"github.com/lamxy/fiberhouse/component/cache"
 	"github.com/lamxy/fiberhouse/component/tasklog"
 	exampleTaskHandler "github.com/lamxy/fiberhouse/example_application/module/example-module/task/handler"
 )

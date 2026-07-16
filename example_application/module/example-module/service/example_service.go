@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/cache"
+	"github.com/lamxy/fiberhouse/component/cache"
 	"github.com/lamxy/fiberhouse/example_application/apivo/commonvo"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"

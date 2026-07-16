@@ -11,7 +11,7 @@ import (
 	"errors"
 	"github.com/dgraph-io/ristretto/v2"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/cache"
+	"github.com/lamxy/fiberhouse/component/cache"
 	"github.com/lamxy/fiberhouse/constant"
 	frameUtils "github.com/lamxy/fiberhouse/utils"
 	"sync/atomic"

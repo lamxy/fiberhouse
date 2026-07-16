@@ -15,8 +15,8 @@ import (
 
 	"github.com/dgraph-io/ristretto/v2"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/cache"
-	"github.com/lamxy/fiberhouse/cache/cachelocal"
+	"github.com/lamxy/fiberhouse/component/cache"
+	"github.com/lamxy/fiberhouse/component/cache/cachelocal"
 	"github.com/panjf2000/ants/v2"
 )
 

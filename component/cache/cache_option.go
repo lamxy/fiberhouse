@@ -60,7 +60,7 @@ localTTL := option.GetLocalTTL()   // 每次调用返回新的随机值
 baseTTL := option.GetLocalBaseTTL() // 返回基础TTL，不含随机
 
 // 完整使用示例： ExampleService.GetExamples 方法中启用缓存
-import "github.com/lamxy/fiberhouse/cache"
+import "github.com/lamxy/fiberhouse/component/cache"
 
 co := cache.OptionPoolGet(s.GetContext())
 defer cache.OptionPoolPut(co)

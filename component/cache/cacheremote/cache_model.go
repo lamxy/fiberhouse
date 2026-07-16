@@ -8,7 +8,7 @@ package cacheremote
 
 import (
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/cache"
+	"github.com/lamxy/fiberhouse/component/cache"
 )
 
 // CacheModel 用于被具体的Cache Proxy实例继承

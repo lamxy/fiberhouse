@@ -10,7 +10,7 @@ import (
 	"context"
 	"errors"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/cache"
+	"github.com/lamxy/fiberhouse/component/cache"
 	"github.com/lamxy/fiberhouse/constant"
 	frameUtils "github.com/lamxy/fiberhouse/utils"
 	"github.com/redis/go-redis/v9"
