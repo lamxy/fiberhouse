@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/lamxy/fiberhouse/appconfig"
 )
@@ -179,5 +180,46 @@ func TestAsyncDiodeWriter_CloseIsIdempotent(t *testing.T) {
 
 	if err := fixture.writer.Close(); err != nil {
 		t.Fatalf("second close: %v", err)
+	}
+}
+
+func TestAsyncDiodeWriter_ConcurrentCloseIsIdempotent(t *testing.T) {
+	fixture := newAsyncDiodeWriterFixture(t)
+	const closers = 8
+
+	start := make(chan struct{})
+	ready := make(chan struct{}, closers)
+	results := make(chan error, closers)
+	for i := 0; i < closers; i++ {
+		go func() {
+			ready <- struct{}{}
+			<-start
+			results <- fixture.writer.Close()
+		}()
+	}
+
+	// All goroutines now share the same release barrier. The timeout only guards
+	// against a deadlocked Close implementation; completion comes from results.
+	fixture.closed = true
+	for i := 0; i < closers; i++ {
+		<-ready
+	}
+	close(start)
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+
+	var first error
+	for i := 0; i < closers; i++ {
+		select {
+		case err := <-results:
+			if i == 0 {
+				first = err
+			}
+			if (err == nil) != (first == nil) || err != nil && err.Error() != first.Error() {
+				t.Errorf("close result %d = %v, want result consistent with %v", i, err, first)
+			}
+		case <-timer.C:
+			t.Fatalf("concurrent Close calls did not all return; received %d of %d results", i, closers)
+		}
 	}
 }

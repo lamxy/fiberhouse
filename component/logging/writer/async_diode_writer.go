@@ -107,7 +107,7 @@ func (a *AsyncDiodeWriter) consume(flushInterval time.Duration) {
 }
 
 // Write 方法实现 io.Writer 接口，将数据写入二极管。
-// Close 开始后，Write 返回 (0, error)，不会接受更多数据。
+// 观察到关闭状态的调用返回 (0, error)；与首次 Close 并发的调用不保证线性化顺序。
 func (a *AsyncDiodeWriter) Write(p []byte) (int, error) {
 	if atomic.LoadInt32(&a.closed) == 1 {
 		return 0, fmt.Errorf("AsyncDiodeWriter: writer is closed")
@@ -127,7 +127,8 @@ func (a *AsyncDiodeWriter) DroppedLogs() int64 {
 	return atomic.LoadInt64(&a.droppedLogs)
 }
 
-// Close 关闭日志记录器，等待后台 goroutine 排空并刷盘后再返回。
+// Close 通知后台 goroutine 排空已入队数据并刷盘后再返回。
+// 与首次 Close 并发且尚未入队的 Write 不保证被本次关闭排空。
 // Close 可以重复或并发调用；只有首次调用执行关闭，其余调用等待它完成。
 func (a *AsyncDiodeWriter) Close() error {
 	if !atomic.CompareAndSwapInt32(&a.closed, 0, 1) {
