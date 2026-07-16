@@ -14,10 +14,6 @@ import (
 // FiberErrorHandler 创建一个 Fiber 框架的错误处理适配器
 func FiberErrorHandler(fn func(adaptorctx.ICoreContext, error) error) fiber.ErrorHandler {
 	return func(c *fiber.Ctx, err error) error {
-		handlerErr := fn(adaptorctx.WithFiberContext(c), err)
-		if handlerErr != nil {
-			return handlerErr
-		}
-		return err
+		return fn(adaptorctx.WithFiberContext(c), err)
 	}
 }

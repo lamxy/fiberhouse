@@ -25,12 +25,12 @@ func NewCoreStarterGinProvider() *CoreStarterGinProvider {
 func (p *CoreStarterGinProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
 	p.Check()
 	if len(initFunc) == 0 {
-		return NewCoreWithFiber(ctx.(IApplicationContext)), nil
+		return NewCoreWithGin(ctx.(IApplicationContext)), nil
 	}
 
 	anything, err := initFunc[0](p) // 匿名函数参数获取核心启动器初始化的选项参数切片
 	if err != nil {
-		return nil, fmt.Errorf("CoreFiberProvider initialize failed: %w", err)
+		return nil, fmt.Errorf("CoreGinProvider initialize failed: %w", err)
 	}
 
 	var (
