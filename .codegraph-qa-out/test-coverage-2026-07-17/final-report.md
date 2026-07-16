@@ -14,7 +14,7 @@ Integration status: **preserved for user review; not merged**.
 
 The low-coverage suite was replaced and expanded around the framework's critical behavior rather than a 100% target. The branch adds stable hermetic tests for provider/context state machines, both HTTP cores, recovery/response behavior, resource lifecycles, reusable components and application orchestration.
 
-Compared with the base commit, the complete branch range changes 62 files with 7,087 insertions and 752 deletions. The repository now contains 232 test functions across the suite, up from the 82-test structural baseline. Thirty-seven test files are changed or added in this branch.
+Compared with the base commit, the reviewed implementation/archive range through `acfc893` changes 62 files with 7,082 insertions and 752 deletions. The repository now contains 232 test functions across the suite, up from the 82-test structural baseline. Thirty-seven test files are changed or added in this branch.
 
 ## Coverage
 
