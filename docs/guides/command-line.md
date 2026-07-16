@@ -136,7 +136,7 @@ CLI 当前没有统一 shutdown 阶段，也不会自动调用 GlobalManager 中
 [`example_application/command`](../../example_application/command/) 只用于说明装配。其 `test-orm` / `orm` 命令：
 
 - 把 `ICommandContext`、MySQL model 和 service 构造器 `Provide` 到单例 Dig 容器；
-- 检查 `Provide` 错误，再用泛型 `component.Invoke` 取得 service；
+- 检查 `Provide` 错误，再用 `github.com/lamxy/fiberhouse/component/container` 包的泛型 `container.Invoke` 取得 service；
 - 每次执行都会先 `AutoMigrate`，随后按 `--method ok|orm` 运行演示操作；
 - `--operation` 和 `--id` 只在 `--method orm` 分支读取。
 

@@ -33,7 +33,7 @@ Context 是 FiberHouse 各层共享基础设施的访问面；Locator 是 API、
 
 ## CLI Context 的差异
 
-`NewCmdContextOnce` 创建 `CmdContext`，共享同一个 `GlobalManager` 单例，并额外持有 `component.DigContainer`。CLI 的 Starter 由命令装配代码注册，不经过 Web `RunServer`。
+`NewCmdContextOnce` 创建 `CmdContext`，共享同一个 `GlobalManager` 单例，并额外持有 `*container.DigContainer`（`container` 对应包路径 `github.com/lamxy/fiberhouse/component/container`）。CLI 的 Starter 由命令装配代码注册，不经过 Web `RunServer`。
 
 当前 `CmdContext.GetValidateWrap()` 返回 nil；虽然该方法属于 `IContext`，CLI 不能据此假设验证器可用。CLI keepalive 也只同步遍历一次全局对象，并非 Web 形态的 ticker 生命周期。CLI 整体在[功能状态](../reference/feature-status.md)中属于实验性。
 
