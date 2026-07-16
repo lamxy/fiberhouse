@@ -2,7 +2,9 @@ package globalmanager
 
 import (
 	"errors"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -68,6 +70,80 @@ func TestGet_TransientFailureThenSuccessClearsCachedError(t *testing.T) {
 	}
 	if got != "ready" {
 		t.Fatalf("second Get() = %v, want ready", got)
+	}
+}
+
+func TestGet_FailurePublishesErrorBeforeConcurrentRetry(t *testing.T) {
+	previousProcs := runtime.GOMAXPROCS(2)
+	defer runtime.GOMAXPROCS(previousProcs)
+
+	for _, panicOnFirstAttempt := range []bool{false, true} {
+		name := "error"
+		if panicOnFirstAttempt {
+			name = "panic"
+		}
+		t.Run(name, func(t *testing.T) {
+			for attempt := 0; attempt < 1000; attempt++ {
+				manager := NewGlobalManager()
+				initializerEntered := make(chan struct{})
+				releaseFailure := make(chan struct{})
+				var initializerCalls int32
+				manager.Register("transient", func() (interface{}, error) {
+					if atomic.AddInt32(&initializerCalls, 1) == 1 {
+						close(initializerEntered)
+						<-releaseFailure
+						if panicOnFirstAttempt {
+							panic("transient panic")
+						}
+						return nil, errors.New("transient failure")
+					}
+					return "ready", nil
+				})
+
+				origin, _ := manager.container.Load("transient")
+				entity := origin.(*entry)
+				observerReady := make(chan struct{})
+				retryDone := make(chan struct {
+					published bool
+					value     interface{}
+					err       error
+				}, 1)
+				go func() {
+					close(observerReady)
+					for atomic.LoadInt32(&entity.initialized) != -1 {
+						runtime.Gosched()
+					}
+					published := entity.initErr.Load() != nil
+					value, err := manager.Get("transient")
+					retryDone <- struct {
+						published bool
+						value     interface{}
+						err       error
+					}{published: published, value: value, err: err}
+				}()
+
+				<-observerReady
+				firstDone := make(chan struct{}, 1)
+				go func() {
+					_, _ = manager.Get("transient")
+					firstDone <- struct{}{}
+				}()
+				<-initializerEntered
+				close(releaseFailure)
+
+				result := <-retryDone
+				<-firstDone
+				if !result.published {
+					t.Fatalf("attempt %d observed failed state before initErr was published", attempt)
+				}
+				if result.err != nil || result.value != "ready" {
+					t.Fatalf("attempt %d retry = (%v, %v), want ready, nil", attempt, result.value, result.err)
+				}
+				if entity.initErr.Load() != nil {
+					t.Fatalf("attempt %d successful retry retained initErr", attempt)
+				}
+			}
+		})
 	}
 }
 

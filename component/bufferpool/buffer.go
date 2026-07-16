@@ -42,6 +42,7 @@ func NewBufferPool(left, right uint32) *BufferPool {
 func (p *BufferPool) Put(b *bytes.Buffer) {
 	if b != nil {
 		if pool, ok := p.shards[b.Cap()]; ok {
+			b.Reset()
 			pool.Put(b)
 		}
 	}

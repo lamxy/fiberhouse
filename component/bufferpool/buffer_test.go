@@ -61,6 +61,9 @@ func TestBufferPool_ShardCapacityOversizeAndReset(t *testing.T) {
 	buffer := pool.Get(20)
 	buffer.WriteString("sensitive data")
 	pool.Put(buffer)
+	if buffer.Len() != 0 || buffer.String() != "" {
+		t.Fatalf("Put() retained data in returned buffer: %q", buffer.String())
+	}
 	reused := pool.Get(20)
 	if reused.Len() != 0 || reused.String() != "" {
 		t.Fatalf("reused buffer retained data: %q", reused.String())

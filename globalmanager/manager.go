@@ -148,18 +148,18 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 	entity.once.Load().Do(func() {
 		defer func() {
 			if r := recover(); r != nil {
-				// 捕获 panic 并设置初始化状态为-1
-				atomic.StoreInt32(&entity.initialized, -1)
 				e := fmt.Errorf("panic occurred while initializing global object '%s': %v", name, r)
 				entity.initErr.Store(&storedError{err: e})
+				// 最后发布失败状态，确保重试方一定能先观察到错误。
+				atomic.StoreInt32(&entity.initialized, -1)
 			}
 		}()
 		instance, err = entity.initializer()
 		if err != nil {
-			// 初始化失败，设置初始化状态为-1
-			atomic.StoreInt32(&entity.initialized, -1)
 			e := fmt.Errorf("failed to initialize global object '%s': %v", name, err)
 			entity.initErr.Store(&storedError{err: e})
+			// 最后发布失败状态，确保重试方一定能先观察到错误。
+			atomic.StoreInt32(&entity.initialized, -1)
 			return
 		}
 		entity.instance.Store(&storedValue{value: instance})
