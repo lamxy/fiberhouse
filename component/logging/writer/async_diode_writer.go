@@ -23,10 +23,12 @@ import (
 type AsyncDiodeWriter struct {
 	diode       diodes.Diode       // 二极管
 	wg          sync.WaitGroup     // 用于等待后台写入完成
-	stopCh      chan struct{}       // 通知子goroutine退出
+	stopCh      chan struct{}      // 通知子goroutine退出
+	closeDone   chan struct{}      // 通知并发 Close 调用原始关闭流程已完成
 	writer      *bufio.Writer      // 缓冲写入器，接入lumberjack.Logger
 	lumber      *lumberjack.Logger // lumberjack 实例，用于管理日志文件滚动等
 	closed      int32              // atomic 标志，防止 Close 后 Write 触发未定义行为
+	closeErr    error              // 首次 Close 的结果，由 closeDone 保护发布
 	droppedLogs int64              // 因 diode 满而丢弃的日志条数（atomic）
 }
 
@@ -51,9 +53,10 @@ func NewAsyncDiodeWriter(cfg appconfig.IAppConfig, filename string) *AsyncDiodeW
 	writer := bufio.NewWriterSize(logRoller, diodeBuf)
 
 	aw := &AsyncDiodeWriter{
-		stopCh: make(chan struct{}),
-		writer: writer,
-		lumber: logRoller,
+		stopCh:    make(chan struct{}),
+		closeDone: make(chan struct{}),
+		writer:    writer,
+		lumber:    logRoller,
 	}
 
 	dd := diodes.NewManyToOne(diodeSize, diodes.AlertFunc(func(missed int) {
@@ -103,7 +106,8 @@ func (a *AsyncDiodeWriter) consume(flushInterval time.Duration) {
 	}
 }
 
-// Write 方法实现 io.Writer 接口，将数据写入二极管
+// Write 方法实现 io.Writer 接口，将数据写入二极管。
+// Close 开始后，Write 返回 (0, error)，不会接受更多数据。
 func (a *AsyncDiodeWriter) Write(p []byte) (int, error) {
 	if atomic.LoadInt32(&a.closed) == 1 {
 		return 0, fmt.Errorf("AsyncDiodeWriter: writer is closed")
@@ -123,11 +127,18 @@ func (a *AsyncDiodeWriter) DroppedLogs() int64 {
 	return atomic.LoadInt64(&a.droppedLogs)
 }
 
-// Close 关闭日志记录器，等待后台 goroutine 完成所有写入后再关闭底层文件
+// Close 关闭日志记录器，等待后台 goroutine 排空并刷盘后再返回。
+// Close 可以重复或并发调用；只有首次调用执行关闭，其余调用等待它完成。
 func (a *AsyncDiodeWriter) Close() error {
-	atomic.StoreInt32(&a.closed, 1)
+	if !atomic.CompareAndSwapInt32(&a.closed, 0, 1) {
+		<-a.closeDone
+		return a.closeErr
+	}
+
 	close(a.stopCh)
 	// 不在此处 Flush：consume goroutine 排空 diode 并完成最终 Flush 后才退出，避免并发写 bufio.Writer
 	a.wg.Wait()
-	return a.lumber.Close()
+	a.closeErr = a.lumber.Close()
+	close(a.closeDone)
+	return a.closeErr
 }
