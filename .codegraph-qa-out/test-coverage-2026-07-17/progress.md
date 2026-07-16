@@ -72,7 +72,9 @@ go test ./... -count=1
 go test ./... -count=10
 go test -race ./... -count=1
 go test ./... -count=1 -covermode=atomic -coverprofile=/tmp/fiberhouse-final-coverage.out
+go tool cover -func=/tmp/fiberhouse-final-coverage.out | tail -n 1
 git diff --check
+git status --short
 ```
 
 All test commands passed. Coverage from the final profile:
