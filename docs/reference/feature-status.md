@@ -35,7 +35,7 @@
 | 异步任务 | 已接入 | 实验性 | 公共 API | 无默认 task register；应用需提供 Redis、initializer、handler、`TaskRegister` 并启用 `application.task.enableServer` | asynq `TaskWorker`/`TaskDispatcher` 的创建、同步/异步运行和失败记录有路径；统一关闭、dispatcher 回收不完整 | 未验证外部 live integration | 异步启动内部错误只记录，示例依赖外部 Redis，当前无 task worker live suite；见[异步任务指南](../guides/background-tasks.md) |
 | CLI | 已接入 | 实验性 | 公共 API | 不属于 Web 默认集合；应用单独创建 `CmdContext`、应用注册器和基于 urfave/cli 的 `CMDLineApplication` | 创建、命令注册和运行有路径；`AppCoreRun` 失败传播、健康检查循环与资源关闭不完整 | 单元/契约 | 健康检查只执行一次，`RunCommandStarter` 丢弃返回值；见[命令行指南](../guides/command-line.md) |
 | MySQL / MongoDB | 已接入 | 实验性 | 公共 API | 不默认创建；由应用 initializer 显式注册 GORM/MySQL、MongoDB v2 client，并决定是否在启动期强制初始化 | client/连接池/模型 locator 的创建、运行、失败/健康检查、关闭均有入口；替换时旧 client 关闭与读侧并发契约不完整 | 未验证外部 live integration | Mongo decimal codec 随 client 构造；连接失败会使需要资源的装配失败；smoke 启动服务容器不证明读写、重建或关闭；见[数据库指南](../guides/database.md) |
-| 扩展运行位点与关闭链 | 已实现 | 实验性 | 公共 API | 应用可显式绑定自定义 manager；没有通用 before/after provider，关闭由具体 core 决定 | 创建声明和部分运行位点可达；失败契约不统一，关闭 before/after 未消费 | 无专项测试 | `ServerShutdownBefore`/`ServerShutdownAfter` 只有 location 声明，Fiber shutdown 直接清空容器；见[Web 启动生命周期](../concepts/startup-lifecycle.md) |
+| 扩展运行位点与关闭链 | 已实现 | 实验性 | 公共 API | 应用可显式绑定自定义 manager；没有通用 before/after provider，关闭由具体 core 决定 | 创建声明和部分运行位点可达；失败契约不统一，关闭 before/after 未消费 | 无专项测试 | `ServerShutdownBefore`/`ServerShutdownAfter` 只有 location 声明；Fiber shutdown 会先停止并等待默认 keepalive，再以 deletion-only 语义清空容器，但仍未消费这些位点；见[Web 启动生命周期](../concepts/startup-lifecycle.md) |
 
 ## 内部工具
 
