@@ -97,6 +97,10 @@ func (p *frameHealthStopperProxy) stopHealthCheck() {
 	p.FrameApplication.stopHealthCheck()
 }
 
+type frameCustomStarterWithoutHealthStop struct{ FrameStarter }
+
+func (s *frameCustomStarterWithoutHealthStop) GetFrameApp() FrameStarter { return s }
+
 type frameFailingHealthRebuilder struct{}
 
 func (*frameFailingHealthRebuilder) IsHealthy() bool { return false }
@@ -366,6 +370,26 @@ func TestFrameApplication_StopHealthCheckIsConcurrentAndIdempotent(t *testing.T)
 	}
 }
 
+func TestFrameApplication_RepeatedStartHealthCheckKeepsSingleLoop(t *testing.T) {
+	ctx, _ := newFrameTestContext(t, nil)
+	isolateFrameHealthManager(t, ctx)
+	frame := &FrameApplication{Ctx: ctx}
+
+	frame.startHealthCheck(time.Hour)
+	frame.startHealthCheck(time.Hour)
+
+	stopped := make(chan struct{})
+	go func() {
+		frame.stopHealthCheck()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("one stop did not terminate the repeated-start health lifecycle")
+	}
+}
+
 func TestFrameApplication_StartHealthCheckRejectsInvalidInterval(t *testing.T) {
 	ctx, logs := newFrameTestContext(t, nil)
 	isolateFrameHealthManager(t, ctx)
@@ -456,5 +480,21 @@ func TestClearApplicationGlobalsStopsMountedFrameBeforeClearingContainer(t *test
 
 func TestStopFrameHealthCheckIgnoresMissingStarter(t *testing.T) {
 	ctx, _ := newFrameTestContext(t, nil)
+	assert.NotPanics(t, func() { stopFrameHealthCheck(ctx) })
+}
+
+func TestStopFrameHealthCheckIgnoresMountedCustomFrameWithoutStopper(t *testing.T) {
+	ctx, _ := newFrameTestContext(t, nil)
+	customFrame := &frameCustomStarterWithoutHealthStop{}
+	if _, ok := interface{}(customFrame).(healthCheckStopper); ok {
+		t.Fatal("custom frame unexpectedly implements healthCheckStopper")
+	}
+	ctx.RegisterStarterApp(&WebApplication{
+		FrameStarter: customFrame,
+		CoreStarter: &lifecycleRecordingStarter{
+			managerCalls: make(map[string][]IProviderManager),
+		},
+	})
+
 	assert.NotPanics(t, func() { stopFrameHealthCheck(ctx) })
 }

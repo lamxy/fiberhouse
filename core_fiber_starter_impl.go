@@ -256,11 +256,10 @@ func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProvider
 
 	cf.coreApp.Hooks().OnShutdown(func() error {
 		// 应用Shutdown时回调，回收/关闭相关资源，如后台程序(等待关闭信号)、异步任务(等待关闭信号)、连接池（关闭连接池）、中间件（封装实现Closable接口）等
-		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appShutdown", "ok").Msg("")
-
 		//fa.GetContext().GetContainer().ReleaseAll(true) // 释放资源
 		clearApplicationGlobals(cf.GetAppContext()) // 停止保活后清空全局对象
-		_ = cf.GetAppContext().GetLogger().Close()  // 日志器Close
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appShutdown", "ok").Msg("")
+		_ = cf.GetAppContext().GetLogger().Close() // 日志器Close
 		return nil
 	})
 }
