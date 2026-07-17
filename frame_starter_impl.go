@@ -9,18 +9,24 @@
 package fiberhouse
 
 import (
+	"context"
 	"errors"
-	"github.com/lamxy/fiberhouse/component/validate"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/lamxy/fiberhouse/component/validate"
 )
 
 // FrameApplication 框架应用启动器实现，实现了 fiberhouse.ApplicationStarter 接口
 type FrameApplication struct {
-	Ctx         IApplicationContext
-	application ApplicationRegister
-	module      ModuleRegister
-	task        TaskRegister
+	Ctx          IApplicationContext
+	application  ApplicationRegister
+	module       ModuleRegister
+	task         TaskRegister
+	healthMu     sync.Mutex
+	healthCancel context.CancelFunc
+	healthWG     sync.WaitGroup
 }
 
 // NewFrameApplication 创建一个应用启动器对象
@@ -243,40 +249,81 @@ func (fa *FrameApplication) RegisterGlobalsKeepalive(managers ...IProviderManage
 	}
 }
 
-// StartHealthCheck 异步检查全局对象是否健康和重建
+// startHealthCheck 异步检查全局对象是否健康和重建
 func (fa *FrameApplication) startHealthCheck(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	go func(app *FrameApplication, t *time.Ticker) {
-		gm, log, cfg := app.GetContext().GetContainer(), app.GetContext().GetLogger(), app.GetContext().GetConfig()
-		defer func(t *time.Ticker) {
-			t.Stop()
-			if r := recover(); r != nil {
-				switch re := r.(type) {
-				case error:
-					log.Error(cfg.LogOriginFrame()).Err(re).Str("from", "global manager").Msg("StartHealthCheck recover Error")
-				default:
-					log.Error(cfg.LogOriginFrame()).Str("from", "global manager").Msgf("StartHealthCheck recover Error: %v", re)
-				}
+	if interval <= 0 {
+		fa.GetContext().GetLogger().ErrorWith(fa.GetContext().GetConfig().LogOriginFrame()).
+			Msg("health check interval must be positive")
+		return
+	}
+
+	fa.healthMu.Lock()
+	if fa.healthCancel != nil {
+		fa.healthMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	fa.healthCancel = cancel
+	fa.healthWG.Add(1)
+	fa.healthMu.Unlock()
+
+	go func() {
+		defer fa.healthWG.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		defer fa.recoverHealthCheckPanic()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				fa.checkGlobalsHealthOnce()
 			}
-		}(t)
-		for range t.C {
-			gm.Range(func(key, value interface{}) bool {
-				name := key.(string)
-				ret, err := gm.CheckHealth(name)
-				if err != nil {
-					log.Error(cfg.LogOriginFrame()).Err(err).Msgf("global object from key: '%s', health check failure", name) // return false to stop iteration
-					return true
-				}
-				if !ret {
-					log.Error(cfg.LogOriginFrame()).Msgf("global resource '%s' is unhealthy, rebuilding...", name)
-					err = gm.Rebuild(name)
-					if err != nil {
-						log.Error(cfg.LogOriginFrame()).Err(err).Msgf("global resource '%s' rebuild failed.", name)
-					}
-					log.Info(cfg.LogOriginFrame()).Err(err).Msgf("global resource '%s' rebuild success.", name)
-				}
-				return true
-			})
 		}
-	}(fa, ticker)
+	}()
+}
+
+func (fa *FrameApplication) stopHealthCheck() {
+	fa.healthMu.Lock()
+	cancel := fa.healthCancel
+	fa.healthMu.Unlock()
+	if cancel == nil {
+		return
+	}
+	cancel()
+	fa.healthWG.Wait()
+}
+
+func (fa *FrameApplication) recoverHealthCheckPanic() {
+	if r := recover(); r != nil {
+		log, cfg := fa.GetContext().GetLogger(), fa.GetContext().GetConfig()
+		switch re := r.(type) {
+		case error:
+			log.Error(cfg.LogOriginFrame()).Err(re).Str("from", "global manager").Msg("StartHealthCheck recover Error")
+		default:
+			log.Error(cfg.LogOriginFrame()).Str("from", "global manager").Msgf("StartHealthCheck recover Error: %v", re)
+		}
+	}
+}
+
+func (fa *FrameApplication) checkGlobalsHealthOnce() {
+	gm, log, cfg := fa.GetContext().GetContainer(), fa.GetContext().GetLogger(), fa.GetContext().GetConfig()
+	gm.Range(func(key, value interface{}) bool {
+		name := key.(string)
+		ret, err := gm.CheckHealth(name)
+		if err != nil {
+			log.Error(cfg.LogOriginFrame()).Err(err).Msgf("global object from key: '%s', health check failure", name) // return false to stop iteration
+			return true
+		}
+		if !ret {
+			log.Error(cfg.LogOriginFrame()).Msgf("global resource '%s' is unhealthy, rebuilding...", name)
+			err = gm.Rebuild(name)
+			if err != nil {
+				log.Error(cfg.LogOriginFrame()).Err(err).Msgf("global resource '%s' rebuild failed.", name)
+				return true
+			}
+			log.Info(cfg.LogOriginFrame()).Msgf("global resource '%s' rebuild success.", name)
+		}
+		return true
+	})
 }

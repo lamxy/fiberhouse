@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -68,6 +70,30 @@ func forceFrameTestZeroInterval(t *testing.T, ctx IApplicationContext) {
 
 func (r *frameTestValidateRegister) RegisterToWrap(*validate.Wrap) { (*r.called)++ }
 
+type frameBlockingHealthChecker struct {
+	entered chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func (h *frameBlockingHealthChecker) IsHealthy() bool {
+	if h.calls.Add(1) == 1 {
+		close(h.entered)
+	}
+	<-h.release
+	return true
+}
+
+type frameFailingHealthRebuilder struct{}
+
+func (*frameFailingHealthRebuilder) IsHealthy() bool { return false }
+
+func (*frameFailingHealthRebuilder) Rebuild(...interface{}) (interface{}, error) {
+	return nil, errors.New("frame rebuild failed")
+}
+
+func (*frameFailingHealthRebuilder) GetConfPath() string { return "frame-test" }
+
 type frameTestSavedEntry struct {
 	key        string
 	registered bool
@@ -116,6 +142,14 @@ func newFrameTestContext(t *testing.T, values map[string]interface{}) (IApplicat
 	ctx := NewAppContext(cfg, bootstrap.NewLoggerWrap(&logger))
 	ctx.RegisterBootConfig(&BootConfig{CoreType: "fiber", TrafficCodec: "test"})
 	return ctx, &logs
+}
+
+func isolateFrameHealthManager(t *testing.T, ctx IApplicationContext) *globalmanager.GlobalManager {
+	t.Helper()
+	appCtx := ctx.(*AppContext)
+	manager := globalmanager.NewGlobalManager()
+	appCtx.container = manager
+	return manager
 }
 
 func TestFrameApplication_RegistrationGettersAndContextMount(t *testing.T) {
@@ -251,4 +285,84 @@ func TestFrameApplication_GuardsAvoidStartupSideEffects(t *testing.T) {
 		enabled := &FrameApplication{Ctx: enabledCtx}
 		enabled.RegisterTaskServer()
 	})
+}
+
+func TestFrameApplication_StopHealthCheckWaitsAndPreventsRestart(t *testing.T) {
+	ctx, _ := newFrameTestContext(t, nil)
+	manager := isolateFrameHealthManager(t, ctx)
+	checker := &frameBlockingHealthChecker{entered: make(chan struct{}), release: make(chan struct{})}
+	manager.Register("health", func() (interface{}, error) { return checker, nil })
+	_, _ = manager.Get("health")
+	frame := &FrameApplication{Ctx: ctx}
+
+	frame.startHealthCheck(time.Millisecond)
+	<-checker.entered
+	stopped := make(chan struct{})
+	go func() {
+		frame.stopHealthCheck()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		t.Fatal("stopHealthCheck returned before active check completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(checker.release)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("stopHealthCheck did not return")
+	}
+
+	before := checker.calls.Load()
+	frame.startHealthCheck(time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
+	if got := checker.calls.Load(); got != before {
+		t.Fatalf("health check restarted: calls=%d, want %d", got, before)
+	}
+}
+
+func TestFrameApplication_StopHealthCheckIsConcurrentAndIdempotent(t *testing.T) {
+	ctx, _ := newFrameTestContext(t, nil)
+	isolateFrameHealthManager(t, ctx)
+	frame := &FrameApplication{Ctx: ctx}
+	frame.startHealthCheck(time.Hour)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			frame.stopHealthCheck()
+		}()
+	}
+	wg.Wait()
+}
+
+func TestFrameApplication_StartHealthCheckRejectsInvalidInterval(t *testing.T) {
+	ctx, logs := newFrameTestContext(t, nil)
+	isolateFrameHealthManager(t, ctx)
+	frame := &FrameApplication{Ctx: ctx}
+	frame.startHealthCheck(0)
+	if frame.healthCancel != nil {
+		t.Fatal("invalid interval started health check")
+	}
+	assert.Contains(t, logs.String(), "health check interval must be positive")
+}
+
+func TestFrameApplication_CheckGlobalsHealthOnceDoesNotLogSuccessAfterRebuildFailure(t *testing.T) {
+	ctx, logs := newFrameTestContext(t, nil)
+	manager := isolateFrameHealthManager(t, ctx)
+	manager.Register("unhealthy", func() (interface{}, error) {
+		return &frameFailingHealthRebuilder{}, nil
+	})
+	_, err := manager.Get("unhealthy")
+	require.NoError(t, err)
+	frame := &FrameApplication{Ctx: ctx}
+
+	frame.checkGlobalsHealthOnce()
+
+	assert.Contains(t, logs.String(), "rebuild failed")
+	assert.NotContains(t, logs.String(), "rebuild success")
 }
