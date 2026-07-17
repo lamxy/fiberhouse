@@ -145,15 +145,19 @@
 
 ## P1-A 执行记录（2026-07-18）
 
-- 已验证实现 HEAD：`901c8ea`。该 SHA 指向 Task 1–3 实现与测试，不指向本执行记录自身的提交。
+- 已验证实现 HEAD：`00ed776`。该 SHA 指向 Task 1–3 实现与测试，不指向本执行记录自身的提交。
 - `GlobalManager.ClearAll(true)` 已改为在原 `sync.Map` 上调用 `Clear`，仍只删除条目，不调用 `Release`、`ReleaseAll` 或资源 `Close`。
 - 默认 `FrameApplication` keepalive 已具备取消、等待退出和重复停止语义；内置 Fiber/Gin 在 deletion-only 清空前停止并等待它。自定义 `FrameStarter` 的 keepalive 生命周期仍由自定义实现负责。
 - `Get`/`Rebuild`/`Release` 并发状态机、`Rebuild` 旧实例退役、GlobalManager owner/locator 边界、共享 alias/组合资源所有权和 task lifecycle 均未在 P1-A 解决。
 - `GOCACHE=/tmp/fiberhouse-p1a-task4-audit-task1 go test -race ./globalmanager -count=1`：通过。
 - `GOCACHE=/tmp/fiberhouse-p1a-task4-audit-task2 go test -race . -run 'TestFrameApplication_' -count=1`：通过。
 - `GOCACHE=/tmp/fiberhouse-p1a-task4-audit-task3 go test -race . -run 'Test(ClearApplicationGlobals|StopFrameHealthCheck)' -count=1`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1a-task3-branchfix go test . -count=1`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1a-task3-branchfix-race go test -race . -count=1`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1a-task3-branchfix go vet .`：通过。
 - `ast-grep run --pattern '$_CTX.GetContainer().ClearAll(true)' --lang go core_fiber_starter_impl.go core_gin_starter_impl.go`：无匹配，按 ast-grep 的无匹配语义退出 1。
 - `ast-grep run --pattern 'clearApplicationGlobals($_CTX)' --lang go core_fiber_starter_impl.go core_gin_starter_impl.go`：通过，Fiber/Gin 各匹配一次。
+- `ast-grep run --pattern 'clearApplicationGlobals($_CTX)' --lang go --context 2 core_fiber_starter_impl.go`：通过；上下文显示 Fiber 按清理全局对象、记录最终 shutdown 日志、关闭 logger 的顺序执行。
 
 本记录不预先声明最终全仓 `go vet ./...`、`go test ./... -count=1` 或 `go test -race ./... -count=1` 已通过；这些命令由隔离分支的最终验收 fresh 执行。
 
