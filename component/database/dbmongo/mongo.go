@@ -9,6 +9,10 @@ package dbmongo
 
 import (
 	"context"
+	"reflect"
+	"sync"
+	"time"
+
 	"github.com/govalues/decimal"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/database/dbmongo/internal/mongodecimal"
@@ -18,9 +22,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
-	"reflect"
-	"sync"
-	"time"
 )
 
 type MongoDb struct {
@@ -82,7 +83,7 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) (*mongo.Client, e
 		SetRegistry(registry).
 		ApplyURI(applyUri).
 		SetBSONOptions(&options.BSONOptions{UseJSONStructTags: true, ErrorOnInlineDuplicates: true, IntMinSize: true}). // 驱动程序在未指定"bson"结构标记的情况下使用"json"结构标记
-		SetWriteConcern(writeconcern.Majority()).                                                                       // PSA副本集默认写级别为1
+		SetWriteConcern(writeconcern.Majority()). // PSA副本集默认写级别为1
 		SetMaxPoolSize(maxPoolSize).
 		SetMinPoolSize(minPoolSize).
 		SetMaxConnIdleTime(maxConnIdleTime).
@@ -143,7 +144,7 @@ func (md *MongoDb) PingTry(ctx context.Context) bool {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if sr := md.Client.Database("test").RunCommand(ctx, bson.D{{"ping", 1}}); sr.Err() != nil {
+	if sr := md.Client.Database("test").RunCommand(ctx, bson.D{{Key: "ping", Value: 1}}); sr.Err() != nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Err(sr.Err()).Stack().Msg("Mongo PingTry error")
 		return false
 	}

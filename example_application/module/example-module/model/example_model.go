@@ -45,7 +45,7 @@ func (m *ExampleModel) GetExampleByID(ctx context.Context, oid string) (*entity.
 	if err != nil {
 		exception.GetInputError().RespData(err.Error()).Panic()
 	}
-	filter := bson.D{{"_id", _id}}
+	filter := bson.D{{Key: "_id", Value: _id}}
 	opts := options.FindOne().SetProjection(bson.M{
 		"_id":     0,
 		"profile": 0,
@@ -114,8 +114,8 @@ func (m *ExampleModel) SaveMany(ctx context.Context, docs []interface{}) ([]inte
 
 // UpdateExample 更新样例文档
 func (m *ExampleModel) UpdateExample(ctx context.Context, upExample *entity.Example) (bool, error) {
-	filter := bson.D{{"_id", upExample.ID}}
-	update := bson.D{{"$set", upExample}}
+	filter := bson.D{{Key: "_id", Value: upExample.ID}}
+	update := bson.D{{Key: "$set", Value: upExample}}
 	opts := options.UpdateOne().SetUpsert(true)
 	var (
 		result *mongo.UpdateResult
@@ -136,7 +136,7 @@ func (m *ExampleModel) UpdateExample(ctx context.Context, upExample *entity.Exam
 
 // DeleteExample 删除样例文档
 func (m *ExampleModel) DeleteExample(ctx context.Context, id bson.ObjectID) (bool, error) {
-	filter := bson.D{{"_id", id}}
+	filter := bson.D{{Key: "_id", Value: id}}
 	var (
 		result *mongo.DeleteResult
 		err    error

@@ -8,14 +8,46 @@ import (
 
 var (
 	exceptions = exception.ExceptionMap{
-		"InputParamError":   {400001, "Invalid request parameters", nil},
-		"InternalError":     {500001, constant.UnknownErrMsg, "Unknown Internal error"},
-		"UnknownError":      {constant.UnknownErrCode, constant.UnknownErrMsg, exception.ErrorData{"msg": "Unknown request error"}},
-		"NotFoundDocument":  {400002, "No matching records found", nil},
-		"IllegalRequest":    {400003, "Illegal request", nil},
-		"NotNeedToUpdate":   {200001, "No records to update", nil},
-		"NotNeedToDelete":   {200002, "No records to delete", nil},
-		"SqlProxyExecError": {200003, "Sql proxy execute error", nil},
+		"InputParamError": {
+			Code: 400001,
+			Msg:  "Invalid request parameters",
+			Data: nil,
+		},
+		"InternalError": {
+			Code: 500001,
+			Msg:  constant.UnknownErrMsg,
+			Data: "Unknown Internal error",
+		},
+		"UnknownError": {
+			Code: constant.UnknownErrCode,
+			Msg:  constant.UnknownErrMsg,
+			Data: exception.ErrorData{"msg": "Unknown request error"},
+		},
+		"NotFoundDocument": {
+			Code: 400002,
+			Msg:  "No matching records found",
+			Data: nil,
+		},
+		"IllegalRequest": {
+			Code: 400003,
+			Msg:  "Illegal request",
+			Data: nil,
+		},
+		"NotNeedToUpdate": {
+			Code: 200001,
+			Msg:  "No records to update",
+			Data: nil,
+		},
+		"NotNeedToDelete": {
+			Code: 200002,
+			Msg:  "No records to delete",
+			Data: nil,
+		},
+		"SqlProxyExecError": {
+			Code: 200003,
+			Msg:  "Sql proxy execute error",
+			Data: nil,
+		},
 	}
 )
 
