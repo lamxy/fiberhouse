@@ -259,8 +259,8 @@ func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProvider
 		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appShutdown", "ok").Msg("")
 
 		//fa.GetContext().GetContainer().ReleaseAll(true) // 释放资源
-		cf.GetAppContext().GetContainer().ClearAll(true) // 将全局容器初始化，清空全局对象
-		_ = cf.GetAppContext().GetLogger().Close()       // 日志器Close
+		clearApplicationGlobals(cf.GetAppContext()) // 停止保活后清空全局对象
+		_ = cf.GetAppContext().GetLogger().Close()  // 日志器Close
 		return nil
 	})
 }

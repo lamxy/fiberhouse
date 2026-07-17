@@ -29,6 +29,29 @@ type FrameApplication struct {
 	healthWG     sync.WaitGroup
 }
 
+type healthCheckStopper interface {
+	stopHealthCheck()
+}
+
+func stopFrameHealthCheck(ctx IApplicationContext) {
+	if ctx == nil {
+		return
+	}
+	starter := ctx.GetStarterApp()
+	if starter == nil {
+		return
+	}
+	frame := starter.GetFrameApp()
+	if stopper, ok := frame.(healthCheckStopper); ok {
+		stopper.stopHealthCheck()
+	}
+}
+
+func clearApplicationGlobals(ctx IApplicationContext) {
+	stopFrameHealthCheck(ctx)
+	ctx.GetContainer().ClearAll(true)
+}
+
 // NewFrameApplication 创建一个应用启动器对象
 func NewFrameApplication(ctx IApplicationContext, opts ...FrameStarterOption) FrameStarter {
 	fApp := &FrameApplication{

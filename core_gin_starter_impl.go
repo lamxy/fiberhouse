@@ -365,12 +365,11 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) {
 		Str("applicationStarter", "GinApplication").
 		Msg("Cleaning up resources...")
 
-	cg.GetAppContext().GetContainer().ClearAll(true)
-	_ = cg.GetAppContext().GetLogger().Close()
-
+	clearApplicationGlobals(cg.GetAppContext())
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 		Str("applicationStarter", "GinApplication").
 		Msg("Gin server shutdown complete")
+	_ = cg.GetAppContext().GetLogger().Close()
 }
 
 // GetAppContext 获取应用上下文

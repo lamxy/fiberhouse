@@ -379,3 +379,65 @@ func TestFrameApplication_CheckGlobalsHealthOnceDoesNotLogSuccessAfterRebuildFai
 	assert.Contains(t, logs.String(), "rebuild failed")
 	assert.NotContains(t, logs.String(), "rebuild success")
 }
+
+func TestClearApplicationGlobalsStopsMountedFrameBeforeClearingContainer(t *testing.T) {
+	ctx, _ := newFrameTestContext(t, nil)
+	manager := isolateFrameHealthManager(t, ctx)
+	checker := &frameBlockingHealthChecker{entered: make(chan struct{}), release: make(chan struct{})}
+	released := false
+	t.Cleanup(func() {
+		if !released {
+			close(checker.release)
+		}
+	})
+	require.True(t, manager.Register("health", func() (interface{}, error) { return checker, nil }))
+	_, err := manager.Get("health")
+	require.NoError(t, err)
+
+	frame := &FrameApplication{Ctx: ctx}
+	starter := &WebApplication{
+		FrameStarter: frame,
+		CoreStarter: &lifecycleRecordingStarter{
+			managerCalls: make(map[string][]IProviderManager),
+		},
+	}
+	ctx.RegisterStarterApp(starter)
+	frame.startHealthCheck(time.Millisecond)
+
+	select {
+	case <-checker.entered:
+	case <-time.After(time.Second):
+		t.Fatal("health check did not start")
+	}
+
+	cleared := make(chan struct{})
+	go func() {
+		clearApplicationGlobals(ctx)
+		close(cleared)
+	}()
+
+	select {
+	case <-cleared:
+		t.Fatal("clearApplicationGlobals returned before active check completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	if !manager.IsRegistered("health") {
+		t.Fatal("clearApplicationGlobals cleared container before active check completed")
+	}
+
+	close(checker.release)
+	released = true
+	select {
+	case <-cleared:
+	case <-time.After(time.Second):
+		t.Fatal("clearApplicationGlobals did not return after active check completed")
+	}
+	if manager.IsRegistered("health") {
+		t.Fatal("clearApplicationGlobals retained container entry")
+	}
+}
+
+func TestStopFrameHealthCheckIgnoresMissingStarter(t *testing.T) {
+	ctx, _ := newFrameTestContext(t, nil)
+	assert.NotPanics(t, func() { stopFrameHealthCheck(ctx) })
+}
