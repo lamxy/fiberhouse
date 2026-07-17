@@ -8,8 +8,58 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test:
+  quality:
+    name: quality
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with coverage
+        run: go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic
+
+      - name: Report total coverage
+        run: |
+          go tool cover -func=coverage.out | tee coverage-summary.txt
+          grep '^total:' coverage-summary.txt
+
+  race:
+    name: race
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Test with race detector
+        run: go test -race ./... -count=1
+
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       TARGET_NAME: fhweb
       LDFLAGS: -ldflags="-X 'main.Version=v0.0.1'"
@@ -17,7 +67,7 @@ jobs:
       APP_ENV_application_appType: web
     services:
       redis:
-        image: redis:latest
+        image: redis:8.2.7-bookworm
         ports:
           - 6379:6379
         options: >-
@@ -26,7 +76,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       mongodb:
-        image: mongo:latest
+        image: mongo:8.0.26-noble
         ports:
           - 27037:27017
         env:
@@ -38,11 +88,12 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       mysql:
-        image: mysql:latest
+        image: mysql:8.4.10-oraclelinux9
         ports:
           - 3306:3306
         env:
           MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test
         options: >-
           --health-cmd "mysqladmin ping -h localhost -u root -proot"
           --health-interval 10s
@@ -56,58 +107,29 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
-
-      - name: PWD & ls
-        run: | 
-          pwd
-          ls -la
-          env |grep APP_ENV_
-
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          cache: true
 
       - name: Download dependencies
         run: go mod download
 
-      - name: Build
-        run: |
-          go build ${{ env.LDFLAGS }} -o ./example_main/target/${{ env.TARGET_NAME }} ./example_main/main.go
+      - name: Build example
+        run: go build ${{ env.LDFLAGS }} -o "$RUNNER_TEMP/${{ env.TARGET_NAME }}" ./example_main/main.go
 
-      - name: Test frame directory
+      - name: Start example
         run: |
-          go version
-          echo "Fake temporary test"
-          # go test -v -coverprofile=coverage.txt -covermode=atomic ./frame/...
+          "$RUNNER_TEMP/${{ env.TARGET_NAME }}" >"$RUNNER_TEMP/${{ env.TARGET_NAME }}.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/${{ env.TARGET_NAME }}.pid"
 
-      - name: Start server in background
-        run: |
-          ./example_main/target/${{ env.TARGET_NAME }} &
-          echo $! > server.pid
-          sleep 3
+      - name: Check HTTP path
+        run: curl --fail --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/example/hello/world
 
-      - name: Health check with curl
-        run: |
-          curl --fail http://127.0.0.1:8080/example/hello/world || exit 1
+      - name: Print example log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/${{ env.TARGET_NAME }}.log"
 
-      - name: Stop server
+      - name: Stop example
         if: always()
         run: |
-          if [ -f server.pid ]; then
-            kill $(cat server.pid) || true
+          if [[ -f "$RUNNER_TEMP/${{ env.TARGET_NAME }}.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/${{ env.TARGET_NAME }}.pid")" || true
           fi
-
-      - name: Upload build artifact
-        run: |
-          echo "Fake upload artifact step"
-        #uses: actions/upload-artifact@v4
-        #with:
-          #name: ${{ env.TARGET_NAME }}-${{ github.sha }}
-          #path: ./example_main/target/${{ env.TARGET_NAME }}
-          #retention-days: 7
