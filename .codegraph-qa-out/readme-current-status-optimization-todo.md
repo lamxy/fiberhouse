@@ -1,7 +1,7 @@
 # README“当前状态”与项目成熟度优化代办
 
 > 创建日期：2026-07-18
-> 状态：P0 已执行；P1–P3 待执行
+> 状态：P0 已执行；P1 部分执行；P2–P3 待执行
 > 背景分析：[README“当前状态”与代码库成熟度分析](readme-current-status-analysis-2026-07-17.md)
 > 适用基线：`main@385eb2c`（`v1.0.5-19-g385eb2c`）；执行前重新确认 HEAD 与文档、测试现状。
 
@@ -70,7 +70,7 @@
   - 重建时旧实例的关闭责任；
   - `ClearAll` 不逐项 `Close`；
   - GlobalManager 是 owner 还是 locator；
-  - keepalive 的取消与退出。
+  - 自定义 `FrameStarter` 的 keepalive 取消与退出责任。
 
 完成判据：
 
@@ -134,14 +134,28 @@
 - [ ] 明确 GlobalManager 是资源 owner、locator，或拆成两个抽象。
 - [ ] 定义并测试 `Register`、`Get`、`Rebuild`、`Release`、`Unregister`、`ClearAll` 的合法状态转移。
 - [ ] 定义 Rebuild 成功后旧实例的关闭行为；避免无主 client/连接池泄漏。
-- [ ] 禁止在已使用的 `sync.Map` 上通过结构赋值实现并发清空，采用可证明安全的清理方式。
-- [ ] 为 keepalive 增加 context/cancel、等待退出和重复停止语义。
+- [x] 禁止在已使用的 `sync.Map` 上通过结构赋值实现并发清空，采用可证明安全的清理方式。
+- [x] 为 keepalive 增加 context/cancel、等待退出和重复停止语义。
 
 完成判据：
 
 - [ ] 创建、运行、启动失败、运行失败、正常关闭、超时关闭均有契约测试。
 - [ ] 相关并发测试通过 race。
 - [ ] Fiber、Gin、CLI 不再各自复制不一致的资源回收逻辑。
+
+## P1-A 执行记录（2026-07-18）
+
+- 已验证实现 HEAD：`901c8ea`。该 SHA 指向 Task 1–3 实现与测试，不指向本执行记录自身的提交。
+- `GlobalManager.ClearAll(true)` 已改为在原 `sync.Map` 上调用 `Clear`，仍只删除条目，不调用 `Release`、`ReleaseAll` 或资源 `Close`。
+- 默认 `FrameApplication` keepalive 已具备取消、等待退出和重复停止语义；内置 Fiber/Gin 在 deletion-only 清空前停止并等待它。自定义 `FrameStarter` 的 keepalive 生命周期仍由自定义实现负责。
+- `Get`/`Rebuild`/`Release` 并发状态机、`Rebuild` 旧实例退役、GlobalManager owner/locator 边界、共享 alias/组合资源所有权和 task lifecycle 均未在 P1-A 解决。
+- `GOCACHE=/tmp/fiberhouse-p1a-task4-audit-task1 go test -race ./globalmanager -count=1`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1a-task4-audit-task2 go test -race . -run 'TestFrameApplication_' -count=1`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1a-task4-audit-task3 go test -race . -run 'Test(ClearApplicationGlobals|StopFrameHealthCheck)' -count=1`：通过。
+- `ast-grep run --pattern '$_CTX.GetContainer().ClearAll(true)' --lang go core_fiber_starter_impl.go core_gin_starter_impl.go`：无匹配，按 ast-grep 的无匹配语义退出 1。
+- `ast-grep run --pattern 'clearApplicationGlobals($_CTX)' --lang go core_fiber_starter_impl.go core_gin_starter_impl.go`：通过，Fiber/Gin 各匹配一次。
+
+本记录不预先声明最终全仓 `go vet ./...`、`go test ./... -count=1` 或 `go test -race ./... -count=1` 已通过；这些命令由隔离分支的最终验收 fresh 执行。
 
 ## P1：v1 API 治理
 
