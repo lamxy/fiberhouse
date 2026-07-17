@@ -300,7 +300,7 @@ func (gm *GlobalManager) Clear(name KeyName) {
 // ClearAll 不受阻碍的清空全局管理器管理的全部对象和资源
 func (gm *GlobalManager) ClearAll(conform ...bool) {
 	if len(conform) > 0 && conform[0] {
-		gm.container = sync.Map{}
+		gm.container.Clear()
 	}
 }
 

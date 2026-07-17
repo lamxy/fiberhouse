@@ -4,6 +4,7 @@ import (
 	"errors"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -407,4 +408,53 @@ func TestReleaseAllAndClearAll_RequireConfirmation(t *testing.T) {
 	if manager.IsRegistered("one") || manager.IsRegistered("two") {
 		t.Fatal("ClearAll(true) retained entries")
 	}
+}
+
+func TestClearAll_DoesNotCloseResources(t *testing.T) {
+	manager := NewGlobalManager()
+	closed := 0
+	manager.Register("resource", func() (interface{}, error) {
+		return &lifecycleClosable{closed: &closed}, nil
+	})
+	if _, err := manager.Get("resource"); err != nil {
+		t.Fatal(err)
+	}
+
+	manager.ClearAll(true)
+
+	if closed != 0 {
+		t.Fatalf("ClearAll(true) closed %d resources, want 0", closed)
+	}
+	if manager.IsRegistered("resource") {
+		t.Fatal("ClearAll(true) retained resource")
+	}
+}
+
+func TestClearAll_ConcurrentMapOperations(t *testing.T) {
+	manager := NewGlobalManager()
+	const iterations = 2000
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			manager.Register("resource", func() (interface{}, error) { return i, nil })
+			_, _ = manager.Get("resource")
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			manager.Range(func(_, _ interface{}) bool { return true })
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			manager.ClearAll(true)
+		}
+	}()
+
+	wg.Wait()
 }
