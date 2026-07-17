@@ -296,7 +296,11 @@ func TestFrameApplication_StopHealthCheckWaitsAndPreventsRestart(t *testing.T) {
 	frame := &FrameApplication{Ctx: ctx}
 
 	frame.startHealthCheck(time.Millisecond)
-	<-checker.entered
+	select {
+	case <-checker.entered:
+	case <-time.After(time.Second):
+		t.Fatal("health check did not start")
+	}
 	stopped := make(chan struct{})
 	go func() {
 		frame.stopHealthCheck()
@@ -337,7 +341,16 @@ func TestFrameApplication_StopHealthCheckIsConcurrentAndIdempotent(t *testing.T)
 			frame.stopHealthCheck()
 		}()
 	}
-	wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent stopHealthCheck calls did not return")
+	}
 }
 
 func TestFrameApplication_StartHealthCheckRejectsInvalidInterval(t *testing.T) {
