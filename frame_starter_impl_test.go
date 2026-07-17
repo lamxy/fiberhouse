@@ -84,6 +84,19 @@ func (h *frameBlockingHealthChecker) IsHealthy() bool {
 	return true
 }
 
+type frameHealthStopperProxy struct {
+	*FrameApplication
+	stopEntered chan struct{}
+	stopOnce    sync.Once
+}
+
+func (p *frameHealthStopperProxy) GetFrameApp() FrameStarter { return p }
+
+func (p *frameHealthStopperProxy) stopHealthCheck() {
+	p.stopOnce.Do(func() { close(p.stopEntered) })
+	p.FrameApplication.stopHealthCheck()
+}
+
 type frameFailingHealthRebuilder struct{}
 
 func (*frameFailingHealthRebuilder) IsHealthy() bool { return false }
@@ -395,8 +408,12 @@ func TestClearApplicationGlobalsStopsMountedFrameBeforeClearingContainer(t *test
 	require.NoError(t, err)
 
 	frame := &FrameApplication{Ctx: ctx}
+	stopper := &frameHealthStopperProxy{
+		FrameApplication: frame,
+		stopEntered:      make(chan struct{}),
+	}
 	starter := &WebApplication{
-		FrameStarter: frame,
+		FrameStarter: stopper,
 		CoreStarter: &lifecycleRecordingStarter{
 			managerCalls: make(map[string][]IProviderManager),
 		},
@@ -417,9 +434,9 @@ func TestClearApplicationGlobalsStopsMountedFrameBeforeClearingContainer(t *test
 	}()
 
 	select {
-	case <-cleared:
-		t.Fatal("clearApplicationGlobals returned before active check completed")
-	case <-time.After(20 * time.Millisecond):
+	case <-stopper.stopEntered:
+	case <-time.After(time.Second):
+		t.Fatal("clearApplicationGlobals did not enter stopHealthCheck")
 	}
 	if !manager.IsRegistered("health") {
 		t.Fatal("clearApplicationGlobals cleared container before active check completed")
