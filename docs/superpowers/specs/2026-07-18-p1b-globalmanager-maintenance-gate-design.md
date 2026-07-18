@@ -6,7 +6,8 @@
 
 ## Goal
 
-Eliminate three deterministic same-key lifecycle conflicts in `GlobalManager`
+Eliminate three deterministic lifecycle conflicts within one registered
+`entry` generation in `GlobalManager`
 without changing its public API or introducing a general resource-ownership
 framework:
 
@@ -50,10 +51,10 @@ Benefits:
 - minimal production change;
 - no public signature or exported API change;
 - no slow user callback executes while holding a mutex;
-- same-key re-entry returns an error instead of deadlocking;
+- same-entry re-entry returns an error instead of deadlocking;
 - different keys remain independent.
 
-Tradeoff: callers may now receive a busy error from a same-key concurrent
+Tradeoff: callers may now receive a busy error from a same-entry concurrent
 maintenance request. This is intentional fail-fast behavior; this phase does
 not promise waiting or automatic retry. Although no exported symbol is added,
 the extra transient error is publicly observable. Because its sentinel is
@@ -65,7 +66,7 @@ stable API in this experimental phase.
 
 This would serialize operations, but a slow `Rebuild` or `Close` would make the
 second caller wait indefinitely. A callback that re-enters `Rebuild` or
-`Release` for the same key would deadlock. It would also overload a mutex that
+`Release` through the same entry would deadlock. It would also overload a mutex that
 currently protects reset bookkeeping with a new long-running role.
 
 ### 3. Full lifecycle state machine — deferred
@@ -143,12 +144,12 @@ The current contracts remain:
 - panics still propagate, while deferred gate release prevents permanent busy
   state.
 
-`ReleaseAll` is not redesigned. If it meets a same-key operation already in
+`ReleaseAll` is not redesigned. If it meets an operation already in progress
 progress, its existing best-effort error reporting observes the busy error.
 
 ## Concurrency Contract
 
-For one registered key:
+For one registered `entry` generation:
 
 - at most one `Rebuild` or `Release` user callback may execute at a time;
 - a conflicting maintenance call fails immediately without entering its user
@@ -156,8 +157,13 @@ For one registered key:
 - the winning operation releases the gate on success, returned error, or panic
   unwinding;
 - a later maintenance call may proceed after the winner returns;
-- re-entry from `Rebuild` or `Close` into the same key fails busy rather than
+- re-entry from `Rebuild` or `Close` through the same entry fails busy rather than
   deadlocking.
+
+`Unregister` or `ClearAll` followed by registration of the same string key
+creates a new `entry` generation with its own gate. Old and new generations
+are not coordinated in this phase; deletion remains a locator operation rather
+than a cancellation or ownership barrier.
 
 Across different keys, maintenance remains fully independent.
 
@@ -242,7 +248,7 @@ deletion cancels initialization or owns and retires a detached result.
 At minimum:
 
 ```bash
-go test ./globalmanager -run 'Test(Rebuild|Release|GetInitialization)' -count=1
+go test ./globalmanager -run 'Test(GetInitialization|Rebuild|Release|Maintenance|MaintenanceGate|Entry)' -count=1
 go test ./globalmanager -run 'Test(Rebuild|Release|GetInitialization)' -count=50
 go test -race ./globalmanager -count=1
 go vet ./...
@@ -273,7 +279,8 @@ transition or old-instance retirement checklist items complete.
 
 ## Acceptance Criteria
 
-- same-key `Rebuild`/`Release` maintenance callbacks never overlap;
+- within one registered `entry` generation, `Rebuild`/`Release` maintenance
+  callbacks never overlap;
 - a conflicting call returns a wrapped private busy error immediately;
 - gate release is proven after success, returned-error, and panic-unwinding
   paths; the panic test recovers only in the test and does not change production

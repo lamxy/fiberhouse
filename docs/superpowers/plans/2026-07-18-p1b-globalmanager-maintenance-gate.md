@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prevent overlapping same-key `Rebuild` and `Release` callbacks with a private fail-fast CAS gate while preserving current deletion, rebuild publishing, release reset, and public API behavior.
+**Goal:** Prevent overlapping `Rebuild` and `Release` callbacks within one registered `entry` generation with a private fail-fast CAS gate while preserving current deletion, rebuild publishing, release reset, and public API behavior.
 
 **Architecture:** Add one `atomic.Bool` maintenance gate per existing `entry`. `Rebuild` and `Release` acquire it after resolving the entry and before reading the instance; a conflict returns a wrapped private busy error, and `defer` releases the gate on every success, error, and panic-unwinding path. Deterministic channel tests prove the logical concurrency contract; deletion tests only characterize the existing locator semantics.
 
@@ -17,7 +17,7 @@
 - Preserve `ClearAll(true)` as deletion-only and do not add resource closing to `Rebuild`.
 - Do not change `Get`, `CheckHealth`, `Register`, `Unregister`, `ClearAll`, or `ReleaseAll` behavior.
 - Do not hold `entry.mu` or a new mutex across `Rebuild`, `GetConfPath`, or `Close` callbacks.
-- The gate covers only same-key `Rebuild` and `Release`; different keys remain independent and `Get` does not acquire the gate.
+- The gate covers only `Rebuild` and `Release` on the same registered `entry` generation; delete plus same-name re-registration creates an independent generation, different entries remain independent, and `Get` does not acquire the gate.
 - All concurrency synchronization uses channels; timeouts are deadlock guards, not proof of ordering.
 - Every production change follows RED → GREEN and every task ends with an independent commit and review.
 
@@ -192,6 +192,12 @@ type lifecycleErrorResult struct {
 	err error
 }
 
+func lifecycleAsyncError(call func() error) <-chan lifecycleErrorResult {
+	result := make(chan lifecycleErrorResult, 1)
+	go func() { result <- lifecycleErrorResult{err: call()} }()
+	return result
+}
+
 func assertLifecycleBusy(t *testing.T, err error) {
 	t.Helper()
 	if err == nil || !strings.Contains(err.Error(), "global object maintenance already in progress") {
@@ -231,10 +237,10 @@ func TestRebuild_ConcurrentMaintenanceReturnsBusy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	first := make(chan lifecycleErrorResult, 1)
-	go func() { first <- lifecycleErrorResult{err: manager.Rebuild("resource")} }()
+	first := lifecycleAsyncError(func() error { return manager.Rebuild("resource") })
 	lifecycleAwait(t, entered, "first rebuild")
-	assertLifecycleBusy(t, manager.Rebuild("resource"))
+	second := lifecycleAsyncError(func() error { return manager.Rebuild("resource") })
+	assertLifecycleBusy(t, lifecycleReceive(t, second, "conflicting rebuild").err)
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("Rebuild callbacks = %d, want 1", got)
 	}
@@ -251,7 +257,8 @@ func TestRebuild_ConcurrentMaintenanceReturnsBusy(t *testing.T) {
 }
 ```
 
-For the concurrent release test, use a `closeCalls atomic.Int32`; the first
+For the concurrent release test, use a `closeCalls atomic.Int32`; run both
+release calls with `lifecycleAsyncError`. The first
 `Close` closes `entered` and waits on `release`, while later unexpected calls
 return immediately. Assert the second `Release` is busy, `closeCalls == 1`, the
 first release succeeds after unblocking, and a later `Get` invokes the
@@ -267,16 +274,22 @@ with two subtests:
 - `rebuild-blocks-release`: block the winner in `Rebuild`; assert `Release`
   returns busy and the close callback count remains zero.
 
-In both cases, unblock the winner, require its result to be nil, and then invoke
-a later maintenance operation to prove the gate was released. Use the same
+Run the winner and conflicting operation through `lifecycleAsyncError`, obtain
+the conflicting result through `lifecycleReceive`, then unblock the winner and
+require its result to be nil. Finally invoke a later maintenance operation to
+prove the gate was released. Use the same
 bounded helpers and `sync.Once` cleanup pattern as the exact test above.
 
-Also add `TestMaintenance_SameKeyReentryReturnsBusy`: inside a controlled
-`Rebuild` callback, synchronously call `manager.Release("resource")`, store the
-nested error, and return a valid candidate. Require the outer rebuild to
-succeed, the nested call to satisfy `assertLifecycleBusy`, and the resource's
-`Close` count to remain zero. This test must finish synchronously; a mutex held
-across the callback would deadlock and hit the bounded outer-result guard.
+Also add `TestMaintenance_SameEntryReentryReturnsBusy` with two subtests. Run
+each outer call with `lifecycleAsyncError` and obtain it with
+`lifecycleReceive` so an incorrect waiting lock is bounded:
+
+- `rebuild-calls-release`: inside `Rebuild`, synchronously call
+  `manager.Release("resource")`, store the nested error, and return a valid
+  candidate; require outer success, nested busy, and zero `Close` calls;
+- `close-calls-rebuild`: inside `Close`, synchronously call
+  `manager.Rebuild("resource")`, store the nested error, and return nil;
+  require outer success, nested busy, and zero rebuild callback calls.
 
 Add green characterization `TestMaintenance_DifferentKeysRemainIndependent`:
 block a rebuild callback for key `one`, then synchronously rebuild key `two` and
@@ -289,7 +302,7 @@ accidental manager-wide gate.
 Run:
 
 ```bash
-GOCACHE=/tmp/fiberhouse-p1b-task2-red go test ./globalmanager -run 'Test(Rebuild_ConcurrentMaintenance|Release_ConcurrentMaintenance|Maintenance_(RebuildAndReleaseConflict|SameKeyReentry|DifferentKeys))' -count=1
+GOCACHE=/tmp/fiberhouse-p1b-task2-red go test ./globalmanager -run 'Test(Rebuild_ConcurrentMaintenance|Release_ConcurrentMaintenance|Maintenance_(RebuildAndReleaseConflict|SameEntryReentry|DifferentKeys))' -count=1
 ```
 
 Expected: FAIL. The old implementation enters overlapping callbacks or returns
@@ -355,7 +368,7 @@ Run:
 
 ```bash
 gofmt -w globalmanager/manager.go globalmanager/manager_lifecycle_test.go
-GOCACHE=/tmp/fiberhouse-p1b-task2 go test ./globalmanager -run 'Test(Rebuild_ConcurrentMaintenance|Release_ConcurrentMaintenance|Maintenance_(RebuildAndReleaseConflict|SameKeyReentry|DifferentKeys)|Entry_BeginMaintenance)' -count=50
+GOCACHE=/tmp/fiberhouse-p1b-task2 go test ./globalmanager -run 'Test(Rebuild_ConcurrentMaintenance|Release_ConcurrentMaintenance|Maintenance_(RebuildAndReleaseConflict|SameEntryReentry|DifferentKeys)|Entry_BeginMaintenance)' -count=50
 GOCACHE=/tmp/fiberhouse-p1b-task2-race go test -race ./globalmanager -count=1
 ```
 
@@ -455,7 +468,8 @@ git commit -m "test: cover maintenance gate failure paths"
 
 In the GlobalManager row, record:
 
-- same-key `Rebuild`/`Release` maintenance is fail-fast mutually exclusive;
+- within one registered entry generation, `Rebuild`/`Release` maintenance is
+  fail-fast mutually exclusive;
 - a conflicting call returns an ordinary experimental busy error;
 - deletion does not cancel an already-started `Get` initializer.
 
@@ -481,6 +495,8 @@ Run:
 
 ```bash
 rg -n 'maintenance|busy|Rebuild|Release|P1-B|P1 部分执行|ClearAll' docs/reference/feature-status.md .codegraph-qa-out/readme-current-status-optimization-todo.md
+rg -n --fixed-strings -- '- [ ] 定义并测试 `Register`、`Get`、`Rebuild`、`Release`、`Unregister`、`ClearAll` 的合法状态转移。' .codegraph-qa-out/readme-current-status-optimization-todo.md
+rg -n --fixed-strings -- '- [ ] 定义 Rebuild 成功后旧实例的关闭行为；避免无主 client/连接池泄漏。' .codegraph-qa-out/readme-current-status-optimization-todo.md
 GOCACHE=/tmp/fiberhouse-p1b-final-vet go vet ./...
 GOCACHE=/tmp/fiberhouse-p1b-final-test go test ./... -count=1
 GOCACHE=/tmp/fiberhouse-p1b-final-race go test -race ./... -count=1
@@ -509,6 +525,8 @@ GOCACHE=/tmp/fiberhouse-p1b-accept-test go test ./... -count=1
 GOCACHE=/tmp/fiberhouse-p1b-accept-race go test -race ./... -count=1
 git diff --check 2e6bc79..HEAD
 git status --short --branch
+test "$(git -C ../.. rev-parse --short HEAD)" = "2e6bc79"
+test -f ../../.codegraph-qa-out/readme-current-status-analysis-2026-07-17.md
 ```
 
 Expected:
