@@ -46,9 +46,9 @@
   - Gin core 初始化入口。
   - 建立 `gin.Engine` 與 `http.Server`。
 
-- `core_gin_starter_impl.go:317`
+- `core_gin_starter_impl.go:320`
   - Gin runtime 入口。
-  - 呼叫 `httpServer.ListenAndServe()`，監聽 SIGINT/SIGTERM 做 graceful shutdown。
+  - `TLSConfig` 非空时呼叫 `httpServer.ListenAndServeTLS("", "")`，否则呼叫 `ListenAndServe()`；監聽 SIGINT/SIGTERM 做 graceful shutdown。
 
 ### 路由入口
 

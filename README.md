@@ -181,7 +181,7 @@ HTTP status 与响应中的业务 `code` 是两个维度。`BootConfig.TrafficCo
 | Handler | `func(*fiber.Ctx) error` | `func(*gin.Context)` |
 | 普通错误 | 返回 `error` | 调用 `c.Error(err)` |
 | JSON codec 作用域 | 单个 `fiber.App` | 修改 Gin package 级 codec |
-| 当前状态 | 已接入 | 实验性；TLS 链路未完成 |
+| 当前状态 | 已接入 | 实验性；TLS 证书加载与启动路径已接通，尚无真实握手集成验证 |
 
 两种内核共享启动抽象，但路由、绑定和 handler 仍使用各自原生 API。示例默认运行 Fiber，且 `/health/livez` 只在 Fiber 路由中注册。详细差异见[Web 运行时](docs/guides/web-runtime.md)。
 

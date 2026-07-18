@@ -16,7 +16,7 @@
 
 ### Gin HTTP 与二进制响应
 
-- [ ] Gin TLS 分支在证书路径有效时仍可能 panic，尚不能视为完整 HTTPS 能力。
+- [x] Gin TLS 有效证书加载与 TLS serve 路径已接通；无效非空证书保持 fail-stop。缺失路径仍会记录错误并保留 HTTP 路径，且尚无真实 listener/握手集成验证，因此 Gin HTTP 内核仍维持实验性。
 - [ ] MsgPack/Protobuf 内容协商只处理首个媒体类型，未命中或加载失败时回退 JSON；当前实现不是通用 RPC 或完整内容协商方案。
 
 ### GlobalManager 与扩展生命周期

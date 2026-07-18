@@ -32,7 +32,7 @@ CoreType 选择 CoreStarter
 | 普通错误入口 | Fiber handler 返回 `error`，由 `fiber.Config.ErrorHandler` 处理 | handler 调用 `c.Error(err)`，或在没有 `c.Errors` 时用 `c.Set("error", err)`；尾部中间件在 `c.Next()` 后处理 |
 | panic 入口 | Fiber recovery Provider | Gin recovery Provider |
 | 路由注册 | `ModuleRegister.RegisterModuleRouteHandlers` 接收 Fiber starter | 同一接口接收 Gin starter |
-| 监听 | `fiber.App.Listen(host+":"+port)` | `http.Server.ListenAndServe()` |
+| 监听 | `fiber.App.Listen(host+":"+port)` | 无 TLS 配置时调用 `http.Server.ListenAndServe()`；已加载 TLS 配置时调用 `ListenAndServeTLS("", "")` |
 | 停止 | 等待 `SIGINT`/`SIGTERM` 后调用 `Shutdown()`；`OnShutdown` 清空容器并关闭日志器 | 等待相同信号，以 30 秒 context 调用 `http.Server.Shutdown`，随后清空容器并关闭日志器 |
 
 Fiber 的全局错误处理器不在 `Use` 链中；表中的 recover 和访问日志是中间件顺序，错误处理器由 `fiber.Config` 单独调用。Gin 的错误处理中间件必须包住后续 handler，因此注册在请求日志和应用中间件之前。
@@ -81,14 +81,14 @@ Fiber 和 Gin 都在 goroutine 中启动服务，并在主 goroutine 等待 `SIG
 
 Fiber 的 `OnShutdown` 在 `Shutdown()` 触发时清空容器并关闭日志器。Gin 使用固定 30 秒 shutdown context，随后执行同样清理；它在关闭日志器后仍写一条完成日志，该条是否可见取决于 logger/writer 状态。内建 keepalive 没有绑定这两个 shutdown 流程。
 
-当前 Gin TLS 配置不能描述为可用 HTTPS 能力：`tls.enable=true` 且证书/私钥路径都非空时初始化直接 panic；路径为空时会尝试加载空路径并只记录错误；运行阶段无论如何都调用 `ListenAndServe()`，而不是 `ListenAndServeTLS()`。即使通过自定义选项预置 `TLSConfig`，默认 run 路径也没有建立 TLS listener。Fiber 默认路径同样调用普通 `Listen`；`OnListen` 能显示 TLS 标志并不等于框架已经装配证书。
+当前 Gin TLS 配置已接通证书加载和启动选择：`tls.enable=true` 且证书/私钥路径有效时会填充 `TLSConfig`，运行阶段随后调用 `ListenAndServeTLS("", "")`；没有 TLS 配置时仍调用 `ListenAndServe()`。无效的非空证书/私钥会在加载失败后 fail-stop；缺失任一路径时则只记录错误并保持 `TLSConfig == nil`，因此显式启用 TLS 的应用仍应在部署前校验配置，避免落到 HTTP 路径。现有测试覆盖有效证书加载和无效证书失败，并用 AST 核对 TLS/HTTP 调用分支，但尚无真实 listener/握手集成验证。Fiber 默认路径同样调用普通 `Listen`；`OnListen` 能显示 TLS 标志并不等于框架已经装配证书。
 
 ## 已知限制
 
 - `ICoreContext` 不是完整 Web API，也没有公开的统一 `Release` 生命周期。
 - Gin JSON codec 和 Gin mode 都是进程级副作用；多应用/并行测试不能假设隔离。
 - 自定义 Fiber `CoreCfg` 早退路径既不安装标准 `FiberErrorHandler`，也没有满足 recovery 的 codec 依赖。
-- Gin TLS 逻辑和默认启动调用不构成可工作的 HTTPS 链路。
+- Gin TLS 的证书加载与 HTTPS 启动路径已接通，但缺失路径仍可能保留 HTTP 路径，且尚无真实 listener/握手集成验证。
 - 两条受控停止路径清空全局容器，但不提供所有资源和后台 goroutine 的统一关闭协议。
 
 源码入口：[`core_fiber_starter_impl.go`](../../core_fiber_starter_impl.go)、[`core_gin_starter_impl.go`](../../core_gin_starter_impl.go)、[`json_codec_manager.go`](../../json_codec_manager.go)、[`component/codec/json`](../../component/codec/json/)、[`adaptor/context`](../../adaptor/context/) 与 [`adaptor/errorhandler`](../../adaptor/errorhandler/)。
