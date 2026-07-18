@@ -1,6 +1,7 @@
 package commandstarter
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"testing"
@@ -64,6 +65,16 @@ func (a *commandTestApplication) RegisterCoreGlobalOptional(core interface{}) {
 	a.lastCore = core
 }
 func (a *commandTestApplication) RegisterApplicationGlobals() { a.applicationGlobals++ }
+
+type failingCommandHealthResource struct {
+	rebuildErr error
+}
+
+func (r *failingCommandHealthResource) IsHealthy() bool { return false }
+func (r *failingCommandHealthResource) Rebuild(...interface{}) (interface{}, error) {
+	return nil, r.rebuildErr
+}
+func (r *failingCommandHealthResource) GetConfPath() string { return "" }
 
 type commandTestContext struct {
 	fiberhouse.ICommandContext
@@ -211,4 +222,27 @@ func TestFrameCmdApplication_RegistrationLoggerOriginsAndGlobals(t *testing.T) {
 			assert.True(t, ctx.GetContainer().IsRegistered(origin.InstanceKey()), key)
 		}
 	}
+}
+
+func TestFrameCmdApplication_StartHealthCheckDoesNotLogSuccessWhenRebuildFails(t *testing.T) {
+	const resourceKey = "failing-command-health-resource"
+	rebuildErr := errors.New("sentinel rebuild failure")
+	var logs bytes.Buffer
+	logger := zerolog.New(&logs)
+	ctx := newCommandTestContext().(*commandTestContext)
+	ctx.logger = bootstrap.NewLoggerWrap(&logger)
+	resource := &failingCommandHealthResource{rebuildErr: rebuildErr}
+	require.True(t, ctx.container.Register(resourceKey, func() (interface{}, error) {
+		return resource, nil
+	}))
+	_, err := ctx.container.Get(resourceKey)
+	require.NoError(t, err)
+
+	frame := &FrameCmdApplication{Ctx: ctx}
+	frame.startHealthCheck()
+
+	output := logs.String()
+	assert.Contains(t, output, rebuildErr.Error())
+	assert.Contains(t, output, "global resource '"+resourceKey+"' rebuild failed.")
+	assert.NotContains(t, output, "global resource '"+resourceKey+"' rebuild success.")
 }

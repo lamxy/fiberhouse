@@ -93,6 +93,7 @@ func (fca *FrameCmdApplication) startHealthCheck() {
 			err = gm.Rebuild(name)
 			if err != nil {
 				log.Error(cfg.LogOriginCMD()).Err(err).Msgf("global resource '%s' rebuild failed.", name)
+				return true
 			}
 			log.Info(cfg.LogOriginCMD()).Err(err).Msgf("global resource '%s' rebuild success.", name)
 		}
