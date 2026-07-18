@@ -163,7 +163,6 @@ func (cg *CoreWithGin) initHttpServer(cfg appconfig.IAppConfig) {
 			cg.GetAppContext().GetLogger().InfoWith(cfg.LogOriginFrame()).
 				Str("applicationStarter", "GinApplication").
 				Msg(msg)
-			panic(msg)
 		}
 		// 加载TLS证书配置
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
@@ -333,7 +332,13 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) {
 			Str("addr", app.httpServer.Addr).
 			Msg(fmt.Sprintf("Gin app listening on %s://%s", scheme, app.httpServer.Addr))
 
-		if err := app.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if app.httpServer.TLSConfig != nil {
+			err = app.httpServer.ListenAndServeTLS("", "")
+		} else {
+			err = app.httpServer.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			app.GetAppContext().GetLogger().FatalWith(cfg.LogOriginFrame()).
 				Str("applicationStarter", "GinApplication").
 				Err(err).

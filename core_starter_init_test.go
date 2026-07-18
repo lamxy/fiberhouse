@@ -1,8 +1,13 @@
 package fiberhouse
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -257,6 +262,37 @@ func TestCoreInit_GinServerUsesConfiguredAddressAndTimeouts(t *testing.T) {
 	assert.Equal(t, 8*1024, core.httpServer.MaxHeaderBytes)
 	assert.NotNil(t, core.httpServer.BaseContext)
 	assert.IsType(t, http.Handler(core.coreApp), core.httpServer.Handler)
+}
+
+func TestCoreInit_GinTLSLoadsConfiguredCertificate(t *testing.T) {
+	preserveTask4GinMode(t)
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(tlsServer.Close)
+
+	certificate := tlsServer.TLS.Certificates[0]
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Certificate[0]})
+	keyDER, err := x509.MarshalPKCS8PrivateKey(certificate.PrivateKey)
+	require.NoError(t, err)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+
+	tempDir := t.TempDir()
+	certFile := filepath.Join(tempDir, "cert.pem")
+	keyFile := filepath.Join(tempDir, "key.pem")
+	require.NoError(t, os.WriteFile(certFile, certPEM, 0o600))
+	require.NoError(t, os.WriteFile(keyFile, keyPEM, 0o600))
+
+	ctx := newTask4InternalAppContext(t, map[string]interface{}{
+		"application.plugins.engine.servers.gin.tls.enable":   true,
+		"application.plugins.engine.servers.gin.tls.certFile": certFile,
+		"application.plugins.engine.servers.gin.tls.keyFile":  keyFile,
+	})
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+
+	require.NotPanics(t, func() {
+		core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	})
+	require.NotNil(t, core.httpServer.TLSConfig)
+	require.Len(t, core.httpServer.TLSConfig.Certificates, 1)
 }
 
 func TestCoreRegistration_ModuleSwaggerAndApplicationHooks(t *testing.T) {
