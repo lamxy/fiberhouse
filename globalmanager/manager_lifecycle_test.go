@@ -7,7 +7,36 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
+
+const lifecycleTestTimeout = 2 * time.Second
+
+func lifecycleAwait(t *testing.T, signal <-chan struct{}, label string) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatalf("timed out waiting for %s", label)
+	}
+}
+
+func lifecycleReceive[T any](t *testing.T, result <-chan T, label string) T {
+	t.Helper()
+	select {
+	case value := <-result:
+		return value
+	case <-time.After(lifecycleTestTimeout):
+		var zero T
+		t.Fatalf("timed out waiting for %s", label)
+		return zero
+	}
+}
+
+type lifecycleGetResult struct {
+	value interface{}
+	err   error
+}
 
 type lifecycleClosable struct {
 	closed *int
@@ -457,4 +486,57 @@ func TestClearAll_ConcurrentMapOperations(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+func TestGetInitialization_RemovalOnlyAffectsFutureLookups(t *testing.T) {
+	tests := []struct {
+		name   string
+		remove func(*GlobalManager)
+	}{
+		{name: "unregister", remove: func(manager *GlobalManager) { manager.Unregister("resource") }},
+		{name: "clear-all", remove: func(manager *GlobalManager) { manager.ClearAll(true) }},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager := NewGlobalManager()
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			t.Cleanup(unblock)
+
+			if !manager.Register("resource", func() (interface{}, error) {
+				close(entered)
+				<-release
+				return "detached", nil
+			}) {
+				t.Fatal("Register(resource) = false")
+			}
+
+			result := make(chan lifecycleGetResult, 1)
+			go func() {
+				value, err := manager.Get("resource")
+				result <- lifecycleGetResult{value: value, err: err}
+			}()
+
+			lifecycleAwait(t, entered, "initializer entry")
+			test.remove(manager)
+			if manager.IsRegistered("resource") {
+				t.Fatal("removal retained resource")
+			}
+			if _, err := manager.Get("resource"); err == nil {
+				t.Fatal("Get after removal error = nil")
+			}
+
+			unblock()
+			got := lifecycleReceive(t, result, "in-flight Get")
+			if got.err != nil || got.value != "detached" {
+				t.Fatalf("in-flight Get = (%v, %v), want detached, nil", got.value, got.err)
+			}
+			if _, err := manager.Get("resource"); err == nil {
+				t.Fatal("later Get after removal error = nil")
+			}
+		})
+	}
 }
