@@ -540,3 +540,346 @@ func TestGetInitialization_RemovalOnlyAffectsFutureLookups(t *testing.T) {
 		})
 	}
 }
+
+type lifecycleControlledResource struct {
+	path    func() string
+	rebuild func(...interface{}) (interface{}, error)
+	close   func() error
+}
+
+func (r *lifecycleControlledResource) GetConfPath() string {
+	if r.path != nil {
+		return r.path()
+	}
+	return "config.yml"
+}
+
+func (r *lifecycleControlledResource) Rebuild(arguments ...interface{}) (interface{}, error) {
+	if r.rebuild == nil {
+		return nil, errors.New("unexpected Rebuild call")
+	}
+	return r.rebuild(arguments...)
+}
+
+func (r *lifecycleControlledResource) Close() error {
+	if r.close == nil {
+		return errors.New("unexpected Close call")
+	}
+	return r.close()
+}
+
+type lifecycleErrorResult struct {
+	err error
+}
+
+func lifecycleAsyncError(call func() error) <-chan lifecycleErrorResult {
+	result := make(chan lifecycleErrorResult, 1)
+	go func() { result <- lifecycleErrorResult{err: call()} }()
+	return result
+}
+
+func assertLifecycleBusy(t *testing.T, err error) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), "global object maintenance already in progress") {
+		t.Fatalf("maintenance error = %v, want busy", err)
+	}
+}
+
+func TestRebuild_ConcurrentMaintenanceReturnsBusy(t *testing.T) {
+	manager := NewGlobalManager()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	var calls atomic.Int32
+
+	candidate := &lifecycleControlledResource{}
+	candidate.rebuild = func(...interface{}) (interface{}, error) { return candidate, nil }
+	current := &lifecycleControlledResource{}
+	current.rebuild = func(...interface{}) (interface{}, error) {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return candidate, nil
+	}
+	manager.Register("resource", func() (interface{}, error) { return current, nil })
+	if _, err := manager.Get("resource"); err != nil {
+		t.Fatal(err)
+	}
+
+	first := lifecycleAsyncError(func() error { return manager.Rebuild("resource") })
+	lifecycleAwait(t, entered, "first rebuild")
+	second := lifecycleAsyncError(func() error { return manager.Rebuild("resource") })
+	assertLifecycleBusy(t, lifecycleReceive(t, second, "conflicting rebuild").err)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("Rebuild callbacks = %d, want 1", got)
+	}
+	unblock()
+	if err := lifecycleReceive(t, first, "first rebuild result").err; err != nil {
+		t.Fatalf("first Rebuild error = %v", err)
+	}
+	if got, err := manager.Get("resource"); err != nil || got != candidate {
+		t.Fatalf("Get rebuilt resource = (%v, %v), want candidate, nil", got, err)
+	}
+	if err := manager.Rebuild("resource"); err != nil {
+		t.Fatalf("Rebuild after gate release error = %v", err)
+	}
+}
+
+func TestRelease_ConcurrentMaintenanceReturnsBusyAndClosesOnce(t *testing.T) {
+	manager := NewGlobalManager()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	var closeCalls atomic.Int32
+	var initializations atomic.Int32
+
+	current := &lifecycleControlledResource{}
+	current.close = func() error {
+		if closeCalls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return nil
+	}
+	manager.Register("resource", func() (interface{}, error) {
+		initializations.Add(1)
+		return current, nil
+	})
+	if _, err := manager.Get("resource"); err != nil {
+		t.Fatal(err)
+	}
+
+	first := lifecycleAsyncError(func() error { return manager.Release("resource") })
+	lifecycleAwait(t, entered, "first release")
+	second := lifecycleAsyncError(func() error { return manager.Release("resource") })
+	assertLifecycleBusy(t, lifecycleReceive(t, second, "conflicting release").err)
+	if got := closeCalls.Load(); got != 1 {
+		t.Fatalf("Close callbacks = %d, want 1", got)
+	}
+	unblock()
+	if err := lifecycleReceive(t, first, "first release result").err; err != nil {
+		t.Fatalf("first Release error = %v", err)
+	}
+	if got, err := manager.Get("resource"); err != nil || got != current {
+		t.Fatalf("Get reinitialized resource = (%v, %v), want current, nil", got, err)
+	}
+	if got := initializations.Load(); got != 2 {
+		t.Fatalf("initializer calls = %d, want 2", got)
+	}
+}
+
+func TestMaintenance_RebuildAndReleaseConflictReturnsBusy(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{name: "release-blocks-rebuild"},
+		{name: "rebuild-blocks-release"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager := NewGlobalManager()
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			t.Cleanup(unblock)
+			var rebuildCalls atomic.Int32
+			var closeCalls atomic.Int32
+
+			candidate := &lifecycleControlledResource{}
+			current := &lifecycleControlledResource{}
+			var winner func() error
+			var conflicting func() error
+			var later func() error
+
+			switch test.name {
+			case "release-blocks-rebuild":
+				current.close = func() error {
+					closeCalls.Add(1)
+					close(entered)
+					<-release
+					return nil
+				}
+				current.rebuild = func(...interface{}) (interface{}, error) {
+					rebuildCalls.Add(1)
+					return candidate, nil
+				}
+				candidate.rebuild = func(...interface{}) (interface{}, error) { return candidate, nil }
+				winner = func() error { return manager.Release("resource") }
+				conflicting = func() error { return manager.Rebuild("resource") }
+				later = func() error {
+					if _, err := manager.Get("resource"); err != nil {
+						return err
+					}
+					return manager.Rebuild("resource")
+				}
+			case "rebuild-blocks-release":
+				current.rebuild = func(...interface{}) (interface{}, error) {
+					rebuildCalls.Add(1)
+					close(entered)
+					<-release
+					return candidate, nil
+				}
+				current.close = func() error {
+					closeCalls.Add(1)
+					return nil
+				}
+				candidate.close = func() error {
+					closeCalls.Add(1)
+					return nil
+				}
+				winner = func() error { return manager.Rebuild("resource") }
+				conflicting = func() error { return manager.Release("resource") }
+				later = func() error { return manager.Release("resource") }
+			default:
+				t.Fatalf("unknown test case %q", test.name)
+			}
+
+			manager.Register("resource", func() (interface{}, error) { return current, nil })
+			if _, err := manager.Get("resource"); err != nil {
+				t.Fatal(err)
+			}
+
+			winnerResult := lifecycleAsyncError(winner)
+			lifecycleAwait(t, entered, "winning maintenance callback")
+			conflictingResult := lifecycleAsyncError(conflicting)
+			assertLifecycleBusy(t, lifecycleReceive(t, conflictingResult, "conflicting maintenance").err)
+			if test.name == "release-blocks-rebuild" && rebuildCalls.Load() != 0 {
+				t.Fatalf("Rebuild callbacks = %d, want 0", rebuildCalls.Load())
+			}
+			if test.name == "rebuild-blocks-release" && closeCalls.Load() != 0 {
+				t.Fatalf("Close callbacks = %d, want 0", closeCalls.Load())
+			}
+
+			unblock()
+			if err := lifecycleReceive(t, winnerResult, "winning maintenance result").err; err != nil {
+				t.Fatalf("winning maintenance error = %v", err)
+			}
+			if err := later(); err != nil {
+				t.Fatalf("maintenance after gate release error = %v", err)
+			}
+		})
+	}
+}
+
+func TestMaintenance_SameEntryReentryReturnsBusy(t *testing.T) {
+	t.Run("rebuild-calls-release", func(t *testing.T) {
+		manager := NewGlobalManager()
+		var nestedErr error
+		var closeCalls atomic.Int32
+		candidate := &lifecycleControlledResource{}
+		current := &lifecycleControlledResource{}
+		current.rebuild = func(...interface{}) (interface{}, error) {
+			nestedErr = manager.Release("resource")
+			return candidate, nil
+		}
+		current.close = func() error {
+			closeCalls.Add(1)
+			return nil
+		}
+		manager.Register("resource", func() (interface{}, error) { return current, nil })
+		if _, err := manager.Get("resource"); err != nil {
+			t.Fatal(err)
+		}
+
+		outer := lifecycleAsyncError(func() error { return manager.Rebuild("resource") })
+		if err := lifecycleReceive(t, outer, "outer rebuild").err; err != nil {
+			t.Fatalf("outer Rebuild error = %v", err)
+		}
+		assertLifecycleBusy(t, nestedErr)
+		if got := closeCalls.Load(); got != 0 {
+			t.Fatalf("Close callbacks = %d, want 0", got)
+		}
+	})
+
+	t.Run("close-calls-rebuild", func(t *testing.T) {
+		manager := NewGlobalManager()
+		var nestedErr error
+		var rebuildCalls atomic.Int32
+		current := &lifecycleControlledResource{}
+		current.close = func() error {
+			nestedErr = manager.Rebuild("resource")
+			return nil
+		}
+		current.rebuild = func(...interface{}) (interface{}, error) {
+			rebuildCalls.Add(1)
+			return current, nil
+		}
+		manager.Register("resource", func() (interface{}, error) { return current, nil })
+		if _, err := manager.Get("resource"); err != nil {
+			t.Fatal(err)
+		}
+
+		outer := lifecycleAsyncError(func() error { return manager.Release("resource") })
+		if err := lifecycleReceive(t, outer, "outer release").err; err != nil {
+			t.Fatalf("outer Release error = %v", err)
+		}
+		assertLifecycleBusy(t, nestedErr)
+		if got := rebuildCalls.Load(); got != 0 {
+			t.Fatalf("Rebuild callbacks = %d, want 0", got)
+		}
+	})
+}
+
+func TestMaintenance_DifferentKeysRemainIndependent(t *testing.T) {
+	manager := NewGlobalManager()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	var keyTwoCalls atomic.Int32
+
+	keyOneCandidate := &lifecycleControlledResource{}
+	keyOne := &lifecycleControlledResource{}
+	keyOne.rebuild = func(...interface{}) (interface{}, error) {
+		close(entered)
+		<-release
+		return keyOneCandidate, nil
+	}
+	keyTwoCandidate := &lifecycleControlledResource{}
+	keyTwo := &lifecycleControlledResource{}
+	keyTwo.rebuild = func(...interface{}) (interface{}, error) {
+		keyTwoCalls.Add(1)
+		return keyTwoCandidate, nil
+	}
+	manager.Register("one", func() (interface{}, error) { return keyOne, nil })
+	manager.Register("two", func() (interface{}, error) { return keyTwo, nil })
+	if _, err := manager.Get("one"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Get("two"); err != nil {
+		t.Fatal(err)
+	}
+
+	first := lifecycleAsyncError(func() error { return manager.Rebuild("one") })
+	lifecycleAwait(t, entered, "key one rebuild")
+	second := lifecycleAsyncError(func() error { return manager.Rebuild("two") })
+	if err := lifecycleReceive(t, second, "independent key two rebuild").err; err != nil {
+		t.Fatalf("Rebuild(two) error = %v", err)
+	}
+	if got := keyTwoCalls.Load(); got != 1 {
+		t.Fatalf("Rebuild(two) callbacks = %d, want 1", got)
+	}
+	unblock()
+	if err := lifecycleReceive(t, first, "key one rebuild result").err; err != nil {
+		t.Fatalf("Rebuild(one) error = %v", err)
+	}
+}
+
+func TestEntry_BeginMaintenanceWrapsPrivateBusyError(t *testing.T) {
+	entity := &entry{}
+	if err := entity.beginMaintenance("resource"); err != nil {
+		t.Fatalf("first beginMaintenance error = %v", err)
+	}
+	defer entity.endMaintenance()
+	if err := entity.beginMaintenance("resource"); !errors.Is(err, errMaintenanceInProgress) {
+		t.Fatalf("second beginMaintenance error = %v, want private busy sentinel", err)
+	}
+}
