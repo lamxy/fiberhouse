@@ -55,7 +55,11 @@ Benefits:
 
 Tradeoff: callers may now receive a busy error from a same-key concurrent
 maintenance request. This is intentional fail-fast behavior; this phase does
-not promise waiting or automatic retry.
+not promise waiting or automatic retry. Although no exported symbol is added,
+the extra transient error is publicly observable. Because its sentinel is
+private, external callers can only handle it as an ordinary maintenance
+failure; reliable busy classification and retry policy are explicitly not a
+stable API in this experimental phase.
 
 ### 2. Hold `entry.mu` across maintenance — rejected
 
@@ -167,8 +171,10 @@ and is explicitly deferred.
 All concurrency tests use channel handshakes rather than scheduling sleeps.
 Every blocking receive has a bounded timeout used only as deadlock protection.
 Goroutines report through buffered result channels and never call `t.Fatal`
-directly. Cleanup releases gates with `sync.Once` so a failed assertion cannot
-leave a goroutine blocked.
+directly. Test cleanup uses `sync.Once` only to close callback-unblock channels
+so a failed assertion cannot leave a goroutine blocked. Tests never mutate the
+production maintenance gate; only production `defer entity.endMaintenance()`
+may release it.
 
 ### RED/GREEN maintenance cases
 
@@ -176,7 +182,8 @@ leave a goroutine blocked.
    - first callback signals entry and blocks;
    - second `Rebuild` must return `errMaintenanceInProgress` without entering a
      second callback;
-   - release the first callback and verify its candidate is published;
+   - release the first callback and verify its candidate is published; the
+     candidate also implements `Rebuilder` so another rebuild is meaningful;
    - run another rebuild to prove the gate was released.
 
 2. **Rebuild during Release**
@@ -191,12 +198,31 @@ leave a goroutine blocked.
    - release rebuild and verify its candidate is published.
 
 4. **Release during Release**
-   - first `Close` signals entry and blocks;
+   - the fake's first `Close` signals entry and blocks, while any unexpected
+     later `Close` increments the count and returns immediately; this makes the
+     old implementation fail by observable double close rather than timeout;
    - second `Release` must return busy and the close count must remain one;
    - release the first close and verify a later `Get` reinitializes normally.
 
 The old implementation should fail these logical assertions even if the race
 detector reports no manager-field data race.
+
+### Gate release after returned errors and panics
+
+Add four focused cases that prove the `defer` covers non-success paths:
+
+1. a rebuild callback returns an error once; the error is preserved and a later
+   rebuild enters its callback and succeeds;
+2. `Close` returns an error once; the existing instance remains published and a
+   later `Release` enters `Close` again and succeeds;
+3. a rebuilder panics once from `GetConfPath` or `Rebuild`; the test recovers the
+   original panic, then a later rebuild enters normally;
+4. `Close` panics once; the test recovers the original panic, then a later
+   release enters normally.
+
+The panic fakes panic only on their first invocation. Recovery exists only in
+the tests; production continues to propagate the panic after its deferred gate
+release.
 
 ### Green characterization cases
 
