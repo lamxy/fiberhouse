@@ -568,6 +568,153 @@ func (r *lifecycleControlledResource) Close() error {
 	return r.close()
 }
 
+func captureLifecyclePanic(call func()) (recovered interface{}) {
+	defer func() { recovered = recover() }()
+	call()
+	return nil
+}
+
+func TestMaintenanceGate_ReleasesAfterReturnedError(t *testing.T) {
+	t.Run("rebuild", func(t *testing.T) {
+		manager := NewGlobalManager()
+		var calls atomic.Int32
+		candidate := &lifecycleControlledResource{}
+		current := &lifecycleControlledResource{}
+		current.rebuild = func(...interface{}) (interface{}, error) {
+			if calls.Add(1) == 1 {
+				return nil, errors.New("rebuild failed")
+			}
+			return candidate, nil
+		}
+		manager.Register("resource", func() (interface{}, error) { return current, nil })
+		if _, err := manager.Get("resource"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := manager.Rebuild("resource"); err == nil || !strings.Contains(err.Error(), "rebuild failed") {
+			t.Fatalf("first Rebuild error = %v, want rebuild failed", err)
+		}
+		if err := manager.Rebuild("resource"); err != nil {
+			t.Fatalf("second Rebuild error = %v", err)
+		}
+		if got := calls.Load(); got != 2 {
+			t.Fatalf("Rebuild callbacks = %d, want 2", got)
+		}
+	})
+
+	t.Run("release", func(t *testing.T) {
+		manager := NewGlobalManager()
+		var calls atomic.Int32
+		current := &lifecycleControlledResource{}
+		current.close = func() error {
+			if calls.Add(1) == 1 {
+				return errors.New("close failed")
+			}
+			return nil
+		}
+		manager.Register("resource", func() (interface{}, error) { return current, nil })
+		if _, err := manager.Get("resource"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := manager.Release("resource"); err == nil || !strings.Contains(err.Error(), "close failed") {
+			t.Fatalf("first Release error = %v, want close failed", err)
+		}
+		if got, err := manager.Get("resource"); err != nil || got != current {
+			t.Fatalf("Get after failed Release = (%v, %v), want original, nil", got, err)
+		}
+		if err := manager.Release("resource"); err != nil {
+			t.Fatalf("second Release error = %v", err)
+		}
+		if got := calls.Load(); got != 2 {
+			t.Fatalf("Close callbacks = %d, want 2", got)
+		}
+	})
+}
+
+func TestMaintenanceGate_ReleasesAfterPanic(t *testing.T) {
+	t.Run("get-conf-path", func(t *testing.T) {
+		manager := NewGlobalManager()
+		var calls atomic.Int32
+		candidate := &lifecycleControlledResource{}
+		current := &lifecycleControlledResource{}
+		current.path = func() string {
+			if calls.Add(1) == 1 {
+				panic("path panic")
+			}
+			return "config.yml"
+		}
+		current.rebuild = func(...interface{}) (interface{}, error) { return candidate, nil }
+		manager.Register("resource", func() (interface{}, error) { return current, nil })
+		if _, err := manager.Get("resource"); err != nil {
+			t.Fatal(err)
+		}
+
+		if recovered := captureLifecyclePanic(func() { _ = manager.Rebuild("resource") }); recovered != "path panic" {
+			t.Fatalf("Rebuild panic = %#v, want path panic", recovered)
+		}
+		if err := manager.Rebuild("resource"); err != nil {
+			t.Fatalf("Rebuild after path panic error = %v", err)
+		}
+		if got := calls.Load(); got != 2 {
+			t.Fatalf("GetConfPath callbacks = %d, want 2", got)
+		}
+	})
+
+	t.Run("rebuild", func(t *testing.T) {
+		manager := NewGlobalManager()
+		var calls atomic.Int32
+		candidate := &lifecycleControlledResource{}
+		current := &lifecycleControlledResource{}
+		current.rebuild = func(...interface{}) (interface{}, error) {
+			if calls.Add(1) == 1 {
+				panic("rebuild panic")
+			}
+			return candidate, nil
+		}
+		manager.Register("resource", func() (interface{}, error) { return current, nil })
+		if _, err := manager.Get("resource"); err != nil {
+			t.Fatal(err)
+		}
+
+		if recovered := captureLifecyclePanic(func() { _ = manager.Rebuild("resource") }); recovered != "rebuild panic" {
+			t.Fatalf("Rebuild panic = %#v, want rebuild panic", recovered)
+		}
+		if err := manager.Rebuild("resource"); err != nil {
+			t.Fatalf("Rebuild after panic error = %v", err)
+		}
+		if got := calls.Load(); got != 2 {
+			t.Fatalf("Rebuild callbacks = %d, want 2", got)
+		}
+	})
+
+	t.Run("close", func(t *testing.T) {
+		manager := NewGlobalManager()
+		var calls atomic.Int32
+		current := &lifecycleControlledResource{}
+		current.close = func() error {
+			if calls.Add(1) == 1 {
+				panic("close panic")
+			}
+			return nil
+		}
+		manager.Register("resource", func() (interface{}, error) { return current, nil })
+		if _, err := manager.Get("resource"); err != nil {
+			t.Fatal(err)
+		}
+
+		if recovered := captureLifecyclePanic(func() { _ = manager.Release("resource") }); recovered != "close panic" {
+			t.Fatalf("Release panic = %#v, want close panic", recovered)
+		}
+		if err := manager.Release("resource"); err != nil {
+			t.Fatalf("Release after panic error = %v", err)
+		}
+		if got := calls.Load(); got != 2 {
+			t.Fatalf("Close callbacks = %d, want 2", got)
+		}
+	})
+}
+
 type lifecycleErrorResult struct {
 	err error
 }
