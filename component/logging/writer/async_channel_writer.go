@@ -100,7 +100,15 @@ func (a *AsyncChannelWriter) Write(p []byte) (int, error) {
 	data := make([]byte, len(p))
 	copy(data, p)
 
-	// 通道有空位时立即写入；通道持续满超过 1s 才丢弃，期间调用方阻塞等待
+	// 常见路径先尝试立即写入，避免为未阻塞的发送分配定时器。
+	select {
+	case a.logChan <- data:
+		a.finishWrite()
+		return len(p), nil
+	default:
+	}
+
+	// 通道暂满时等待空位；持续满超过 1s 才丢弃，期间调用方阻塞等待。
 	timer := time.NewTimer(1 * time.Second)
 	defer timer.Stop()
 	var dropped int64

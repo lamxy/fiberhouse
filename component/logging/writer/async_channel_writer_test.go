@@ -209,3 +209,36 @@ func TestAsyncChannelWriter_WriteAdmittedBeforeCloseCompletes(t *testing.T) {
 		t.Errorf("Close returned %v", result.err)
 	}
 }
+
+func TestAsyncChannelWriter_ImmediateSendAllocatesOnlyCopiedInput(t *testing.T) {
+	cfg := appconfig.NewAppConfig().LoadDefault(map[string]interface{}{
+		"application.appLog.rollConf.maxSize":              10,
+		"application.appLog.rollConf.maxBackups":           3,
+		"application.appLog.rollConf.maxAge":               7,
+		"application.appLog.rollConf.compress":             false,
+		"application.appLog.asyncConf.chanConf.bufferSize": 1 << 20,
+		"application.appLog.asyncConf.chanConf.chanSize":   4096,
+	})
+	w := NewAsyncChannelWriter(cfg, t.TempDir()+"/allocations.log")
+	t.Cleanup(func() {
+		if result := closeAsyncChannelWriter(w); result.panicValue != nil || result.err != nil {
+			t.Errorf("cleanup Close = (%v, panic %v)", result.err, result.panicValue)
+		}
+	})
+	payload := make([]byte, 64)
+	var writeErr error
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		var n int
+		n, writeErr = w.Write(payload)
+		if writeErr == nil && n != len(payload) {
+			writeErr = fmt.Errorf("Write returned %d bytes, want %d", n, len(payload))
+		}
+	})
+	if writeErr != nil {
+		t.Fatalf("immediate Write: %v", writeErr)
+	}
+	if allocs > 1.1 {
+		t.Fatalf("immediate Write allocated %.2f objects/run, want approximately 1 copied input", allocs)
+	}
+}
