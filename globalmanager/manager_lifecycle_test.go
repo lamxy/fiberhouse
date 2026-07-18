@@ -727,7 +727,7 @@ func lifecycleAsyncError(call func() error) <-chan lifecycleErrorResult {
 
 func assertLifecycleBusy(t *testing.T, err error) {
 	t.Helper()
-	if err == nil || !strings.Contains(err.Error(), "global object maintenance already in progress") {
+	if err == nil || !errors.Is(err, errMaintenanceInProgress) {
 		t.Fatalf("maintenance error = %v, want busy", err)
 	}
 }
