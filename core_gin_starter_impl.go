@@ -171,6 +171,9 @@ func (cg *CoreWithGin) initHttpServer(cfg appconfig.IAppConfig) {
 				Str("applicationStarter", "GinApplication").
 				Err(err).
 				Msg("Failed to load TLS certificates")
+			if certFile != "" && keyFile != "" {
+				panic(err)
+			}
 		} else {
 			cg.httpServer.TLSConfig = &tls.Config{
 				Certificates: []tls.Certificate{cert},

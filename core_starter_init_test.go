@@ -1,11 +1,15 @@
 package fiberhouse
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"math/big"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -266,12 +270,21 @@ func TestCoreInit_GinServerUsesConfiguredAddressAndTimeouts(t *testing.T) {
 
 func TestCoreInit_GinTLSLoadsConfiguredCertificate(t *testing.T) {
 	preserveTask4GinMode(t)
-	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	t.Cleanup(tlsServer.Close)
-
-	certificate := tlsServer.TLS.Certificates[0]
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Certificate[0]})
-	keyDER, err := x509.MarshalPKCS8PrivateKey(certificate.PrivateKey)
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	now := time.Now()
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    now.Add(-time.Minute),
+		NotAfter:     now.Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	require.NoError(t, err)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	require.NoError(t, err)
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 
@@ -293,6 +306,26 @@ func TestCoreInit_GinTLSLoadsConfiguredCertificate(t *testing.T) {
 	})
 	require.NotNil(t, core.httpServer.TLSConfig)
 	require.Len(t, core.httpServer.TLSConfig.Certificates, 1)
+}
+
+func TestCoreInit_GinTLSRejectsInvalidConfiguredCertificate(t *testing.T) {
+	preserveTask4GinMode(t)
+	tempDir := t.TempDir()
+	certFile := filepath.Join(tempDir, "cert.pem")
+	keyFile := filepath.Join(tempDir, "key.pem")
+	require.NoError(t, os.WriteFile(certFile, []byte("invalid certificate"), 0o600))
+	require.NoError(t, os.WriteFile(keyFile, []byte("invalid private key"), 0o600))
+
+	ctx := newTask4InternalAppContext(t, map[string]interface{}{
+		"application.plugins.engine.servers.gin.tls.enable":   true,
+		"application.plugins.engine.servers.gin.tls.certFile": certFile,
+		"application.plugins.engine.servers.gin.tls.keyFile":  keyFile,
+	})
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+
+	require.Panics(t, func() {
+		core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	})
 }
 
 func TestCoreRegistration_ModuleSwaggerAndApplicationHooks(t *testing.T) {

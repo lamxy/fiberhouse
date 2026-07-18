@@ -4,16 +4,16 @@
 
 **Goal:** Make the existing Gin TLS configuration load valid certificates and make the existing runtime use TLS when that configuration is present.
 
-**Architecture:** Keep `CoreStarter`, `CoreWithGin`, `InitCoreApp`, and `AppCoreRun` unchanged as interfaces and lifecycle entry points. Patch only the unreachable certificate-loading path and the existing server call selection; preserve current logging and invalid-certificate fallback behavior.
+**Architecture:** Keep `CoreStarter`, `CoreWithGin`, `InitCoreApp`, and `AppCoreRun` unchanged as interfaces and lifecycle entry points. Patch only the unreachable certificate-loading path and the existing server call selection; preserve missing-path logging and fallback behavior, and preserve invalid non-empty certificate fail-stop behavior.
 
-**Tech Stack:** Go 1.25, `crypto/x509`, `encoding/pem`, `net/http/httptest`, `testify`, CodeGraph, ast-grep.
+**Tech Stack:** Go 1.25, `crypto/ecdsa`, `crypto/x509`, `encoding/pem`, `testify`, CodeGraph, ast-grep.
 
 ## Global Constraints
 
 - Do not add `Run(ctx context.Context) error` or any equivalent entry point.
 - Do not extract lifecycle helpers, add server interfaces, or reorganize Gin startup code.
 - Do not change public APIs or Fiber behavior.
-- Do not change existing behavior for missing or invalid certificate files.
+- Do not change existing behavior: a missing certificate or key path logs and falls back, while invalid non-empty certificate and key paths fail-stop.
 - Production changes stay inside `core_gin_starter_impl.go`.
 
 ---
@@ -30,7 +30,7 @@
 
 - [x] **Step 1: Write the failing certificate-loading regression test**
 
-  Create a temporary certificate/key pair by copying the DER certificate and private key from `httptest.NewTLSServer` into PEM files. Configure:
+  Create a temporary certificate/key pair entirely in process with an ECDSA P-256 key, `x509.CreateCertificate`, and PKCS8 PEM encoding. Configure:
 
   ```go
   values := map[string]interface{}{
@@ -40,7 +40,7 @@
   }
   ```
 
-  Call `InitCoreApp(&task4Frame{}, task4GoodCodecManager())` and require that it does not panic, `core.httpServer.TLSConfig` is non-nil, and it contains one certificate.
+  Call `InitCoreApp(&task4Frame{}, task4GoodCodecManager())` and require that it does not panic, `core.httpServer.TLSConfig` is non-nil, and it contains one certificate. Also require invalid non-empty certificate and key files to retain the existing fail-stop behavior.
 
 - [x] **Step 2: Confirm the regression test is red**
 
@@ -54,7 +54,7 @@
 
 - [x] **Step 3: Apply the minimal production patch**
 
-  Delete only the `panic(msg)` after the existing “Enabling TLS/HTTPS” log so `tls.LoadX509KeyPair` becomes reachable. In the existing `AppCoreRun` goroutine, select the serve call locally:
+  Delete only the `panic(msg)` after the existing “Enabling TLS/HTTPS” log so `tls.LoadX509KeyPair` becomes reachable. After the existing certificate-load error log, panic only when both configured paths are non-empty; this preserves invalid non-empty fail-stop without changing missing-path fallback. In the existing `AppCoreRun` goroutine, select the serve call locally:
 
   ```go
   var err error
@@ -73,7 +73,7 @@
   Run:
 
   ```bash
-  go test . -run '^TestCoreInit_GinTLSLoadsConfiguredCertificate$' -count=1
+  go test . -run '^TestCoreInit_GinTLS(LoadsConfiguredCertificate|RejectsInvalidConfiguredCertificate)$' -count=1
   go test ./... -count=1
   ast-grep run --pattern '$S.ListenAndServeTLS("", "")' --lang go core_gin_starter_impl.go
   ast-grep run --pattern '$S.ListenAndServe()' --lang go core_gin_starter_impl.go
