@@ -161,6 +161,23 @@
 
 本记录不预先声明最终全仓 `go vet ./...`、`go test ./... -count=1` 或 `go test -race ./... -count=1` 已通过；这些命令由隔离分支的最终验收 fresh 执行。
 
+## P1-B 执行记录（2026-07-18）
+
+- 已验证实现 HEAD：`945d702`。该 SHA 指向 entry 级维护门禁及其契约测试，不指向本执行记录自身的提交。
+- 同一已注册 entry generation 内，`Rebuild` 与 `Release` 共享 fail-fast 维护门禁；任一维护回调运行时，同 entry 的冲突维护调用返回 busy error，不等待也不进入第二个回调。删除后以同名重新注册会创建新的 entry generation，不属于该门禁的协调范围。
+- busy error 仍是普通的实验性错误；其 private sentinel 只供当前包内实现和测试识别，不是稳定导出的 retry 分类契约。
+- `Unregister` 或 `ClearAll(true)` 只影响后续查找，不取消已经取得 entry 并开始执行的 `Get` initializer；`ClearAll` 仍是 deletion-only，不逐项 `Close`。
+- 本轮没有定义调用方已取得引用的存活期，也没有解决 `Rebuild` 旧实例退役。当前数据库与缓存 wrapper 会在 rebuild callback 中原地替换内部 client；管理器若自动关闭所谓“旧实例”，可能通过同一 wrapper 关闭刚替换的新 client，因此在明确 ownership 与替换协议前并不安全。
+- GlobalManager 的 owner/locator 边界、共享 alias/组合资源所有权、task lifecycle、自定义 `FrameStarter` 的 keepalive 责任和统一关闭链仍未解决；P1.3 的完整合法状态转换与旧实例关闭项保持未完成。
+- `GOCACHE=/tmp/fiberhouse-p1b-task1 go test ./globalmanager -run '^TestGetInitialization_RemovalOnlyAffectsFutureLookups$' -count=50`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1b-task1-race go test -race ./globalmanager -run '^TestGetInitialization_RemovalOnlyAffectsFutureLookups$' -count=10`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1b-task2-final-focused go test ./globalmanager -run 'Test(Rebuild_ConcurrentMaintenance|Release_ConcurrentMaintenance|Maintenance_(RebuildAndReleaseConflict|SameEntryReentry|DifferentKeys)|Entry_BeginMaintenance)' -count=50`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1b-task2-final-race go test -race ./globalmanager -count=1`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1b-task3 go test ./globalmanager -run '^TestMaintenanceGate_ReleasesAfter' -count=50`：通过。
+- `GOCACHE=/tmp/fiberhouse-p1b-task3-race go test -race ./globalmanager -run '^TestMaintenanceGate_ReleasesAfter' -count=20`：通过。
+
+本记录只确认 P1-B 的 entry generation 级 fail-fast 门禁、错误/恐慌后的门禁释放，以及删除期间已开始初始化的行为；不预先声明隔离分支的最终全仓验收结果。
+
 ## P1：v1 API 治理
 
 - [ ] 发布明确的 v1 兼容政策：稳定 API、实验性 API、弃用周期、允许的破坏性变更范围。
