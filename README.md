@@ -23,7 +23,7 @@ FiberHouse 仍在演进中。能力状态使用三个正交维度：实现阶段
 
 | 范围 | 实现阶段 | 支持级别 | API 受众 | 摘要 |
 |---|---|---|---|---|
-| Fiber HTTP、Provider 主链、配置与日志、JSON 响应、校验 | 已接入 | 实验性 | 公共 API | 已有明确入口和单元/契约测试，但项目级生命周期与兼容政策尚未全部达到稳定晋级门槛 |
+| Fiber HTTP、Provider 主链、配置与日志、JSON 响应、校验 | 已接入 | 实验性 | 公共 API | 已有明确入口，并按能力具有单元/契约或 HTTP smoke 证据；部分错误与关闭路径仍有明确限制 |
 | Gin、GlobalManager、L2 缓存、任务、CLI、数据库、二进制响应 | 已接入 | 实验性 | 公共 API | 已有可达实现，但错误传播、并发、关闭或外部依赖验证仍存在明确缺口 |
 | bufferpool、Dig、writer、jsonconvert、mongodecimal | 已实现或已接入 | 实验性 | 内部工具 | 主要服务框架或示例；公开 Go package 路径不等于稳定公共 API 承诺 |
 | plugins、RPC、MQ、通用 i18n、Go JSON codec | 占位 | 不适用 | 未承诺 | 没有完整创建、运行、失败和关闭链 |
