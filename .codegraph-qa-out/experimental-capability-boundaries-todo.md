@@ -17,17 +17,19 @@
 ### Gin HTTP 与二进制响应
 
 - [x] Gin TLS 有效证书加载与 TLS serve 路径已接通；无效非空证书保持 fail-stop。缺失路径仍会记录错误并保留 HTTP 路径，且尚无真实 listener/握手集成验证，因此 Gin HTTP 内核仍维持实验性。
-- [ ] MsgPack/Protobuf 内容协商只处理首个媒体类型，未命中或加载失败时回退 JSON；当前实现不是通用 RPC 或完整内容协商方案。
+- [ ] MsgPack/Protobuf 内容协商只处理首个媒体类型，未命中或加载失败时回退 JSON；当前实现不是通用 RPC 或完整内容协商方案。该项仅保留为能力边界，已排除为后续调查或实施候选。
 
 ### GlobalManager 与扩展生命周期
 
-- [ ] `Release` 后保存 nil、初始化失败状态残留、keepalive 缺少取消机制、清空容器时不逐项关闭等行为，需要统一资源状态和所有权语义。
-- [ ] `ServerShutdownBefore`、`ServerShutdownAfter` 等扩展位点只有声明或部分消费路径；Fiber shutdown 直接清空容器，关闭顺序和资源回收责任尚不清晰。
+- [x] `Release` 已改用原子指针清空实例，初始化失败可在后续 `Get` 重试，默认 keepalive 已具备取消、等待与内置 Fiber/Gin 关闭协调。
+- [ ] `ClearAll` 仍是 deletion-only；`Rebuild` 旧实例退役、调用方引用存活期、非 `Closable` 的 `Release` 语义和统一资源所有权仍未闭合。
+- [ ] `ServerShutdownBefore`、`ServerShutdownAfter` 等扩展位点只有声明或部分消费路径；内置 Fiber/Gin 会先停止并等待默认 keepalive，再执行 deletion-only 清空，但扩展位点消费、关闭顺序和资源回收责任仍未闭合。
 
 ### L2 缓存与 Redis 保护机制
 
 - [ ] singleflight 尚未形成完整 loader 合并路径，Bloom filter 与 circuit breaker 的 miss 语义不一致。
-- [ ] L2 缓存关闭状态不完整；local、remote 依赖及内部异步 pool 的创建、等待和关闭责任需要统一。
+- [x] L2 `Close` 已具备原子幂等、关闭后拒绝操作、子缓存单次关闭和错误聚合。
+- [ ] L2 的 ants pool 排队/flush 语义、local/remote 共享所有权和构造失败传播仍需明确。
 
 ### 异步任务与 CLI
 
