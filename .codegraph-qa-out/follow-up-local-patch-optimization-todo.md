@@ -1,7 +1,8 @@
 # 后续局部补丁优化清单
 
 > 记录日期：2026-07-18
-> 适用基线：`main@457f57f`
+> 收口基线：`main@5faeabf`
+> 状态：P0 已完成并合入 main；P1 已确认既有契约并决定不修改代码；当前没有自动承接的局部代码任务。
 > 约束：优先局部补丁；不新增公共运行入口，不建立统一生命周期或关闭架构，不迁移公共 API。功能代码使用独立 Git 工作树和子代理执行，审核前不回合 main。
 
 ## 已撤销或排除
@@ -10,26 +11,26 @@
 - [x] 排除 MsgPack/Protobuf 内容协商调查与修改。
 - [x] 排除 `Run(ctx context.Context) error` 或等价入口、统一关闭链、生命周期协调器、公共接口迁移及跨组件重构。
 
-## P0：CLI 健康检查错误后仍记录成功
+## P0：CLI 健康检查错误后仍记录成功（已完成）
 
-- [ ] 在 `commandstarter/frame_cmd_application.go` 的现有 `startHealthCheck` 内修复日志控制流：`Rebuild` 返回错误时记录失败并继续下一个条目，不再记录本条目的成功日志。
-- [ ] 在 `commandstarter/lifecycle_test.go` 增加一个回归测试，先证明失败路径当前会产生错误的 success 文本，再以最小实现使测试通过。
-- [ ] 只运行 `commandstarter` 直接相关测试和必要的补丁检查；不改方法签名、检查频率、CLI 生命周期或其他日志。
+- [x] `5faeabf` 在现有 `startHealthCheck` 内修复日志控制流：`Rebuild` 返回错误时记录失败并继续下一个条目，不再记录本条目的成功日志。
+- [x] `commandstarter/lifecycle_test.go` 已增加真实 GlobalManager 失败路径回归测试，并按 RED→GREEN 验证。
+- [x] focused 测试与 `go test ./commandstarter -count=1` 在分支及合入后的 main 上通过；补丁保持方法签名、检查频率、CLI 生命周期和其他日志不变。
 
-证据：当前 `startHealthCheck` 在 `gm.Rebuild(name)` 返回错误后记录 `rebuild failed`，但随后仍无条件记录 `rebuild success`，同一函数内的日志语义直接矛盾。
+修复前证据：`startHealthCheck` 在 `gm.Rebuild(name)` 返回错误后记录 `rebuild failed`，但随后仍无条件记录 `rebuild success`，同一函数内的日志语义直接矛盾。
 
-## P1：L2 自定义 local cache 的 metrics 边界
+## P1：L2 自定义 local cache 的 metrics 边界（已调查，不修改代码）
 
-- [ ] 先确认 metrics 方法是否只承诺支持 `*cachelocal.LocalCache`；未确认前不修改代码。
-- [ ] 若只支持内置 local cache，保留实现并仅明确文档。
-- [ ] 若自定义 `cache.Cache` 也是支持路径，在现有 metrics 方法内使用安全类型断言，不匹配时返回 nil，并补局部回归测试。
+- [x] 已确认 `cache.Cache` 只承载通用缓存行为，metrics 方法调用的是内置 `*cachelocal.LocalCache` 的具体 `GetMetrics` 能力。
+- [x] 保留当前具体类型断言；安全断言返回 nil 会掩盖不支持的调用，新增 metrics 接口则超出局部补丁范围。
+- [x] 缓存指南明确该入口不属于通用 `cache.Cache` 契约；自定义 local 实现不得调用这些 metrics 入口。
 
-该项目前是待确认契约，不直接定性为缺陷。`Level2Cache.local` 保存为 `cache.Cache`，但 `GetLocalMetrics` 与 `GetLocalMetricsInfo` 直接断言为 `*cachelocal.LocalCache`，自定义实现会 panic。
+结论：该具体类型断言是既有能力边界，不作为缺陷候选，也不新增代码补丁。
 
 ## 伴随文档检查
 
-- [ ] 每个补丁完成后快速检查 README、`docs/reference/feature-status.md` 和对应指南，只修正与本补丁直接相关的失实句子。
-- [ ] 纯文档变化不运行全仓 Go 测试，不改写相邻章节。
+- [x] 已在 `main@5faeabf` 快速检查 README、`docs/reference/feature-status.md` 和对应指南；仅对齐 Fiber/Gin 状态维度与 L2 metrics 具体能力边界。
+- [x] 本次纯文档变化不运行全仓 Go 测试，不改写相邻章节。
 
 ## 仅建议、待单独审核的有限重构
 
@@ -45,6 +46,6 @@
 
 ## 推荐执行顺序
 
-1. [ ] 执行并审核 P0。
-2. [ ] P0 审核完成后，单独调查 P1 契约。
-3. [ ] P1 结论经审核后，决定“不修改”、文档补丁或一个原函数内的最小代码补丁。
+1. [x] 执行、审核并合入 P0。
+2. [x] 单独调查 P1 契约。
+3. [x] P1 结论为不修改代码，仅澄清对应指南。

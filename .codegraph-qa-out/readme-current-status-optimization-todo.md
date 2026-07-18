@@ -1,9 +1,9 @@
 # README“当前状态”与项目成熟度优化代办
 
 > 创建日期：2026-07-18
-> 状态：P0、P1-A、P1-B、Gin TLS 局部补丁与状态文档同步已执行；后续仅保留快速局部候选
+> 状态：P0、P1-A、P1-B、Gin TLS、CLI 日志局部补丁与状态文档同步已执行；当前无自动承接的局部代码任务
 > 背景分析：[README“当前状态”与代码库成熟度分析](readme-current-status-analysis-2026-07-17.md)
-> 本轮对齐基线：`main@cf67d58`；执行前重新确认 HEAD 与文档、测试现状。
+> 最新收口基线：`main@5faeabf`；执行前重新确认 HEAD 与文档、测试现状。
 > 后续优化约束（2026-07-18）：禁止重构和大范围修改。历史分析、spec、plan 与执行记录只作为审计材料，不构成后续实施授权；未来任务以本文当前活动项为准。
 
 ## 目标
@@ -186,6 +186,13 @@
 - `e75f425`：无效非空证书保持 fail-stop；缺失路径保持记录错误并保留 HTTP 路径的既有行为。
 - `cf67d58`：README、功能状态、Web runtime、入门、示例、启动生命周期和 CodeGraph QA 文档同步到当前 TLS 事实。
 - Gin 仍维持实验性：尚无真实 listener/握手集成验证，且缺失证书路径仍可能保留 HTTP 路径。
+
+## CLI 日志补丁与后续清单收口（2026-07-18）
+
+- `5faeabf`：CLI 健康检查在重建失败后继续遍历，但不再为同一条目记录矛盾的 rebuild success；回归测试按 RED→GREEN 完成，合入后的 `go test ./commandstarter -count=1` 通过。
+- L2 local metrics 已确认只调用内置 `*cachelocal.LocalCache` 的具体能力，不属于通用 `cache.Cache` 契约；保留具体类型断言，不新增代码补丁。
+- `main@5faeabf` 的 README 与功能状态重新核对后，能力分级、启用方式和验证边界仍准确；仅需对齐 Fiber/Gin 状态维度及缓存指南的 metrics 边界。
+- 当前没有自动承接的局部代码任务；L2 `Wait` 完整 flush 仍只是待单独审核的有限重构建议。
 
 ## 快速调查候选
 
