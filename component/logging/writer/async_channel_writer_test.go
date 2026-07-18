@@ -20,16 +20,21 @@ type asyncChannelCloseResult struct {
 }
 
 type gatedWriter struct {
-	writer  io.Writer
-	entered chan struct{}
-	release chan struct{}
-	once    sync.Once
+	writer      io.Writer
+	entered     chan struct{}
+	release     chan struct{}
+	enteredOnce sync.Once
+	releaseOnce sync.Once
 }
 
 func (w *gatedWriter) Write(p []byte) (int, error) {
-	w.once.Do(func() { close(w.entered) })
+	w.enteredOnce.Do(func() { close(w.entered) })
 	<-w.release
 	return w.writer.Write(p)
+}
+
+func (w *gatedWriter) Release() {
+	w.releaseOnce.Do(func() { close(w.release) })
 }
 
 func newAsyncChannelWriterForTest(t *testing.T) *AsyncChannelWriter {
@@ -147,6 +152,7 @@ func TestAsyncChannelWriter_WriteAdmittedBeforeCloseCompletes(t *testing.T) {
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
+	t.Cleanup(gate.Release)
 	w.writer = bufio.NewWriterSize(gate, 1)
 
 	firstWrite := make(chan error, 1)
@@ -193,20 +199,36 @@ func TestAsyncChannelWriter_WriteAdmittedBeforeCloseCompletes(t *testing.T) {
 	if atomic.LoadInt32(&w.closed) == 0 {
 		t.Fatal("Close did not mark the writer closed")
 	}
-	close(gate.release)
+	gate.Release()
 
-	if err := <-firstWrite; err != nil {
-		t.Error(err)
-	}
-	if err := <-writeResult; err != nil {
-		t.Error(err)
-	}
-	result := <-closeResult
-	if result.panicValue != nil {
-		t.Errorf("Close panicked: %v", result.panicValue)
-	}
-	if result.err != nil {
-		t.Errorf("Close returned %v", result.err)
+	joinTimer := time.NewTimer(2 * time.Second)
+	defer joinTimer.Stop()
+	for joined := 0; joined < 3; {
+		select {
+		case err := <-firstWrite:
+			firstWrite = nil
+			joined++
+			if err != nil {
+				t.Error(err)
+			}
+		case err := <-writeResult:
+			writeResult = nil
+			joined++
+			if err != nil {
+				t.Error(err)
+			}
+		case result := <-closeResult:
+			closeResult = nil
+			joined++
+			if result.panicValue != nil {
+				t.Errorf("Close panicked: %v", result.panicValue)
+			}
+			if result.err != nil {
+				t.Errorf("Close returned %v", result.err)
+			}
+		case <-joinTimer.C:
+			t.Fatalf("joined %d of 3 terminal results", joined)
+		}
 	}
 }
 
