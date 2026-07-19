@@ -60,10 +60,69 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 	// 自定义核心配置
 	if cf.CoreCfg != nil {
 		cf.coreApp = fiber.New(*cf.CoreCfg)
+		// fs 为 nil 时（例如仅验证自定义配置的单元测试）无法解析编解码器，跳过；
+		// 标准启动链会传入非 nil fs，此时仍需完成编解码器装配，避免 cf.json 保持 nil
+		// 导致后续 RegisterAppMiddleware 使用 cf.json.Marshal 时 panic。
+		if fs != nil {
+			cf.json = cf.resolveJSONCodec(fs, managers...)
+		}
 		return
 	}
 
 	cfg := cf.GetAppContext().GetConfig()
+	cf.json = cf.resolveJSONCodec(fs, managers...)
+
+	// IErrorHandler接口实例
+	eh := NewErrorHandlerOnce(cf.GetAppContext())
+
+	// 默认核心配置
+	cf.coreApp = fiber.New(fiber.Config{
+		// 设置应用名称
+		AppName:       cfg.String("application.appName"),
+		CaseSensitive: cfg.Bool("application.server.caseSensitive"),
+		// 启用严格路由匹配，要求路由必须完全匹配请求路径
+		StrictRouting: cfg.Bool("application.server.strictRouting"),
+		// 设置服务器头部信息
+		ServerHeader: cfg.String("application.server.appServerHeader"),
+		// 设置自定义错误处理函数
+		// 该函数会在请求处理过程中发生错误时被调用
+		ErrorHandler: adaptorerrorhandler.FiberErrorHandler(eh.ErrorHandler),
+		// 设置并发处理请求的数量
+		Concurrency: cfg.Int("application.server.appConcurrency"),
+		// 设置是否启用长连接
+		DisableKeepalive: cfg.Bool("application.server.disableKeepalive"),
+		// 设置读取和写入缓冲区大小
+		ReadBufferSize:  cfg.Int("application.server.readBufferSize", 4096),
+		WriteBufferSize: cfg.Int("application.server.writeBufferSize", 4096),
+		// 设置请求体大小限制，单位为KB
+		BodyLimit: cfg.Int("application.server.bodyLimit", 4096),
+		// 设置空闲连接超时时间
+		IdleTimeout: cfg.Duration("application.server.idleTimeout", 60) * time.Second,
+		// 设置读取和写入超时时间
+		ReadTimeout:  cfg.Duration("application.server.readTimeout", 30) * time.Second,
+		WriteTimeout: cfg.Duration("application.server.writeTimeout", 30) * time.Second,
+		// 打印路由列表信息
+		EnablePrintRoutes: cfg.Bool("application.server.enablePrintRoutes"), // 默认false
+		JSONEncoder:       cf.json.Marshal,
+		JSONDecoder:       cf.json.Unmarshal,
+		// true: /api?foo=bar,baz == foo[]=bar&foo[]=baz
+		EnableSplittingOnParsers: true,
+		// http://127.0.0.1:3000/exchange/name/adas%20ahdsa+asldas,反转空格、+加号等特殊字符
+		UnescapePath: true,
+		// When set to true, it will not print out debug information
+		DisableStartupMessage: false,
+		// Limit supported http methods
+		RequestMethods: cfg.Strings("application.server.requestMethods", []string{}), // 默认支持全部方法
+		// enables request body streaming, and calls the handler sooner when given body is larger than the current limit
+		StreamRequestBody: cfg.Bool("application.server.streamRequestBody"), // 默认false
+		// more...
+	})
+}
+
+// resolveJSONCodec 解析JSON编解码器实例。
+// 该逻辑在默认核心配置路径和自定义 CoreCfg 路径下均需要执行，
+// 抽取为独立方法避免自定义 CoreCfg 路径遗漏 cf.json 赋值。
+func (cf *CoreWithFiber) resolveJSONCodec(fs FrameStarter, managers ...IProviderManager) JsonWrapper {
 	// fiberhouse.JsonWrapper序列化反序列化接口，默认编解码器实例
 	//json := GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultTrafficCodecKey())
 
@@ -107,53 +166,8 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 			panic("Loaded JSON codec provider does not implement JsonWrapper interface")
 		}
 	}
-	cf.json = json
 
-	// IErrorHandler接口实例
-	eh := NewErrorHandlerOnce(cf.GetAppContext())
-
-	// 默认核心配置
-	cf.coreApp = fiber.New(fiber.Config{
-		// 设置应用名称
-		AppName:       cfg.String("application.appName"),
-		CaseSensitive: cfg.Bool("application.server.caseSensitive"),
-		// 启用严格路由匹配，要求路由必须完全匹配请求路径
-		StrictRouting: cfg.Bool("application.server.strictRouting"),
-		// 设置服务器头部信息
-		ServerHeader: cfg.String("application.server.appServerHeader"),
-		// 设置自定义错误处理函数
-		// 该函数会在请求处理过程中发生错误时被调用
-		ErrorHandler: adaptorerrorhandler.FiberErrorHandler(eh.ErrorHandler),
-		// 设置并发处理请求的数量
-		Concurrency: cfg.Int("application.server.appConcurrency"),
-		// 设置是否启用长连接
-		DisableKeepalive: cfg.Bool("application.server.disableKeepalive"),
-		// 设置读取和写入缓冲区大小
-		ReadBufferSize:  cfg.Int("application.server.readBufferSize", 4096),
-		WriteBufferSize: cfg.Int("application.server.writeBufferSize", 4096),
-		// 设置请求体大小限制，单位为KB
-		BodyLimit: cfg.Int("application.server.bodyLimit", 4096),
-		// 设置空闲连接超时时间
-		IdleTimeout: cfg.Duration("application.server.idleTimeout", 60) * time.Second,
-		// 设置读取和写入超时时间
-		ReadTimeout:  cfg.Duration("application.server.readTimeout", 30) * time.Second,
-		WriteTimeout: cfg.Duration("application.server.writeTimeout", 30) * time.Second,
-		// 打印路由列表信息
-		EnablePrintRoutes: cfg.Bool("application.server.enablePrintRoutes"), // 默认false
-		JSONEncoder:       json.Marshal,
-		JSONDecoder:       json.Unmarshal,
-		// true: /api?foo=bar,baz == foo[]=bar&foo[]=baz
-		EnableSplittingOnParsers: true,
-		// http://127.0.0.1:3000/exchange/name/adas%20ahdsa+asldas,反转空格、+加号等特殊字符
-		UnescapePath: true,
-		// When set to true, it will not print out debug information
-		DisableStartupMessage: false,
-		// Limit supported http methods
-		RequestMethods: cfg.Strings("application.server.requestMethods", []string{}), // 默认支持全部方法
-		// enables request body streaming, and calls the handler sooner when given body is larger than the current limit
-		StreamRequestBody: cfg.Bool("application.server.streamRequestBody"), // 默认false
-		// more...
-	})
+	return json
 }
 
 // RegisterAppMiddleware 注册应用级的中间件
