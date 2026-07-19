@@ -97,7 +97,8 @@ func TestRespInfoPB_JsonWithCtxAndLifecycle(t *testing.T) {
 		t.Fatalf("From() did not release source: %#v", source)
 	}
 	target.SuccessWithData("new data").ErrorCustom(33, "custom")
-	if target.GetCode() != 33 || target.GetMsg() != "custom" || target.GetData() != "new data" {
+	// ErrorCustom 现在会清空 Data，避免旧成功数据泄漏到错误响应
+	if target.GetCode() != 33 || target.GetMsg() != "custom" || target.GetData() != nil {
 		t.Fatalf("lifecycle target = code=%d msg=%q data=%#v", target.GetCode(), target.GetMsg(), target.GetData())
 	}
 	target.SuccessWithData(nil)

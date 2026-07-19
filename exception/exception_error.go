@@ -144,10 +144,12 @@ func (e *Exception) SuccessWithData(data ...interface{}) response.IResponse {
 	return e
 }
 
-// ErrorCustom 错误时的响应,重置code和msg字段
+// ErrorCustom 错误时的响应,重置code、msg和data字段
+// 显式清空 Data，避免对象先带成功数据、再转错误响应时旧数据泄漏到错误响应
 func (e *Exception) ErrorCustom(code int, msg string) response.IResponse {
 	e.Code = code
 	e.Msg = msg
+	e.Data = nil
 	return e
 }
 
@@ -312,10 +314,12 @@ func (e *ValidateException) SuccessWithData(data ...interface{}) response.IRespo
 	return e
 }
 
-// ErrorCustom 错误时的响应,重置code和msg字段
+// ErrorCustom 错误时的响应,重置code、msg和data字段
+// 显式清空 Data，避免对象先带成功数据、再转错误响应时旧数据泄漏到错误响应
 func (e *ValidateException) ErrorCustom(code int, msg string) response.IResponse {
 	e.Code = code
 	e.Msg = msg
+	e.Data = nil
 	return e
 }
 

@@ -110,19 +110,24 @@ func (r *RespInfo) GetData() interface{} {
 }
 
 // SuccessWithData 成功时的响应，重置data字段
+// 无参调用时同样清空 Data，避免链式复用同一对象时残留上一次的旧数据
 func (r *RespInfo) SuccessWithData(data ...interface{}) IResponse {
 	r.Code = 0
 	r.Msg = "ok"
 	if len(data) > 0 {
 		r.Data = data[0]
+	} else {
+		r.Data = nil
 	}
 	return r
 }
 
-// ErrorCustom 错误时的响应，重置code和msg字段
+// ErrorCustom 错误时的响应，重置code、msg和data字段
+// 显式清空 Data，避免对象先带成功数据、再转错误响应时旧数据泄漏到错误响应
 func (r *RespInfo) ErrorCustom(code int, msg string) IResponse {
 	r.Code = code
 	r.Msg = msg
+	r.Data = nil
 	return r
 }
 
