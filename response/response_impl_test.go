@@ -126,6 +126,37 @@ func TestErrorWithoutPool(t *testing.T) {
 	}
 }
 
+// TestRespInfo_SuccessWithDataNoArgsClearsData 验证链式复用同一对象时，
+// 无参调用 SuccessWithData() 会清空上一次残留的 Data，而不是保留旧值。
+func TestRespInfo_SuccessWithDataNoArgsClearsData(t *testing.T) {
+	resp := NewRespInfoWithoutPool(0, "ok", "stale-data")
+	if resp.GetData() != "stale-data" {
+		t.Fatalf("前置条件失败：期望初始Data为stale-data，实际%v", resp.GetData())
+	}
+
+	resp.SuccessWithData()
+	if resp.GetData() != nil {
+		t.Fatalf("SuccessWithData()无参调用后Data应为nil，实际%v", resp.GetData())
+	}
+}
+
+// TestRespInfo_ErrorCustomClearsStaleData 验证同一对象先带成功数据、
+// 再转错误响应时，ErrorCustom 必须清空旧 Data，避免泄漏到错误响应。
+func TestRespInfo_ErrorCustomClearsStaleData(t *testing.T) {
+	resp := NewRespInfoWithoutPool(0, "ok", "stale-data")
+	if resp.GetData() != "stale-data" {
+		t.Fatalf("前置条件失败：期望初始Data为stale-data，实际%v", resp.GetData())
+	}
+
+	resp.ErrorCustom(40001, "参数错误")
+	if resp.GetCode() != 40001 || resp.GetMsg() != "参数错误" {
+		t.Fatalf("ErrorCustom基础字段错误")
+	}
+	if resp.GetData() != nil {
+		t.Fatalf("ErrorCustom后Data应为nil，实际%v", resp.GetData())
+	}
+}
+
 // ----------------- Test: 通用构造函数 -----------------
 
 func TestNewRespInfo_WithPool(t *testing.T) {

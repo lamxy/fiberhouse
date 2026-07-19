@@ -208,7 +208,8 @@ func TestException_ResponseLifecycleAndContextStatus(t *testing.T) {
 	}
 	exception.SuccessWithData("ignored")
 	exception.ErrorCustom(1003, "custom")
-	if exception.Code != 1003 || exception.Msg != "custom" {
+	// ErrorCustom 现在会清空 Data，避免旧数据泄漏到错误响应
+	if exception.Code != 1003 || exception.Msg != "custom" || exception.Data != nil {
 		t.Fatalf("ErrorCustom() = %#v", exception)
 	}
 
@@ -253,7 +254,8 @@ func TestValidateException_ResponseLifecycleAndPanic(t *testing.T) {
 	exception.Reset(2002, "reset", "data")
 	exception.SuccessWithData("ignored")
 	exception.ErrorCustom(2003, "custom")
-	if exception.GetCode() != 2003 || exception.GetMsg() != "custom" || exception.GetData() != "data" {
+	// ErrorCustom 现在会清空 Data，避免旧数据泄漏到错误响应
+	if exception.GetCode() != 2003 || exception.GetMsg() != "custom" || exception.GetData() != nil {
 		t.Fatalf("validate lifecycle = %#v", exception)
 	}
 	source := response.NewRespInfo(2004, "source", "copied")

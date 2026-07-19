@@ -135,6 +135,7 @@ func (r *RespInfoPB) From(resp IResponse, needToRelease bool) IResponse {
 }
 
 // SuccessWithData 成功时的响应，重置data字段
+// 无参调用时同样清空 Data，避免链式复用同一对象时残留上一次的旧数据
 func (r *RespInfoPB) SuccessWithData(data ...interface{}) IResponse {
 	if len(data) > 0 {
 		d := data[0]
@@ -149,14 +150,18 @@ func (r *RespInfoPB) SuccessWithData(data ...interface{}) IResponse {
 		} else {
 			r.pb.Data = nil
 		}
+	} else {
+		r.pb.Data = nil
 	}
 	return r
 }
 
-// ErrorCustom 错误时的响应，重置code和msg字段
+// ErrorCustom 错误时的响应，重置code、msg和data字段
+// 显式清空 Data，避免对象先带成功数据、再转错误响应时旧数据泄漏到错误响应
 func (r *RespInfoPB) ErrorCustom(code int, msg string) IResponse {
 	r.pb.Code = int32(code)
 	r.pb.Msg = msg
+	r.pb.Data = nil
 	return r
 }
 
