@@ -328,6 +328,44 @@ func TestCoreInit_GinTLSRejectsInvalidConfiguredCertificate(t *testing.T) {
 	})
 }
 
+func TestCoreInit_CustomCoreCfgStillResolvesJSONCodec(t *testing.T) {
+	isolateTask4ErrorHandlerSingleton(t)
+	ctx := newTask4InternalAppContext(t, nil)
+	frame := &task4Frame{}
+	manager := task4GoodCodecManager()
+	cfg := &fiber.Config{AppName: "custom-cfg"}
+	core := &CoreWithFiber{ctx: ctx, CoreCfg: cfg}
+
+	core.InitCoreApp(frame, manager)
+
+	require.NotNil(t, core.coreApp)
+	assert.Equal(t, "custom-cfg", core.coreApp.Config().AppName)
+	// 使用自定义 CoreCfg 并继续标准启动链时，cf.json 仍必须被赋值，
+	// 否则 RegisterAppMiddleware 中 cf.json.Marshal 会因 nil 接口 panic。
+	assert.Same(t, manager.result, core.json)
+	assert.Equal(t, 1, manager.loadCalls)
+
+	// RegisterAppMiddleware依赖cf.json.Marshal；直接验证该调用不会因cf.json为nil接口而panic
+	// (recover manager 的装配是独立于本修复范围的关注点，此处不涉及)
+	require.NotPanics(t, func() {
+		_, err := core.json.Marshal(map[string]string{"ok": "true"})
+		require.NoError(t, err)
+	})
+}
+
+func TestCoreInit_CustomCoreCfgWithNilFrameSkipsCodecResolution(t *testing.T) {
+	ctx := newTask4InternalAppContext(t, nil)
+	cfg := &fiber.Config{AppName: "custom-cfg-no-frame"}
+	core := &CoreWithFiber{ctx: ctx, CoreCfg: cfg}
+
+	require.NotPanics(t, func() {
+		core.InitCoreApp(nil)
+	})
+	require.NotNil(t, core.coreApp)
+	assert.Equal(t, "custom-cfg-no-frame", core.coreApp.Config().AppName)
+	assert.Nil(t, core.json)
+}
+
 func TestCoreRegistration_ModuleSwaggerAndApplicationHooks(t *testing.T) {
 	for _, testCase := range []struct {
 		name string
