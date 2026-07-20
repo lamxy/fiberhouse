@@ -158,3 +158,23 @@ func TestValidate_FreshInstancesDoNotShareRegistrationState(t *testing.T) {
 	assert.NotContains(t, second.GetLangList(), "custom")
 	assert.NotContains(t, second.GetValidators(), "custom")
 }
+
+// TestValidate_EnglishFallbackAlwaysAvailableWhenLangFlagsOmitsEnglish 验证当配置的
+// langFlags 只包含非英语语言时，默认英文验证器和翻译器仍然存在，不会返回 nil。
+func TestValidate_EnglishFallbackAlwaysAvailableWhenLangFlagsOmitsEnglish(t *testing.T) {
+	w := newValidateTestWrap(LangZhCN)
+
+	require.NotNil(t, w.GetValidate(), "GetValidate() with no lang arg must fall back to a non-nil English validator")
+	require.NotNil(t, w.GetTranslator(), "GetTranslator() with no lang arg must fall back to a non-nil English translator")
+	require.NotNil(t, w.GetValidate("unsupported"), "GetValidate(unsupported) must fall back to a non-nil English validator")
+	require.NotNil(t, w.GetTranslator("unsupported"), "GetTranslator(unsupported) must fall back to a non-nil English translator")
+}
+
+// TestValidate_EnglishFallbackAlwaysAvailableWhenLangFlagsAllUnrecognized 验证当配置的
+// langFlags 全部是未识别的语言标志时，默认英文验证器和翻译器仍然存在，不会返回 nil。
+func TestValidate_EnglishFallbackAlwaysAvailableWhenLangFlagsAllUnrecognized(t *testing.T) {
+	w := newValidateTestWrap("fr", "de")
+
+	require.NotNil(t, w.GetValidate(), "GetValidate() with no lang arg must fall back to a non-nil English validator")
+	require.NotNil(t, w.GetTranslator(), "GetTranslator() with no lang arg must fall back to a non-nil English translator")
+}
