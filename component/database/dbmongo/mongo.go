@@ -83,7 +83,7 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) (*mongo.Client, e
 		SetRegistry(registry).
 		ApplyURI(applyUri).
 		SetBSONOptions(&options.BSONOptions{UseJSONStructTags: true, ErrorOnInlineDuplicates: true, IntMinSize: true}). // 驱动程序在未指定"bson"结构标记的情况下使用"json"结构标记
-		SetWriteConcern(writeconcern.Majority()). // PSA副本集默认写级别为1
+		SetWriteConcern(writeconcern.Majority()).                                                                       // PSA副本集默认写级别为1
 		SetMaxPoolSize(maxPoolSize).
 		SetMinPoolSize(minPoolSize).
 		SetMaxConnIdleTime(maxConnIdleTime).
