@@ -1,4 +1,14 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(rtk go *)",
+      "Bash(rtk ls *)",
+      "Bash(cd *)",
+      "Bash(echo \"VET_EXIT=$?\")",
+      "Bash(rtk git *)",
+      "Bash(rtk grep *)"
+    ]
+  },
   "enableAllProjectMcpServers": true,
   "sandbox": {
     "enabled": false,
