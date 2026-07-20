@@ -63,21 +63,18 @@ func NewWrap(cfg appconfig.IAppConfig) *Wrap {
 	// 获取配置文件中设置的语言标志列表
 	langFlags := cfg.Strings("application.validate.langFlags")
 
-	// 如果配置文件中没有设置语言标志，则使用默认的语言标志
-	var defaultValidateList []ValidateInitializer
+	// 默认英文验证器和翻译器必须始终存在，用于 GetValidate/GetTranslator 的未知语言回退，
+	// 与配置的 langFlags 是否包含 en 无关。无论配置是否显式包含 en，都只注册一次。
+	defaultValidateList := []ValidateInitializer{GetEnValidateInitializer()}
 
-	if len(langFlags) == 0 {
-		defaultValidateList = append(defaultValidateList, GetEnValidateInitializer())
-	} else {
-		for _, langFlag := range langFlags {
-			switch strings.ToLower(langFlag) {
-			case LangZhCN:
-				defaultValidateList = append(defaultValidateList, GetZhCNValidateInitializer())
-			case LangZhTW:
-				defaultValidateList = append(defaultValidateList, GetZhTWValidateInitializer())
-			case LangEn:
-				defaultValidateList = append(defaultValidateList, GetEnValidateInitializer())
-			}
+	for _, langFlag := range langFlags {
+		switch strings.ToLower(langFlag) {
+		case LangZhCN:
+			defaultValidateList = append(defaultValidateList, GetZhCNValidateInitializer())
+		case LangZhTW:
+			defaultValidateList = append(defaultValidateList, GetZhTWValidateInitializer())
+		case LangEn:
+			// 已经在上面无条件注册，此处不重复添加，避免 GetLangList() 出现重复的 "en"。
 		}
 	}
 
