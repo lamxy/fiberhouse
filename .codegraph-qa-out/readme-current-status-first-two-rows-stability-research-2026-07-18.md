@@ -162,6 +162,8 @@ go test ./component/validate -run 'TestValidate_.*Fallback' -count=1
 
 ### P0-5：JSON codec provider 重复初始化返回 nil
 
+> 2026-07-21 已完成：`json_fiber_provider.go`、`json_gin_provider.go`、`json_sonic_fiber_provider.go`、`json_sonic_gin_provider.go` 的四个 provider 新增未导出字段缓存首次初始化构造出的 codec 实例，`Initialize()` 的 `StateLoaded` 分支现在返回该缓存值，不再返回 `nil`；首次初始化路径的构造逻辑与副作用赋值（如 `ginJson.API = jcodec`）保持原位置不变。回归测试见 `json_codec_providers_test.go` 的 `TestJsonJCodecFiberProvider_RepeatedInitializeReturnsSameCodec`、`TestJsonJCodecGinProvider_RepeatedInitializeReturnsSameCodec`、`TestSonicJCodecFiberProvider_RepeatedInitializeReturnsSameCodec`、`TestSonicJCodecGinProvider_RepeatedInitializeReturnsSameCodec`。
+
 证据：Fiber/Gin 的 Std/Sonic 四个 codec provider 在 `StateLoaded` 时返回 `(nil, nil)`；默认 Provider 集合是进程级单例，manager 再次加载同一 provider 时会拿到 nil，Core 随后可能在类型断言处 panic。
 
 最小方向：provider 重入时返回已有/可重新取得的 codec，而不是成功加 nil；不改变 manager 或 Provider 接口。
@@ -260,7 +262,7 @@ CI 不需要新增容器。可以在现有 smoke job 增加类似的定向步骤
 2. Fiber 自定义 `CoreCfg` 的 nil codec 路径。
 3. `RespInfo` 旧 Data 残留。
 4. validation 默认英文 fallback（已完成）。
-5. JSON codec provider 重复初始化返回 nil。
+5. JSON codec provider 重复初始化返回 nil（已完成）。
 6. LocalCache/RedisDb Close 的 CAS 幂等补丁。
 7. MySQL 初次 Ping 失败关闭连接池。
 8. Gin loopback HTTP/TLS 握手测试。
