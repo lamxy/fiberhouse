@@ -220,6 +220,14 @@ go test ./component/database/dbmysql -count=1
 
 ### P1-4：复用 smoke 服务的 live integration
 
+> 2026-07-21 已完成：四个小批次均已按建议拆分为独立分支分别落地，全部带 `//go:build liveintegration` build tag，只在 CI `smoke` job 的统一步骤（`go test -tags=liveintegration ./... -run 'TestLive_' -v -count=1`）中定向执行，普通 `quality`/`race` job 不连接外部服务、不受影响。
+> - Redis cache：`component/cache/cacheremote/redis_cache_live_test.go` 的 `TestLive_RedisDb_PingSetGetDeleteClose`（Ping/Set/Get/Delete/Close，db 14）。
+> - asynq：`task_live_test.go` 的 `TestLive_TaskWorkerDispatcher_EnqueueConsumeShutdown`（db 15，唯一 task type 入队，10 秒等待消费，3 秒验证 Shutdown）。
+> - MySQL：`component/database/dbmysql/mysql_live_test.go` 的 `TestLive_MysqlDb_CreateWriteReadDropClose`（唯一临时表，`t.Cleanup` 依 LIFO 顺序先 DropTable 后 Close）。
+> - MongoDB：`component/database/dbmongo/mongo_live_test.go` 的 `TestLive_MongoDb_CreateWriteReadDropClose`（唯一临时 collection，`t.Cleanup` 依 LIFO 顺序先 Drop 后 Close）。
+>
+> 四个小批次均未修改任何生产代码，均使用唯一资源名、短 context 与 `t.Cleanup`。
+
 推荐给 live tests 增加显式 `liveintegration` build tag，并只在 smoke job 中定向运行。普通 quality/race 不连接外部服务。
 
 推荐拆成小批次：
@@ -278,8 +286,8 @@ CI 不需要新增容器。可以在现有 smoke job 增加类似的定向步骤
 6. LocalCache/RedisDb Close 的 CAS 幂等补丁（已完成）。
 7. MySQL 初次 Ping 失败关闭连接池（已完成）。
 8. Gin loopback HTTP/TLS 握手测试（已完成）。
-9. Redis cache + asynq live integration。
-10. MySQL、MongoDB live integration，各自独立提交。
+9. Redis cache + asynq live integration（已完成）。
+10. MySQL、MongoDB live integration，各自独立提交（已完成）。
 11. 重新核对逐能力状态；只有某项能力满足创建、运行、失败、关闭、验证和兼容承诺后，才单独讨论从实验性晋级。
 12. L2 Wait flush 仅在单独设计审核通过后进入实现。
 
