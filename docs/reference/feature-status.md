@@ -4,9 +4,9 @@
 
 ## 如何理解状态
 
-- **实现阶段**：`占位`表示没有完整运行链；`已实现`表示有可执行实现但未证明进入框架或示例主链；`已接入`表示存在明确入口和可达运行路径。
-- **支持级别**：`实验性`表示兼容、生命周期、错误、并发或验证仍未达到晋级门槛；`稳定公共能力`必须满足本文末尾全部晋级条件。本页当前不把任何能力新增标记为稳定。
-- **API 受众**：`公共 API`面向使用方；`内部工具`描述设计受众，不覆盖 Go package 实际可导入的兼容事实；占位能力使用`未承诺`。
+- **实现阶段**：`已实现`表示有可执行实现但未证明进入框架或示例主链；`已接入`表示存在明确入口和可达运行路径。
+- **支持级别**：`实验性`表示兼容、生命周期、错误、并发或验证仍未达到晋级要求；`稳定公共能力`必须满足本文末尾全部晋级条件。本页当前不把任何能力新增标记为稳定。
+- **API 受众**：`公共 API`面向使用方；`内部工具`描述设计受众，不覆盖 Go package 实际可导入的兼容事实。
 
 表中的“默认集合”表示对象是否由 `DefaultProviders()` 或 `DefaultPManagers(ctx)` 收集，不表示 `Default()` 自动装配。状态以完整能力为单位，而不是以单个导出符号为单位；阅读每一行时必须同时检查启用方式，以及创建、运行、失败、关闭四段生命周期。
 
@@ -46,18 +46,6 @@
 | jsonconvert | 已接入 | 实验性 | 内部工具 | recovery 错误处理按调用借用 wrapper，用后显式 `Release` | 创建、运行、失败回退、释放均有路径；单个 wrapper 不支持并发复用 | 单元/契约 | 主要把任意数据转换为 JSON 或字符串；见[组件目录](components.md)、[错误与恢复](../guides/errors-and-recovery.md) |
 | mongodecimal | 已接入 | 实验性 | 内部工具 | 随 `dbmongo.NewClient` 构造自动注册到 BSON registry，不是独立服务 | 创建和运行随 Mongo client；失败与关闭也依附 client，没有独立生命周期 | 无专项测试 | 只服务 `decimal.Decimal` BSON 编解码，外部 Mongo live 行为未验证；见[组件目录](components.md)、[数据库指南](../guides/database.md) |
 | logging writer 与 task logger adaptor | 已接入 | 实验性 | 内部工具 | bootstrap 按配置选择同步/异步 writer；task logger adaptor 由示例任务显式装配 | 创建、运行、失败和关闭入口存在；异步停止生产者与关闭顺序未统一编排 | 单元/契约 + race | 异步 writer 可能丢日志，task adaptor 目前主要服务示例；见[组件目录](components.md)、[日志指南](../guides/logging.md)、[异步任务指南](../guides/background-tasks.md) |
-
-## 预留与占位
-
-| 能力 | 实现阶段 | 支持级别 | API 受众 | 启用方式 | 生命周期完整度 | 验证级别 | 限制与主指南 |
-|---|---|---|---|---|---|---|---|
-| plugins | 占位 | 不适用 | 未承诺 | 不适用；不在默认集合，配置字段不会启用它 | 创建、运行、失败、关闭均无完整路径 | 不适用 | 只有 `Plugin` 接口，没有 loader、registry 或应用调用链；见本页、[扩展 FiberHouse](../guides/extending-fiberhouse.md) |
-| RPC | 占位 | 不适用 | 未承诺 | 不适用 | 创建、运行、失败、关闭均无完整路径 | 不适用 | `component/rpc` 仅占位；`response/pb` 的 Protobuf HTTP 响应不是 RPC；见本页、[响应与序列化](../guides/response-and-serialization.md) |
-| MQ | 占位 | 不适用 | 未承诺 | 不适用；配置中的 `mq` 不会创建能力 | 创建、运行、失败、关闭均无完整路径 | 不适用 | 只有 RabbitMQ 方向说明，没有 provider、client 或 consumer；见本页 |
-| i18n | 占位 | 不适用 | 未承诺 | 不适用 | 创建、运行、失败、关闭均无完整路径 | 不适用 | `component/i18n` 没有 Go 实现；validate 翻译不等于通用 i18n；见本页、[验证指南](../guides/validation.md) |
-| Go JSON codec | 占位 | 不适用 | 未承诺 | 不适用；默认集合没有 Go JSON provider | 创建、运行、失败、关闭均无完整路径 | 不适用 | `component/codec/json/gojson.go` 只有 package 声明，即使常量存在也不可选择；见[响应与序列化](../guides/response-and-serialization.md) |
-| 空 component/middleware 目录说明 | 占位 | 不适用 | 未承诺 | 不适用 | 创建、运行、失败、关闭均无完整路径 | 不适用 | placeholder 文档和示例空分支只表达目录意图；见[组件目录](components.md)、[示例目录](examples.md) |
-| 未消费的生命周期 hook | 占位 | 不适用 | 未承诺 | 不适用；自定义代码不能假设声明的位点会执行 | 创建只有声明；运行、失败、关闭均无消费路径 | 不适用 | `ServerShutdownBefore` 与 `ServerShutdownAfter` 已声明但启动链未读取；见[Web 启动生命周期](../concepts/startup-lifecycle.md) |
 
 ## 判断依据
 

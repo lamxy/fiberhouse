@@ -1,6 +1,6 @@
 # FiberHouse 🏠
 
-一个 Go Web 装配式框架：把配置、日志、HTTP 内核、Provider 扩展、业务注册器这些启动一个服务前要打理好的环节，用一条统一的启动链串起来。默认使用 Fiber，Gin 可随时切换；数据库、缓存、任务等组件是否接入，完全由应用显式决定——框架不会替你猜。
+FiberHouse 是一个 Go Web 装配式框架：把配置、日志、HTTP 内核、Provider 扩展、业务注册器这些启动一个服务前要打理好的环节，用一条统一的启动链串起来。框架使用全面接口化设计，默认使用 Fiber 作爲核心， 支持 Gin 核心随时切换，以及通过实现相应接口来定制核心和扩展功能；数据库、缓存、任务等组件是否接入，完全由应用显式决定。
 
 [![Go Version](https://img.shields.io/badge/go-1.25-blue.svg)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -10,23 +10,24 @@
 
 搭一个 Go Web 服务，配置怎么加载、日志往哪写、中间件按什么顺序装、共享资源怎么让全局都能访问到——这些接线工作每个项目都要做一遍，也很容易做得零散。FiberHouse 不是帮你生成业务目录的脚手架，而是把这条接线路径固定下来：一套启动链（`FiberHouse` → `FrameStarter` → `CoreStarter`）、一套可插拔的扩展机制（Provider / Manager / Location）、一套跨组件访问共享实例的方式（`GlobalManager`）。
 
-真正的业务逻辑——路由、中间件、连接管理、关闭顺序——仍然由应用自己实现。框架不会扫描目录，也不会因为某个配置项存在就自动启用功能，所有接入都是显式的。
+真正的业务逻辑——路由、中间件、连接管理、关闭顺序——仍然由应用自己实现。框架不会扫描目录，也不会因为某个配置项存在就偷偷启用功能，所有接入都是显式的。
+框架提供了默认的框架级启动器（FrameStarter），核心启动器（CoreStarter），都可以自由定制、扩展和随时切换，样例应用(example_application)提供了统一规范的上层应用的业务结构和接入模板。
 
 ## 目前是什么状态
 
-FiberHouse 仍在快速迭代中，**还没有达到可以直接用于生产环境的稳定程度**。Web 主链（Fiber/Gin、配置日志、统一响应、参数校验）、`GlobalManager`，以及 MySQL/MongoDB/Redis/缓存/asynq 任务/CLI 这些可选组件都已经可以接入使用，具体见下面的[核心能力](#核心能力)。
+FiberHouse 仍在逐步迭代和完善中，**尚未达到保证直接用于生产环境的稳定性**。Web 主链（Fiber/Gin、配置日志、统一响应、参数校验）、`GlobalManager`，以及 MySQL/MongoDB/Redis/缓存/asynq 任务/CLI 这些可选组件都已经可以接入使用，具体见下面的[核心能力](#核心能力)。
 
-部分错误处理、并发场景和资源关闭路径还在完善中，接口后续也可能调整。想了解某个能力具体成熟到什么程度、有哪些已知限制，看[功能状态](docs/reference/feature-status.md)——这是全仓库最新、最细的事实来源。`example_main`/`example_config`/`example_application` 只用来展示调用路径，不要当生产模板直接使用。
+部分错误处理、并发场景和资源关闭路径还在打磨中，接口后续也可能调整。想了解某个能力具体成熟到什么程度、有哪些已知限制，看[功能状态](docs/reference/feature-status.md)——这是全仓库最新、最细的事实来源。`example_main`/`example_config`/`example_application` 只用来展示调用路径，不要当生产模板直接使用。
 
 ## 核心能力
 
-- Fiber 和 Gin 两种 HTTP 内核，同一套启动模型下切换。
-- Provider / Manager / Location：能力如何被发现、加载、在什么时机执行，都可拆可换。
+- Fiber 和 Gin 并支持扩展多种 HTTP 内核，在同一套启动模型下切换，支持上层统一的样例应用结构模板。
+- Provider / Manager / Location：能力如何被发现、加载、在什么时机执行，都可拆可换：[Provider 系统](docs/concepts/provider-system.md)。
 - `ApplicationRegister`、`ModuleRegister`、`TaskRegister` 三类注册器，把应用能力接入 Starter。
 - YAML + 环境变量的配置装配，zerolog 输出到 console 或轮转文件。
 - `GlobalManager` + `Context` + `Locator`，跨组件访问已注册的共享实例。
 - 统一 `{code,msg,data}` 响应、panic recovery、参数校验，可选 MsgPack/Protobuf body。
-- MySQL、MongoDB、Redis、本地/二级缓存、asynq 后台任务、基于 urfave/cli 的命令行，按需接入。
+- MySQL、MongoDB、Redis、本地/二级缓存、asynq 后台任务、基于 urfave/cli 的命令行子应用，按需接入。
 
 ## 环境要求
 
@@ -97,15 +98,14 @@ func main() {
 	providers := fh.DefaultProviders().AndMore(newApplicationProviders(house.AppCtx)...)
 	managers := fh.DefaultPManagers(house.AppCtx).AndMore(newApplicationManagers(house.AppCtx)...)
 
-	house.
-		WithFrameStarterOptions(frameOptions...).
+	house.WithFrameStarterOptions(frameOptions...).
 		WithProviders(providers...).
 		WithPManagers(managers...).
 		RunServer()
 }
 ```
 
-`newApplicationRegister`、`newModuleRegister` 这几个函数代表应用必须自己实现的部分，示例里省略是为了篇幅，不代表可以省略这些职责。完整接线可参照 [`example_main/main.go`](example_main/main.go)，但不要把 example package 当作稳定依赖直接 import。`Default()` 也不会替你调用 `DefaultProviders()`/`DefaultPManagers(ctx)`，这一步需要自己完成。
+`newApplicationRegister`、`newModuleRegister` 这几个函数代表应用必须自己实现接口的部分，示例里省略是为了篇幅，不代表可以省略这些职责。完整接线可参照 [`example_main/main.go`](example_main/main.go)，但不要把 example package 当作稳定依赖直接 import。`Default()` 也不会替你调用 `DefaultProviders()`/`DefaultPManagers(ctx)`，这一步需要自己完成。
 
 ## 想深入了解框架内部
 
