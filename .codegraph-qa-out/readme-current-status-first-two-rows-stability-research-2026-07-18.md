@@ -192,6 +192,8 @@ go test -race ./component/cache/cachelocal ./component/cache/cacheremote -count=
 
 ### P1-2：MySQL 初次 Ping 失败泄漏已创建连接池
 
+> 2026-07-21 已完成：`component/database/dbmysql/mysql.go` 的 `NewClient` 在 `PingContext` 失败路径新增 `sqlDb.Close()` 清理已创建的连接池，`Close()` 自身的错误仅记录日志、不覆盖原始 ping 错误，`gorm.Open`/`db.DB()` 失败路径（尚无可关闭的连接池句柄）与 ping 成功路径行为不变。回归测试见 `component/database/dbmysql/mysql_test.go` 的 `TestNewClient_PingFailureReturnsError`。
+
 证据：`dbmysql.NewClient` 已经取得 `sql.DB`，但 `PingContext` 失败后直接返回，没有关闭该连接池。
 
 最小方向：仅在初次 Ping 失败路径关闭已经创建的 `sql.DB`，并保留原始连接错误作为主要返回错误。
@@ -266,7 +268,7 @@ CI 不需要新增容器。可以在现有 smoke job 增加类似的定向步骤
 4. validation 默认英文 fallback（已完成）。
 5. JSON codec provider 重复初始化返回 nil（已完成）。
 6. LocalCache/RedisDb Close 的 CAS 幂等补丁（已完成）。
-7. MySQL 初次 Ping 失败关闭连接池。
+7. MySQL 初次 Ping 失败关闭连接池（已完成）。
 8. Gin loopback HTTP/TLS 握手测试。
 9. Redis cache + asynq live integration。
 10. MySQL、MongoDB live integration，各自独立提交。
