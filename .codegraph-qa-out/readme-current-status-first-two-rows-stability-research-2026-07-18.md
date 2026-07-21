@@ -103,6 +103,8 @@ README 当前写法是：
 
 ### P0-1：AsyncChannelWriter 并发 Write/Close 和重复 Close
 
+> 2026-07-21 复核确认已完成（先前会话已修复，本次为事后核实并补记）：`component/logging/writer/async_channel_writer.go` 的 `Close()` 已改用 `atomic.CompareAndSwapInt32` 选出唯一关闭者，其余并发调用者阻塞等待 `closeDone` channel 并复用首次关闭的结果（`closeErr`），与同目录 `async_diode_writer.go` 的既有并发关闭模式一致；`Write()` 通过 `activeWriters` 计数与 `writersDrained` channel 协调，避免 `Close` 提前关闭 `logChan` 导致并发 `Write` 触发 panic。回归测试见 `component/logging/writer/async_channel_writer_test.go` 的 `TestAsyncChannelWriter_SequentialCloseReturnsFirstResult`、`TestAsyncChannelWriter_ConcurrentCloseReturnsFirstResult`、`TestAsyncChannelWriter_WriteAdmittedBeforeCloseCompletes`。
+
 证据：`component/logging/writer/async_channel_writer.go` 中，`Write` 先检查 `closed`，随后向 `logChan` 发送；`Close` 直接写入关闭标志并 `close(logChan)`。
 
 当前可能出现：
@@ -122,6 +124,8 @@ go test -race ./component/logging/writer -run AsyncChannelWriter -count=1
 
 ### P0-2：Fiber 自定义 CoreCfg 路径留下 nil JSON codec
 
+> 2026-07-21 复核确认已完成（先前会话已修复，本次为事后核实并补记）：`CoreWithFiber.InitCoreApp` 在 `CoreCfg != nil` 路径下继续标准启动链时，会正确完成 codec 解析并赋值给 `cf.json`，不再提前返回跳过初始化，`RegisterAppMiddleware` 调用 `cf.json.Marshal` 不再有 nil pointer panic 风险。回归测试见 `core_starter_init_test.go` 的 `TestCoreInit_CustomCoreCfgStillResolvesJSONCodec`、`TestCoreInit_CustomCoreCfgWithNilFrameSkipsCodecResolution`。
+
 证据：`CoreWithFiber.InitCoreApp` 在 `CoreCfg != nil` 时创建 `fiber.App` 后立即返回，没有给 `cf.json` 赋值；后续 `RegisterAppMiddleware` 无条件调用 `cf.json.Marshal` 配置 recovery。
 
 当前结果：使用公开的自定义 CoreCfg 选项并继续标准启动链时，可能出现 nil pointer panic。
@@ -135,6 +139,8 @@ go test . -run 'TestCoreWithFiber_WithCoreCfg' -count=1
 ```
 
 ### P0-3：RespInfo 链式复用残留旧 Data
+
+> 2026-07-21 复核确认已完成（先前会话已修复，本次为事后核实并补记）：`response/response_impl.go` 的 `RespInfo.SuccessWithData()` 无参调用时显式清空 `Data`，`ErrorCustom()` 同样清空 `Data`；`exception/exception_error.go` 的 `Exception`/`ValidateException` 的 `ErrorCustom()` 亦同步清空 `Data`，避免链式复用同一对象时旧数据残留。回归测试见 `response/response_impl_test.go` 的 `TestRespInfo_SuccessWithDataNoArgsClearsData`、`TestRespInfo_ErrorCustomClearsStaleData`。
 
 证据：`response/response_impl.go` 的方法 `SuccessWithData()` 在没有参数时不清空 `Data`，`ErrorCustom()` 也只改 `Code`/`Msg`。同一对象先带成功数据、再转错误响应时，旧数据可能进入错误响应。
 
@@ -264,9 +270,9 @@ CI 不需要新增容器。可以在现有 smoke job 增加类似的定向步骤
 
 每一项都必须独立取证、独立工作树、独立审核，不能把下列清单合成一个大分支：
 
-1. `AsyncChannelWriter` 并发 Write/Close 和重复 Close。
-2. Fiber 自定义 `CoreCfg` 的 nil codec 路径。
-3. `RespInfo` 旧 Data 残留。
+1. `AsyncChannelWriter` 并发 Write/Close 和重复 Close（已完成）。
+2. Fiber 自定义 `CoreCfg` 的 nil codec 路径（已完成）。
+3. `RespInfo` 旧 Data 残留（已完成）。
 4. validation 默认英文 fallback（已完成）。
 5. JSON codec provider 重复初始化返回 nil（已完成）。
 6. LocalCache/RedisDb Close 的 CAS 幂等补丁（已完成）。
