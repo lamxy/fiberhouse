@@ -8,6 +8,7 @@ import (
 
 type JsonJCodecGinProvider struct {
 	IProvider
+	jcodec *jsoncodec.StdJSON
 }
 
 // NewJsonJCodecGinProvider 创建一个新的 JSON 编解码提供者
@@ -25,10 +26,11 @@ func NewJsonJCodecGinProvider() *JsonJCodecGinProvider {
 func (j *JsonJCodecGinProvider) Initialize(ctx IContext, fn ...ProviderInitFunc) (any, error) {
 	j.Check()
 	if j.Status() == StateLoaded {
-		return nil, nil
+		return j.jcodec, nil
 	}
 	jcodec := jsoncodec.StdJsonDefault()
 	ginJson.API = jcodec
+	j.jcodec = jcodec
 	j.SetStatus(StateLoaded)
 	return jcodec, nil
 }

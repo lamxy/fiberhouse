@@ -7,6 +7,7 @@ import (
 
 type SonicJCodecGinProvider struct {
 	IProvider
+	jcodec ginJson.Core
 }
 
 // NewJCodecProvider 创建一个新的 JSON 编解码提供者
@@ -24,7 +25,7 @@ func NewSonicJCodecGinProvider() *SonicJCodecGinProvider {
 func (j *SonicJCodecGinProvider) Initialize(ctx IContext, fn ...ProviderInitFunc) (any, error) {
 	j.Check()
 	if j.Status() == StateLoaded {
-		return nil, nil
+		return j.jcodec, nil
 	}
 	// 实现 JSON 编解码器的注册逻辑
 	jcodec, err := GetInstance[ginJson.Core](ctx.GetStarter().GetApplication().GetDefaultTrafficCodecKey())
@@ -32,6 +33,7 @@ func (j *SonicJCodecGinProvider) Initialize(ctx IContext, fn ...ProviderInitFunc
 		return nil, err
 	}
 	ginJson.API = jcodec
+	j.jcodec = jcodec
 	j.SetStatus(StateLoaded)
 	return jcodec, nil
 }
