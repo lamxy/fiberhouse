@@ -1,48 +1,43 @@
-# FiberHouse
+# FiberHouse 🏠
 
-FiberHouse 是一个面向 Go Web 应用的装配式框架：用统一的启动链连接配置、日志、HTTP 内核、Provider 扩展、业务注册器和共享资源。它默认选择 Fiber，也提供 Gin 适配；数据库、缓存、任务和业务模块由应用显式接入。
+一个 Go Web 装配式框架：把配置、日志、HTTP 内核、Provider 扩展、业务注册器这些启动一个服务前要打理好的环节，用一条统一的启动链串起来。默认使用 Fiber，Gin 可随时切换；数据库、缓存、任务等组件是否接入，完全由应用显式决定——框架不会替你猜。
 
 [![Go Version](https://img.shields.io/badge/go-1.25-blue.svg)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build & Test](https://github.com/lamxy/fiberhouse/actions/workflows/go1.yml/badge.svg)](https://github.com/lamxy/fiberhouse/actions/workflows/go1.yml)
 
-## FiberHouse 是什么
+## FiberHouse 解决什么问题
 
-FiberHouse 解决的是“怎样把一个 Web 应用的组成部分按确定顺序接起来”，而不是替业务生成一套固定目录。它提供：
+搭一个 Go Web 服务，配置怎么加载、日志往哪写、中间件按什么顺序装、共享资源怎么让全局都能访问到——这些接线工作每个项目都要做一遍，也很容易做得零散。FiberHouse 不是帮你生成业务目录的脚手架，而是把这条接线路径固定下来：一套启动链（`FiberHouse` → `FrameStarter` → `CoreStarter`）、一套可插拔的扩展机制（Provider / Manager / Location）、一套跨组件访问共享实例的方式（`GlobalManager`）。
 
-- `FiberHouse`、`FrameStarter`、`CoreStarter` 组成的启动主链；
-- Provider / Manager / Location 扩展机制；
-- 应用、模块和任务注册器；
-- 进程级配置、日志、Context 与 `GlobalManager`；
-- Fiber/Gin、统一响应、错误恢复、校验，以及可选的数据库、缓存、后台任务和 CLI 组件。
+真正的业务逻辑——路由、中间件、连接管理、关闭顺序——仍然由应用自己实现。框架不会扫描目录，也不会因为某个配置项存在就自动启用功能，所有接入都是显式的。
 
-业务应用仍负责实现注册器、声明必需依赖、注册中间件与路由，并为连接、worker、缓存和日志 writer 设计关闭顺序。框架不会自动发现业务 package，也不会因目录或配置键存在就启用功能。
+## 目前是什么状态
 
-## 当前状态
+FiberHouse 仍在快速迭代中，**还没有达到可以直接用于生产环境的稳定程度**。Web 主链（Fiber/Gin、配置日志、统一响应、参数校验）、`GlobalManager`，以及 MySQL/MongoDB/Redis/缓存/asynq 任务/CLI 这些可选组件都已经可以接入使用，具体见下面的[核心能力](#核心能力)。
 
-FiberHouse 仍在演进中，尚未为生产级稳定性提供全面支持。Web 主链（Fiber/Gin、配置日志、Provider 装配、统一响应、参数校验）、`GlobalManager` 与扩展机制、以及 MySQL、MongoDB、Redis、本地/二级缓存、asynq 任务、CLI 等可选组件都已经可以接入使用，具体能力见下方[核心能力](#核心能力)。plugins、RPC、MQ、通用 i18n、Go 原生 JSON codec 目前仅有接口占位，还没有可运行的实现。
-
-框架整体仍在快速迭代中，部分错误处理、并发场景和资源关闭路径还不完善，接口在后续版本中也可能调整。逐项能力的详细边界、限制与验证证据见[功能状态](docs/reference/feature-status.md)。`example_main`、`example_config`、`example_application` 只展示调用路径，不是生产模板或稳定 API。
+部分错误处理、并发场景和资源关闭路径还在完善中，接口后续也可能调整。想了解某个能力具体成熟到什么程度、有哪些已知限制，看[功能状态](docs/reference/feature-status.md)——这是全仓库最新、最细的事实来源。`example_main`/`example_config`/`example_application` 只用来展示调用路径，不要当生产模板直接使用。
 
 ## 核心能力
 
-- 可在同一启动模型中选择 Fiber 或 Gin HTTP 内核。
-- 按 Type 分发 Provider，由 Manager 决定选择和执行规则，由 Location 标识生命周期入口。
-- 使用 `ApplicationRegister`、`ModuleRegister`、`TaskRegister` 把应用能力接入 Starter。
-- 从 YAML 与环境变量构建应用配置，并用 zerolog 输出 console 或轮转文件日志。
-- 通过 Context、Locator 与 `GlobalManager` 访问已注册的共享实例。
-- 提供统一 `{code,msg,data}` 响应、panic recovery、参数校验和可选 MsgPack/Protobuf body。
-- 提供 MySQL、MongoDB、Redis、本地/L2 缓存、asynq 任务及 urfave/cli 的可选集成。
+- Fiber 和 Gin 两种 HTTP 内核，同一套启动模型下切换。
+- Provider / Manager / Location：能力如何被发现、加载、在什么时机执行，都可拆可换。
+- `ApplicationRegister`、`ModuleRegister`、`TaskRegister` 三类注册器，把应用能力接入 Starter。
+- YAML + 环境变量的配置装配，zerolog 输出到 console 或轮转文件。
+- `GlobalManager` + `Context` + `Locator`，跨组件访问已注册的共享实例。
+- 统一 `{code,msg,data}` 响应、panic recovery、参数校验，可选 MsgPack/Protobuf body。
+- MySQL、MongoDB、Redis、本地/二级缓存、asynq 后台任务、基于 urfave/cli 的命令行，按需接入。
 
 ## 环境要求
 
 - Go `1.25.0`（以 [`go.mod`](go.mod) 为准）。
-- 只阅读或构建框架时不要求数据库与 Redis。
-- 按原样运行完整 Web 示例时需要 Docker 与 Docker Compose，或自行提供可用的 MongoDB、Redis、MySQL。
-- 示例 MySQL DSN 指向 `test` 数据库；Compose 只启动 MySQL 服务，不会自动创建该数据库。
+- 只是阅读代码或编译框架本身，不需要数据库和 Redis。
+- 想原样跑完整 Web 示例，需要 Docker + Docker Compose，或者自行准备好 MongoDB、Redis、MySQL。
+- 示例的 MySQL DSN 指向 `test` 库，Compose 只启动 MySQL 服务本身，不会自动建库。
 
-## 五分钟体验
+## 五分钟跑起来
 
-以下命令在仓库根目录执行，启动完整 Fiber 示例：
+在仓库根目录执行以下命令，拉起完整的 Fiber 示例：
 
 ```bash
 git clone https://github.com/lamxy/fiberhouse.git
@@ -59,23 +54,21 @@ docker compose -f docs/docker_compose_db_redis_yaml/docker-compose.yml \
 APP_ENV_application_env=dev go run ./example_main/main.go
 ```
 
-另开终端检查 Fiber liveness：
+另开一个终端确认服务是否正常：
 
 ```bash
 curl http://localhost:8080/health/livez
 ```
 
-示例会在启动期请求 MongoDB、Redis、两个 Sonic codec 和 MySQL；这里只注册 initializer 不够，`ConfigRequiredGlobalKeys()` 会主动读取这些实例。结束服务后可停止容器：
+示例启动时会连接 MongoDB、Redis、MySQL 和两个 Sonic codec 实例——只注册 initializer 是不够的，`ConfigRequiredGlobalKeys()` 会主动读取它们。用完记得停掉容器：
 
 ```bash
 docker compose -f docs/docker_compose_db_redis_yaml/docker-compose.yml down
 ```
 
-配置选择、Gin 切换和常见错误见[入门指南](docs/getting-started.md)。
+配置怎么选、Gin 怎么切、常见问题有哪些，看[入门指南](docs/getting-started.md)。
 
-## 应用装配骨架
-
-下面是结构骨架，不是可直接编译的完整程序。`newApplicationRegister`、`newModuleRegister`、`newApplicationProviders` 与 `newApplicationManagers` 代表必须由应用实现的装配；为缩短示例而省略其代码，不表示可以省略这些职责。完整接线可对照 [`example_main/main.go`](example_main/main.go)，但不要直接把示例 package 当成稳定依赖。
+## 接入你自己的应用长什么样
 
 ```go
 package main
@@ -97,19 +90,12 @@ func main() {
 		LogPath:      "./logs",
 	})
 
-	// 这些注册器由业务应用实现；至少要提供应用初始化与模块路由职责。
 	frameOptions := []fh.FrameStarterOption{
 		option.WithAppRegister(newApplicationRegister(house.AppCtx)),
 		option.WithModuleRegister(newModuleRegister(house.AppCtx)),
 	}
-
-	// 应用的中间件、路由、hook 等 Provider/Manager 也要显式加入。
-	providers := fh.DefaultProviders().AndMore(
-		newApplicationProviders(house.AppCtx)...,
-	)
-	managers := fh.DefaultPManagers(house.AppCtx).AndMore(
-		newApplicationManagers(house.AppCtx)...,
-	)
+	providers := fh.DefaultProviders().AndMore(newApplicationProviders(house.AppCtx)...)
+	managers := fh.DefaultPManagers(house.AppCtx).AndMore(newApplicationManagers(house.AppCtx)...)
 
 	house.
 		WithFrameStarterOptions(frameOptions...).
@@ -119,84 +105,48 @@ func main() {
 }
 ```
 
-如果应用不采用 Provider 化的中间件或路由，可在注册器回调中直接调用原生引擎 API；无论采用哪种方式，业务注册器、路由接线和资源初始化都必须存在。`Default()` 也不会替你调用 `DefaultProviders()` 或 `DefaultPManagers(ctx)`。
+`newApplicationRegister`、`newModuleRegister` 这几个函数代表应用必须自己实现的部分，示例里省略是为了篇幅，不代表可以省略这些职责。完整接线可参照 [`example_main/main.go`](example_main/main.go)，但不要把 example package 当作稳定依赖直接 import。`Default()` 也不会替你调用 `DefaultProviders()`/`DefaultPManagers(ctx)`，这一步需要自己完成。
 
-## 核心模型
+## 想深入了解框架内部
 
-```text
-BootConfig ──> FiberHouse.New ──> AppContext
-                                  │
-Provider ──Type──> Manager ──Location──> RunServer
-                                  │
-                FrameStarter + CoreStarter
-                       │              │
-        application/module/task    Fiber 或 Gin
-             registrars               │
-        globals / validation       middleware / routes
-```
+启动链如何串起来、Provider 系统如何设计、请求从进来到出去经过哪些环节——这些架构细节 README 不展开，直接看对应文档：
 
-- `BootConfig` 选择 Frame、Core、JSON codec 以及配置/日志目录。
-- Context 提供配置、日志、容器、校验器与 Starter 回指；它不是请求 context。
-- Frame Starter 负责应用注册器、共享实例、校验、任务和 keepalive。
-- Core Starter 负责 HTTP 引擎、中间件、路由、监听信号与停止。
-- Provider 描述能力，Manager 定义加载算法，Location 只有被生命周期代码读取时才会执行。
+- [架构总览](docs/concepts/architecture.md)：`BootConfig`、`Context`、`FrameStarter`/`CoreStarter` 各自的职责边界。
+- [Provider 系统](docs/concepts/provider-system.md)：能力怎么被发现、加载、执行。
+- [Context 与 Locator](docs/concepts/context-and-locators.md)：跨组件访问共享实例的方式。
+- [Web 启动生命周期](docs/concepts/startup-lifecycle.md)：`RunServer` 从配置加载到监听关闭的完整阶段。
+- [响应与序列化](docs/guides/response-and-serialization.md)、[错误与恢复](docs/guides/errors-and-recovery.md)：统一响应、JSON codec 选择、MsgPack/Protobuf 协商。
 
-设计细节见[架构总览](docs/concepts/architecture.md)、[Provider 系统](docs/concepts/provider-system.md)和[Context 与 Locator](docs/concepts/context-and-locators.md)。
-
-## 启动主链
-
-一次标准 Web 启动可以概括为：
-
-```text
-New：配置 → 日志 → AppContext
-RunServer：分发 Provider → 取得 Options → 创建 Frame/Core Starter
-         → 注册 globals → 初始化 HTTP core → hook → middleware
-         → routes → Swagger → task → keepalive → listen → shutdown
-```
-
-`RunServer` 不返回 `error`，现有阶段对错误的处理可能是记录、忽略、fatal 或 panic。任务和 keepalive 还可能在 HTTP 监听前启动 goroutine。需要逐阶段行为时阅读[Web 启动生命周期](docs/concepts/startup-lifecycle.md)。
-
-## 请求与响应主链
-
-```text
-HTTP 请求 → Fiber/Gin recovery 与错误入口 → 应用中间件 → 模块路由
-          → API → Service → Repository / 外部资源
-          → {code,msg,data} → JSON 或可选二进制 body
-```
-
-HTTP status 与响应中的业务 `code` 是两个维度。`BootConfig.TrafficCodec` 选择引擎 JSON codec；`EnableBinaryProtocolSupport` 只控制统一响应是否尝试 MsgPack/Protobuf 协商。详见[响应与序列化](docs/guides/response-and-serialization.md)和[错误与恢复](docs/guides/errors-and-recovery.md)。
-
-## Fiber 与 Gin
+## Fiber 还是 Gin
 
 | 维度 | Fiber | Gin |
 |---|---|---|
 | `CoreType` | `constant.CoreTypeWithFiber` | `constant.CoreTypeWithGin` |
-| Handler | `func(*fiber.Ctx) error` | `func(*gin.Context)` |
-| 普通错误 | 返回 `error` | 调用 `c.Error(err)` |
-| JSON codec 作用域 | 单个 `fiber.App` | 修改 Gin package 级 codec |
-| 备注 | 默认内核，`example_main` 实际运行的路径 | 可切换内核；TLS 证书加载与启动路径已接通，并有 loopback listener 真实握手回归测试 |
+| Handler 签名 | `func(*fiber.Ctx) error` | `func(*gin.Context)` |
+| 普通错误怎么报 | 直接 `return err` | 调用 `c.Error(err)` |
+| JSON codec 作用域 | 单个 `fiber.App` 内 | Gin package 级，全局生效 |
+| 备注 | 默认内核，`example_main` 实际跑的路径 | 可切换；TLS 证书加载与真实握手都有回归测试覆盖 |
 
-两种内核共享启动抽象，但路由、绑定和 handler 仍使用各自原生 API。示例默认运行 Fiber，且 `/health/livez` 只在 Fiber 路由中注册。详细差异见[Web 运行时](docs/guides/web-runtime.md)。
+两种内核共享同一套启动抽象，但路由、绑定、handler 仍各自使用原生 API。示例默认运行 Fiber，`/health/livez` 也只注册在 Fiber 路由里。详细差异见[Web 运行时](docs/guides/web-runtime.md)。
 
 ## 示例目录
 
-- [`example_main/`](example_main/)：Web 可执行入口与完整 Provider/Manager 合并。
-- [`example_config/`](example_config/)：dev/test/prod 配置形状与环境覆盖示例。
-- [`example_application/`](example_application/)：应用、模块、任务、Fiber/Gin 路由与 CLI 接线。
+- [`example_main/`](example_main/)：Web 可执行入口，将 Provider/Manager 全部合并运行。
+- [`example_config/`](example_config/)：dev/test/prod 三套配置形状，以及环境变量如何覆盖。
+- [`example_application/`](example_application/)：应用、模块、任务、Fiber/Gin 路由、CLI 的完整接线示范。
 
-示例包含固定凭据、调试选项、未接线分支和不完整关闭流程。请把它当作源码导航，不要当作可直接部署的模板；参见[示例目录说明](docs/reference/examples.md)。
+示例里包含写死的凭据、调试开关、未接完的分支和不完整的关闭流程——把它当源码导航，不要当部署模板直接使用。细节见[示例目录说明](docs/reference/examples.md)。
 
-## 文档导航
+## 更多文档
 
 - [完整文档索引](docs/README.md)
 - [入门指南](docs/getting-started.md)
-- [架构总览](docs/concepts/architecture.md)
 - [组件目录](docs/reference/components.md)
 - [功能状态](docs/reference/feature-status.md)
 
 ## 开发与验证
 
-常用命令从仓库根目录执行：
+仓库根目录下常用命令：
 
 ```bash
 go mod download
@@ -206,16 +156,16 @@ go test -race ./... -count=1
 go vet ./...
 ```
 
-在当前工作树执行 `go test ./... -count=1` 与 `go test -race ./... -count=1` 应通过，`go vet ./...` 作为独立静态检查门禁。该结论针对当前提交，不自动成为最新发布标签的追溯保证；发布版本以 Git tag 和对应发布说明为准。
+当前工作树上 `go test ./... -count=1` 和 `go test -race ./... -count=1` 应该都能通过，`go vet ./...` 是独立的静态检查门禁。这个结论只对当前提交负责，不代表历史发布标签同样适用——发布版本以对应的 Git tag 和 release note 为准。
 
-GitHub Actions 将普通测试、coverage 与 vet 放在 `quality` job，将 race 放在独立 `race` job，并由 `smoke` job 使用固定版本的 Redis、MongoDB、MySQL 启动完整示例、检查一条 HTTP 路径，并定向执行带 `liveintegration` build tag 的测试（`go test -tags=liveintegration ./... -run 'TestLive_' -v -count=1`），覆盖 Redis cache（Ping/Set/Get/Delete/Close）、asynq（入队、worker 消费、优雅关闭）、MySQL 与 MongoDB（各自建临时表/collection、写入、读取、清理）的真实读写路径。这些 live 测试只验证创建-读写-关闭这一条路径，不覆盖重建、并发读写场景或 keepalive 编排，普通 `quality`/`race` job 不连接外部服务。是否阻止合并取决于仓库分支保护是否把 `quality`、`race`、`smoke` 配置为 required status checks。
+CI 在 GitHub Actions 上拆成三个 job：`quality` 跑普通测试、覆盖率和 vet，`race` 单独跑 race 检测，`smoke` 拉起真实的 Redis/MongoDB/MySQL 启动完整示例、检查一条 HTTP 路径，并定向执行带 `liveintegration` 标签的测试（覆盖 Redis、asynq、MySQL、MongoDB 各自的创建-读写-关闭路径，不含并发或故障注入场景）。这三个 job 是否会阻止合并，取决于仓库分支保护是否将它们设为必需检查。
 
-`Makefile` 还提供 `build`、`lint` 和交叉构建目标，但使用前应先核对其目标路径与本机工具。
+`Makefile` 也提供 `build`、`lint` 和交叉编译目标，使用前请先核对目标路径与本机工具是否匹配。
 
 ## 贡献
 
-提交变更时请保持范围清晰，说明行为、兼容性与验证结果；涉及启动、并发或资源生命周期的修改应补充相应测试和文档。问题与建议可通过 [GitHub Issues](https://github.com/lamxy/fiberhouse/issues) 反馈，安全问题请使用仓库维护者公布的私密联系方式。
+改动范围保持清晰，说明行为、兼容性与验证结果；涉及启动、并发或资源生命周期的修改，请补充相应测试和文档。问题和建议欢迎提交 [GitHub Issues](https://github.com/lamxy/fiberhouse/issues)，安全问题请使用维护者公布的私密联系方式，不要通过公开 issue 报告。
 
 ## 许可证
 
-FiberHouse 以 [MIT License](LICENSE) 发布。
+MIT License，见 [LICENSE](LICENSE)。
