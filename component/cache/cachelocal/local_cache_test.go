@@ -3,6 +3,7 @@ package cachelocal
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -121,6 +122,26 @@ func TestLocalCache_CloseAndPostCloseErrors(t *testing.T) {
 	assert.ErrorIs(t, lc.Wait(), cache.ErrCacheClosed)
 	assert.Nil(t, lc.GetMetrics(co))
 	assert.Nil(t, lc.GetMetricsInfo(co))
+}
+
+func TestLocalCache_ConcurrentCloseIsIdempotentAndPanicFree(t *testing.T) {
+	lc, _ := newTestLocalCache(t, false)
+
+	const n = 50
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			errs[idx] = lc.Close()
+		}(i)
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		assert.NoError(t, err, "LocalCache.Close() must always return nil, including repeated/concurrent calls")
+	}
 }
 
 func TestLocalCache_SetObjectReportsSerializationFailure(t *testing.T) {
