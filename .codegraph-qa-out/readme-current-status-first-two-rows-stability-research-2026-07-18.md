@@ -176,6 +176,8 @@ go test . -run 'TestJSONCodecProviders_RepeatedInitialize' -count=1
 
 ### P1-1：LocalCache/RedisDb 并发 Close 双关
 
+> 2026-07-21 已完成：`component/cache/cachelocal/local_cache.go`、`component/cache/cacheremote/redis_cache.go` 的 `Close()` 改用 `atomic.Bool.CompareAndSwap` 原子选出唯一关闭者，避免并发重入执行关闭副作用；`LocalCache` 第二次 Close 返回 `nil`、`RedisDb` 第二次 Close 返回 `cache.ErrCacheClosed` 的既有语义保持不变。回归测试见 `component/cache/cachelocal/local_cache_test.go` 的 `TestLocalCache_ConcurrentCloseIsIdempotentAndPanicFree`、`component/cache/cacheremote/redis_cache_test.go` 的 `TestRedisDb_CloseAndPostCloseErrors`、`TestRedisDb_ConcurrentCloseIsIdempotentAndPanicFree`。
+
 证据：两个 `Close` 都使用“Load closed → 关闭 client → Store closed”或“Load → Store → Close”的非原子组合。并发调用可能让多个调用者同时进入底层 Close。
 
 最小方向：使用现有 `atomic.Bool.CompareAndSwap` 选出唯一关闭者；保持 LocalCache 第二次 Close 返回 nil、RedisDb 第二次 Close 返回 `ErrCacheClosed` 的既有语义。
@@ -263,7 +265,7 @@ CI 不需要新增容器。可以在现有 smoke job 增加类似的定向步骤
 3. `RespInfo` 旧 Data 残留。
 4. validation 默认英文 fallback（已完成）。
 5. JSON codec provider 重复初始化返回 nil（已完成）。
-6. LocalCache/RedisDb Close 的 CAS 幂等补丁。
+6. LocalCache/RedisDb Close 的 CAS 幂等补丁（已完成）。
 7. MySQL 初次 Ping 失败关闭连接池。
 8. Gin loopback HTTP/TLS 握手测试。
 9. Redis cache + asynq live integration。
