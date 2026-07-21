@@ -123,6 +123,10 @@ jobs:
       - name: Check HTTP path
         run: curl --fail --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/example/hello/world
 
+      - name: Run live integration tests
+        timeout-minutes: 2
+        run: go test -tags=liveintegration ./component/cache/cacheremote/... -run 'TestLive_' -v -count=1
+
       - name: Print example log on failure
         if: failure()
         run: cat "$RUNNER_TEMP/${{ env.TARGET_NAME }}.log"
