@@ -181,7 +181,7 @@ HTTP status 与响应中的业务 `code` 是两个维度。`BootConfig.TrafficCo
 | Handler | `func(*fiber.Ctx) error` | `func(*gin.Context)` |
 | 普通错误 | 返回 `error` | 调用 `c.Error(err)` |
 | JSON codec 作用域 | 单个 `fiber.App` | 修改 Gin package 级 codec |
-| 当前状态 | 已接入；实验性 | 已接入；实验性；TLS 证书加载与启动路径已接通，尚无真实握手集成验证 |
+| 当前状态 | 已接入；实验性 | 已接入；实验性；TLS 证书加载与启动路径已接通，并有 loopback listener 真实握手回归测试 |
 
 两种内核共享启动抽象，但路由、绑定和 handler 仍使用各自原生 API。示例默认运行 Fiber，且 `/health/livez` 只在 Fiber 路由中注册。详细差异见[Web 运行时](docs/guides/web-runtime.md)。
 
@@ -215,7 +215,7 @@ go vet ./...
 
 在当前工作树执行 `go test ./... -count=1` 与 `go test -race ./... -count=1` 应通过，`go vet ./...` 作为独立静态检查门禁。该结论针对当前提交，不自动成为最新发布标签的追溯保证；发布版本以 Git tag 和对应发布说明为准。
 
-GitHub Actions 将普通测试、coverage 与 vet 放在 `quality` job，将 race 放在独立 `race` job，并由 `smoke` job 使用固定版本的 Redis、MongoDB、MySQL 启动完整示例和检查一条 HTTP 路径。服务容器出现在 smoke 环境中只证明示例装配可启动，不代表数据库/Redis 读写、重建、关闭、task worker 或 keepalive 已通过 live integration test。是否阻止合并取决于仓库分支保护是否把 `quality`、`race`、`smoke` 配置为 required status checks。
+GitHub Actions 将普通测试、coverage 与 vet 放在 `quality` job，将 race 放在独立 `race` job，并由 `smoke` job 使用固定版本的 Redis、MongoDB、MySQL 启动完整示例、检查一条 HTTP 路径，并定向执行带 `liveintegration` build tag 的测试（`go test -tags=liveintegration ./... -run 'TestLive_' -v -count=1`），覆盖 Redis cache（Ping/Set/Get/Delete/Close）、asynq（入队、worker 消费、优雅关闭）、MySQL 与 MongoDB（各自建临时表/collection、写入、读取、清理）的真实读写路径。这些 live 测试只验证创建-读写-关闭这一条路径，不覆盖重建、并发读写场景或 keepalive 编排，普通 `quality`/`race` job 不连接外部服务。是否阻止合并取决于仓库分支保护是否把 `quality`、`race`、`smoke` 配置为 required status checks。
 
 `Makefile` 还提供 `build`、`lint` 和交叉构建目标，但使用前应先核对其目标路径与本机工具。
 

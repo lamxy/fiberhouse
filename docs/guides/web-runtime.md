@@ -67,7 +67,7 @@ Gin 的运行模式键是 `application.plugins.server.gin.mode`，fallback 为 `
 
 以上三个 codec 入口都不决定统一响应是否改用 MsgPack/Protobuf；后者是 `ResponseWrap.SendWithCtx` 的独立协商，见[《响应与序列化》](response-and-serialization.md)。
 
-传入自定义 Fiber `CoreCfg` 时，当前 `InitCoreApp` 会在 `fiber.New(*CoreCfg)` 后提前返回，不再设置 `cf.json`，也不会执行标准分支中 `ErrorHandler: adaptorerrorhandler.FiberErrorHandler(eh.ErrorHandler)` 的装配。调用方只有在自己的 `fiber.Config` 中显式设置等价 `ErrorHandler` 才能保留统一普通错误入口；即便如此，后续 `RegisterAppMiddleware` 构造 recovery 配置时仍引用 `cf.json.Marshal`，存在 nil 解引用的静态风险。这条自定义路径不能视为已完整支持的标准装配。
+传入自定义 Fiber `CoreCfg` 时，当前 `InitCoreApp` 会在 `fiber.New(*CoreCfg)` 后提前返回，也不会执行标准分支中 `ErrorHandler: adaptorerrorhandler.FiberErrorHandler(eh.ErrorHandler)` 的装配；调用方只有在自己的 `fiber.Config` 中显式设置等价 `ErrorHandler` 才能保留统一普通错误入口。`cf.json` 的装配已修复：标准启动链传入非 nil `fs` 时，该路径同样会调用 `resolveJSONCodec` 完成编解码器解析并赋值给 `cf.json`，`RegisterAppMiddleware` 引用 `cf.json.Marshal` 不再有 nil 解引用风险；只有在 `fs` 为 nil（例如仅验证自定义配置的单元测试）时才会跳过这一步。这条自定义路径仍不能视为已完整支持的标准装配，因为 `ErrorHandler` 的等价装配仍需调用方自行补齐。
 
 ## `ICoreContext`：最小跨引擎边界
 
@@ -81,14 +81,14 @@ Fiber 和 Gin 都在 goroutine 中启动服务，并在主 goroutine 等待 `SIG
 
 Fiber 的 `OnShutdown` 在 `Shutdown()` 触发时先停止并等待默认 keepalive，再清空容器、记录 shutdown 日志并关闭日志器。Gin 使用固定 30 秒 shutdown context，随后按停止并等待默认 keepalive、清空容器、记录完成日志、关闭日志器的顺序清理。该协调只覆盖默认 `FrameApplication` 的健康检查，不包含 task worker、应用自建 goroutine 或逐项资源关闭。
 
-当前 Gin TLS 配置已接通证书加载和启动选择：`tls.enable=true` 且证书/私钥路径有效时会填充 `TLSConfig`，运行阶段随后调用 `ListenAndServeTLS("", "")`；没有 TLS 配置时仍调用 `ListenAndServe()`。无效的非空证书/私钥会在加载失败后 fail-stop；缺失任一路径时则只记录错误并保持 `TLSConfig == nil`，因此显式启用 TLS 的应用仍应在部署前校验配置，避免落到 HTTP 路径。现有测试覆盖有效证书加载和无效证书失败，并用 AST 核对 TLS/HTTP 调用分支，但尚无真实 listener/握手集成验证。Fiber 默认路径同样调用普通 `Listen`；`OnListen` 能显示 TLS 标志并不等于框架已经装配证书。
+当前 Gin TLS 配置已接通证书加载和启动选择：`tls.enable=true` 且证书/私钥路径有效时会填充 `TLSConfig`，运行阶段随后调用 `ListenAndServeTLS("", "")`；没有 TLS 配置时仍调用 `ListenAndServe()`。无效的非空证书/私钥会在加载失败后 fail-stop；缺失任一路径时则只记录错误并保持 `TLSConfig == nil`，因此显式启用 TLS 的应用仍应在部署前校验配置，避免落到 HTTP 路径。现有测试覆盖有效证书加载和无效证书失败，并用 AST 核对 TLS/HTTP 调用分支；另有一条以 `127.0.0.1:0` 建立 loopback listener、通过 `http.Server.ServeTLS` 驱动真实 TLS 握手与 HTTP 请求-响应、并验证 `Shutdown` 在 3 秒内正常完成的回归测试。Fiber 默认路径同样调用普通 `Listen`；`OnListen` 能显示 TLS 标志并不等于框架已经装配证书。
 
 ## 已知限制
 
 - `ICoreContext` 不是完整 Web API，也没有公开的统一 `Release` 生命周期。
 - Gin JSON codec 和 Gin mode 都是进程级副作用；多应用/并行测试不能假设隔离。
-- 自定义 Fiber `CoreCfg` 早退路径既不安装标准 `FiberErrorHandler`，也没有满足 recovery 的 codec 依赖。
-- Gin TLS 的证书加载与 HTTPS 启动路径已接通，但缺失路径仍可能保留 HTTP 路径，且尚无真实 listener/握手集成验证。
+- 自定义 Fiber `CoreCfg` 早退路径不安装标准 `FiberErrorHandler`；`cf.json` 会在标准启动链（非 nil `fs`）下正确装配，但仅验证配置本身、不传 `fs` 的调用方式仍会跳过这一步。
+- Gin TLS 的证书加载与 HTTPS 启动路径已接通，并有真实 loopback listener 握手回归测试；但缺失路径仍可能保留 HTTP 路径。
 - 两条受控停止路径清空全局容器，但不提供所有资源和后台 goroutine 的统一关闭协议。
 
 源码入口：[`core_fiber_starter_impl.go`](../../core_fiber_starter_impl.go)、[`core_gin_starter_impl.go`](../../core_gin_starter_impl.go)、[`json_codec_manager.go`](../../json_codec_manager.go)、[`component/codec/json`](../../component/codec/json/)、[`adaptor/context`](../../adaptor/context/) 与 [`adaptor/errorhandler`](../../adaptor/errorhandler/)。
