@@ -186,6 +186,9 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) (*gorm.DB, error)
 	defer cancel()
 	if err := sqlDb.PingContext(ctx); err != nil {
 		appCtx.GetLogger().Error(appCtx.GetConfig().LogOriginMysql()).Err(err).Msg("mysql ping failed")
+		if closeErr := sqlDb.Close(); closeErr != nil {
+			appCtx.GetLogger().Error(appCtx.GetConfig().LogOriginMysql()).Err(closeErr).Msg("mysql close after ping failure error")
+		}
 		return nil, err
 	}
 

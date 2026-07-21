@@ -65,4 +65,11 @@ func TestNewClient_PingFailureReturnsError(t *testing.T) {
 	db, err := NewClient(ctx, "test.mysql")
 	require.Error(t, err)
 	assert.Nil(t, db)
+
+	// 任务 2（P1-2 修复）新增了 sqlDb.Close() 调用，仅记录 Close 自身的错误
+	// 日志，不得包装/替换原始 ping 错误。断言返回的 error 仍然来自底层
+	// 拨号失败（"connection refused"），而不包含 close 相关字样，确认
+	// 调用方看到的错误信息未被清理动作污染。
+	assert.Contains(t, err.Error(), "connect: connection refused")
+	assert.NotContains(t, err.Error(), "close")
 }
