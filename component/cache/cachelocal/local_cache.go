@@ -125,12 +125,10 @@ func (lc *LocalCache) Delete(ctx context.Context, keys ...string) error {
 
 // Close 关闭缓存
 func (lc *LocalCache) Close() error {
-	if lc.closed.Load() {
+	if !lc.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-
 	lc.client.Close()
-	lc.closed.Store(true)
 	return nil
 }
 

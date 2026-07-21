@@ -111,10 +111,9 @@ func (rd *RedisDb) GetLevel() cache.Level {
 // Close 关闭 Redis 客户端连接
 // 谨慎使用Close关闭链接
 func (rd *RedisDb) Close() error {
-	if rd.closed.Load() {
+	if !rd.closed.CompareAndSwap(false, true) {
 		return cache.ErrCacheClosed
 	}
-	rd.closed.Store(true)
 	return rd.Client.Close()
 }
 
