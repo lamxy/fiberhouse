@@ -1,14 +1,18 @@
 package fiberhouse
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -268,8 +272,11 @@ func TestCoreInit_GinServerUsesConfiguredAddressAndTimeouts(t *testing.T) {
 	assert.IsType(t, http.Handler(core.coreApp), core.httpServer.Handler)
 }
 
-func TestCoreInit_GinTLSLoadsConfiguredCertificate(t *testing.T) {
-	preserveTask4GinMode(t)
+// generateTask4SelfSignedCert 生成一份临时的 ECDSA 自签名证书/私钥文件，
+// 供 TLS 相关测试复用。提取自 TestCoreInit_GinTLSLoadsConfiguredCertificate
+// 的原始实现，逻辑与产出结果保持不变。
+func generateTask4SelfSignedCert(t *testing.T) (certFile, keyFile string) {
+	t.Helper()
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 	now := time.Now()
@@ -289,10 +296,16 @@ func TestCoreInit_GinTLSLoadsConfiguredCertificate(t *testing.T) {
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 
 	tempDir := t.TempDir()
-	certFile := filepath.Join(tempDir, "cert.pem")
-	keyFile := filepath.Join(tempDir, "key.pem")
+	certFile = filepath.Join(tempDir, "cert.pem")
+	keyFile = filepath.Join(tempDir, "key.pem")
 	require.NoError(t, os.WriteFile(certFile, certPEM, 0o600))
 	require.NoError(t, os.WriteFile(keyFile, keyPEM, 0o600))
+	return certFile, keyFile
+}
+
+func TestCoreInit_GinTLSLoadsConfiguredCertificate(t *testing.T) {
+	preserveTask4GinMode(t)
+	certFile, keyFile := generateTask4SelfSignedCert(t)
 
 	ctx := newTask4InternalAppContext(t, map[string]interface{}{
 		"application.plugins.engine.servers.gin.tls.enable":   true,
@@ -326,6 +339,55 @@ func TestCoreInit_GinTLSRejectsInvalidConfiguredCertificate(t *testing.T) {
 	require.Panics(t, func() {
 		core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
 	})
+}
+
+// TestCoreInit_GinLoopbackTLSHandshake 验证 Gin server 在启用 TLS 后，
+// 使用已装配的 TLSConfig 确实可以完成一次真实的 loopback TLS 握手与
+// HTTP 请求-响应链路，而不仅仅是静态检查 TLSConfig 字段。
+func TestCoreInit_GinLoopbackTLSHandshake(t *testing.T) {
+	preserveTask4GinMode(t)
+	certFile, keyFile := generateTask4SelfSignedCert(t)
+
+	ctx := newTask4InternalAppContext(t, map[string]interface{}{
+		"application.plugins.engine.servers.gin.tls.enable":   true,
+		"application.plugins.engine.servers.gin.tls.certFile": certFile,
+		"application.plugins.engine.servers.gin.tls.keyFile":  keyFile,
+	})
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	require.NotNil(t, core.httpServer.TLSConfig)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err, "loopback TCP listener must be available in this environment")
+
+	serveErrCh := make(chan error, 1)
+	go func() {
+		serveErrCh <- core.httpServer.ServeTLS(listener, "", "")
+	}()
+
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+	url := fmt.Sprintf("https://%s/", listener.Addr().String())
+
+	resp, err := client.Get(url)
+	require.NoError(t, err, "TLS handshake and HTTP request must succeed")
+	require.NotNil(t, resp)
+	_ = resp.Body.Close()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	require.NoError(t, core.httpServer.Shutdown(shutdownCtx))
+
+	select {
+	case serveErr := <-serveErrCh:
+		require.ErrorIs(t, serveErr, http.ErrServerClosed)
+	case <-time.After(3 * time.Second):
+		t.Fatal("ServeTLS goroutine did not return after Shutdown")
+	}
 }
 
 func TestCoreInit_CustomCoreCfgStillResolvesJSONCodec(t *testing.T) {
