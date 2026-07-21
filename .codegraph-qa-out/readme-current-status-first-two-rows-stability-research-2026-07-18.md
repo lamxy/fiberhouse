@@ -208,6 +208,8 @@ go test ./component/database/dbmysql -count=1
 
 ### P1-3：Gin loopback HTTP/TLS 握手
 
+> 2026-07-21 已完成：`core_starter_init_test.go` 新增 `TestCoreInit_GinLoopbackTLSHandshake`，复用既有临时自签名证书生成逻辑（提取为 `generateTask4SelfSignedCert` 辅助函数，`TestCoreInit_GinTLSLoadsConfiguredCertificate` 同步改用该辅助函数，行为不变），以 `127.0.0.1:0` 建立 loopback listener，通过 `http.Server.ServeTLS` 驱动一次真实 TLS 握手与 HTTP 请求-响应，并验证 `Shutdown` 在 3 秒内正常完成、服务 goroutine 以 `http.ErrServerClosed` 正常退出。未新建文件，未修改任何生产代码。回归测试见 `core_starter_init_test.go` 的 `TestCoreInit_GinLoopbackTLSHandshake`。
+
 复用现有临时证书生成逻辑，以 `127.0.0.1:0` 创建 listener，实际执行一次 HTTP/TLS 请求，并在 3 秒内 Shutdown。该测试只验证 Gin server 配置确实可以完成真实握手，不修改生产启动入口，也不把 `tls.enable=true` 解释成用户必须使用 HTTPS。
 
 ### P1-4：复用 smoke 服务的 live integration
@@ -269,7 +271,7 @@ CI 不需要新增容器。可以在现有 smoke job 增加类似的定向步骤
 5. JSON codec provider 重复初始化返回 nil（已完成）。
 6. LocalCache/RedisDb Close 的 CAS 幂等补丁（已完成）。
 7. MySQL 初次 Ping 失败关闭连接池（已完成）。
-8. Gin loopback HTTP/TLS 握手测试。
+8. Gin loopback HTTP/TLS 握手测试（已完成）。
 9. Redis cache + asynq live integration。
 10. MySQL、MongoDB live integration，各自独立提交。
 11. 重新核对逐能力状态；只有某项能力满足创建、运行、失败、关闭、验证和兼容承诺后，才单独讨论从实验性晋级。
