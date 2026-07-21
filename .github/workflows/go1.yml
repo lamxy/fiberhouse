@@ -125,7 +125,7 @@ jobs:
 
       - name: Run live integration tests
         timeout-minutes: 2
-        run: go test -tags=liveintegration ./component/cache/cacheremote/... -run 'TestLive_' -v -count=1
+        run: go test -tags=liveintegration ./... -run 'TestLive_' -v -count=1
 
       - name: Print example log on failure
         if: failure()
