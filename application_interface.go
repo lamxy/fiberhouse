@@ -8,6 +8,7 @@ package fiberhouse
 
 import (
 	"context"
+
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse/component/validate"
 	"github.com/lamxy/fiberhouse/constant"
@@ -102,9 +103,11 @@ type CoreStarter interface {
 	// 执行模块级别的初始化，包括模块中间件和路由处理器的注册
 	RegisterModuleInitialize(fs FrameStarter, managers ...IProviderManager)
 
-	// AppCoreRun 启动应用核心运行
-	// 启动HTTP服务监听，处理优雅关闭信号
-	AppCoreRun(...IProviderManager)
+	// AppCoreRun 应用核心运行，监听套接字，启动HTTP服务
+	AppCoreRun(...IProviderManager) error
+
+	// Shutdown 关闭应用，释放资源，停止HTTP服务
+	Shutdown(...IProviderManager) error
 
 	// GetCoreApp 获取核心实例
 	GetCoreApp() interface{}

@@ -103,3 +103,18 @@ type IState interface {
 	// SetState 用另一个状态对象的值设置当前状态对象
 	SetState(IState) IState
 }
+
+// IProviderLocation 提供者位点接口，用于标识提供者管理器的执行位置，应用启动流程或生命周期的相关阶段，以及其他自定义执行点
+// 位置点对象可以收集绑定到该位置点的提供者管理器，并按顺序加载和执行这些管理器中的提供者，实现灵活地扩展和定制化行为
+type IProviderLocation interface {
+	// GetLocationID 获取位点序号
+	GetLocationID() uint8
+	// GetLocationName 获取位点名称
+	GetLocationName() string
+	// IsDefaultLocation 是否为默认位点
+	IsDefaultLocation() bool
+	// Bind 绑定管理器到该位点的管理器列表中
+	Bind(manager IProviderManager) error
+	// GetManagers 获取已绑定到该位点的管理器列表
+	GetManagers() []IProviderManager
+}

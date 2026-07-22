@@ -11,15 +11,13 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"time"
+
 	ginJson "github.com/gin-gonic/gin/codec/json"
 	adaptorerrorhandler "github.com/lamxy/fiberhouse/adaptor/errorhandler"
 	"github.com/lamxy/fiberhouse/appconfig"
-	"net"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -317,41 +315,90 @@ func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderMa
 }
 
 // AppCoreRun 启动Gin应用并监听信号
-func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) {
-	stopCh := make(chan os.Signal, 1)
-	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
+func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
+	cfg := cg.GetAppContext().GetConfig()
+	scheme := "http"
+	if cg.httpServer.TLSConfig != nil {
+		scheme = "https"
+	}
 
-	// 启动HTTP服务器
-	go func(app *CoreWithGin) {
-		cfg := app.GetAppContext().GetConfig()
-		scheme := "http"
-		if app.httpServer.TLSConfig != nil {
-			scheme = "https"
+	cg.GetAppContext().GetLogger().InfoWith(cfg.LogOriginFrame()).
+		Str("applicationStarter", "GinApplication").
+		Str("scheme", scheme).
+		Str("addr", cg.httpServer.Addr).
+		Msg(fmt.Sprintf("Gin app listening on %s://%s", scheme, cg.httpServer.Addr))
+
+	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App: Manager for application processing server runtime")
+
+	var errs []error
+
+	if len(managers) > 0 {
+		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("LocationServerRun LoadProvider")
+
+		for _, m := range managers {
+			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerRun.GetLocationID() {
+				_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
+					return cg, nil
+				})
+				errs = append(errs, err)
+			}
 		}
+	}
 
-		app.GetAppContext().GetLogger().InfoWith(cfg.LogOriginFrame()).
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to load providers: %v", errs)
+	}
+
+	var err error
+	if cg.httpServer.TLSConfig != nil {
+		err = cg.httpServer.ListenAndServeTLS("", "")
+	} else {
+		err = cg.httpServer.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		cg.GetAppContext().GetLogger().FatalWith(cfg.LogOriginFrame()).
 			Str("applicationStarter", "GinApplication").
-			Str("scheme", scheme).
-			Str("addr", app.httpServer.Addr).
-			Msg(fmt.Sprintf("Gin app listening on %s://%s", scheme, app.httpServer.Addr))
+			Err(err).
+			Msg("Failed to start Gin server")
+	}
+	cg.GetAppContext().RegisterAppState(true)
+	return nil
+}
 
-		var err error
-		if app.httpServer.TLSConfig != nil {
-			err = app.httpServer.ListenAndServeTLS("", "")
-		} else {
-			err = app.httpServer.ListenAndServe()
-		}
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			app.GetAppContext().GetLogger().FatalWith(cfg.LogOriginFrame()).
-				Str("applicationStarter", "GinApplication").
-				Err(err).
-				Msg("Failed to start Gin server")
-		}
-		app.GetAppContext().RegisterAppState(true)
-	}(cg)
+// Shutdown 关闭应用
+func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
+	var (
+		shutdownBeforeManagers []IProviderManager
+		shutdownAfterManagers  []IProviderManager
+		errs                   []error
+	)
 
-	// 等待信号
-	<-stopCh
+	if len(managers) > 0 {
+		for _, m := range managers {
+			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerShutdownBefore.GetLocationID() {
+				shutdownBeforeManagers = append(shutdownBeforeManagers, m)
+				continue
+			}
+			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerShutdownAfter.GetLocationID() {
+				shutdownAfterManagers = append(shutdownAfterManagers, m)
+				continue
+			}
+		}
+	}
+
+	if len(shutdownBeforeManagers) > 0 {
+		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("shutdownBeforeManagers LoadProvider")
+		for _, m := range shutdownBeforeManagers {
+			_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
+				return cg, nil
+			})
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to load providers: %v", errs)
+	}
 
 	// 执行优雅关闭
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
@@ -366,6 +413,20 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) {
 			Str("applicationStarter", "GinApplication").
 			Err(err).
 			Msg("Gin server forced to shutdown")
+		return err
+	}
+
+	if len(shutdownAfterManagers) > 0 {
+		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("shutdownAfterManagers LoadProvider")
+		for _, m := range shutdownAfterManagers {
+			_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
+				return cg, nil
+			})
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to load providers: %v", errs)
 	}
 
 	// 清理资源
@@ -377,7 +438,9 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) {
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 		Str("applicationStarter", "GinApplication").
 		Msg("Gin server shutdown complete")
-	_ = cg.GetAppContext().GetLogger().Close()
+
+	// 关闭日志器
+	return cg.GetAppContext().GetLogger().Close()
 }
 
 // GetAppContext 获取应用上下文

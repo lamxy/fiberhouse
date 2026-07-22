@@ -33,7 +33,8 @@
       "Bash(rtk docker *)",
       "Bash(echo \"exit: $?\")",
       "Bash(rtk diff *)",
-      "Bash(go doc *)"
+      "Bash(go doc *)",
+      "Bash(git tag *)"
     ]
   },
   "enableAllProjectMcpServers": true,

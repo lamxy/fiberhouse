@@ -7,14 +7,13 @@
 package fiberhouse
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
 	adaptorerrorhandler "github.com/lamxy/fiberhouse/adaptor/errorhandler"
 	"github.com/rs/zerolog"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 // CoreWithFiber 应用核心启动器
@@ -279,24 +278,95 @@ func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProvider
 }
 
 // AppCoreRun 监听核心应用套接字
-func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) {
-	stopCh := make(chan os.Signal, 1)
-	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM) // 监听信号
+func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
+	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listening...")
 
-	go func(app *CoreWithFiber) {
-		app.GetAppContext().GetLogger().InfoWith(app.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listening...")
-		host, port := app.GetAppContext().GetConfig().String("application.server.host"), app.GetAppContext().GetConfig().String("application.server.port")
-		if err := app.coreApp.Listen(host + ":" + port); err != nil {
-			app.GetAppContext().GetLogger().FatalWith(app.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listen failed")
+	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App: Manager for application processing server runtime")
+
+	var errs []error
+
+	if len(managers) > 0 {
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("LocationServerRun LoadProvider")
+		for _, m := range managers {
+			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerRun.GetLocationID() {
+				_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
+					return cf, nil
+				})
+				errs = append(errs, err)
+			}
 		}
-		app.GetAppContext().RegisterAppState(true)
-	}(cf)
+	}
 
-	<-stopCh
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to load providers: %v", errs)
+	}
+
+	host, port := cf.GetAppContext().GetConfig().String("application.server.host"), cf.GetAppContext().GetConfig().String("application.server.port")
+
+	if err := cf.coreApp.Listen(host + ":" + port); err != nil {
+		cf.GetAppContext().GetLogger().FatalWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listen failed")
+		return err
+	}
+
+	// 设置应用状态：标记应用已正常运行并监听在套接字上
+	cf.GetAppContext().RegisterAppState(true)
+	return nil
+}
+
+// Shutdown 关闭应用
+func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
+	var (
+		shutdownBeforeManagers []IProviderManager
+		shutdownAfterManagers  []IProviderManager
+		errs                   []error
+	)
+
+	if len(managers) > 0 {
+		for _, m := range managers {
+			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerShutdownBefore.GetLocationID() {
+				shutdownBeforeManagers = append(shutdownBeforeManagers, m)
+				continue
+			}
+			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerShutdownAfter.GetLocationID() {
+				shutdownAfterManagers = append(shutdownAfterManagers, m)
+				continue
+			}
+		}
+	}
+	if len(shutdownBeforeManagers) > 0 {
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("shutdownBeforeManagers LoadProvider")
+		for _, m := range shutdownBeforeManagers {
+			_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
+				return cf, nil
+			})
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to load providers: %v", errs)
+	}
 
 	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("Fiber app Shutting down...")
 	err := cf.coreApp.Shutdown()
 	if err != nil {
-		cf.GetAppContext().GetLogger().FatalWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Err(err).Msg("Fiber app Shutdown failed.")
+		cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Err(err).Msg("Fiber app Shutdown failed.")
+		return err
 	}
+
+	if len(shutdownAfterManagers) > 0 {
+		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("shutdownAfterManagers LoadProvider")
+		for _, m := range shutdownAfterManagers {
+			_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
+				return cf, nil
+			})
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to load providers: %v", errs)
+	}
+
+	// 关闭日志器
+	return cf.GetAppContext().GetLogger().Close()
 }

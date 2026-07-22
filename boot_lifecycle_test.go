@@ -58,8 +58,9 @@ func (s *lifecycleRecordingStarter) RegisterGlobalsKeepalive(managers ...IProvid
 	s.record("RegisterGlobalsKeepalive", managers)
 }
 
-func (s *lifecycleRecordingStarter) AppCoreRun(managers ...IProviderManager) {
+func (s *lifecycleRecordingStarter) AppCoreRun(managers ...IProviderManager) error {
 	s.record("AppCoreRun", managers)
+	return nil
 }
 
 func TestRunApplicationStarter_UsesDocumentedOrderAndSameManagers(t *testing.T) {

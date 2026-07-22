@@ -11,10 +11,14 @@ package fiberhouse
 import (
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/globalmanager"
-	"sync"
 )
 
 // WebApplication Web应用启动器，框架和核心启动器组合体，实现了 fiberhouse.FrameStarter 和 fiberhouse.CoreStarter 接口
@@ -24,7 +28,7 @@ type WebApplication struct {
 }
 
 // RunApplicationStarter 接受实现了ApplicationStarter接口的实例，执行应用启动流程
-func RunApplicationStarter(starter ApplicationStarter, managers ...IProviderManager) {
+func RunApplicationStarter(starter ApplicationStarter, managers ...IProviderManager) error {
 	// 应用启动流程，保持执行顺序
 	starter.RegisterToCtx(starter)
 	starter.RegisterApplicationGlobals(managers...)                      // 内部筛选出符合当前执行位点的管理器，按需执行加载
@@ -35,7 +39,7 @@ func RunApplicationStarter(starter ApplicationStarter, managers ...IProviderMana
 	starter.RegisterModuleSwagger(starter.GetFrameApp(), managers...)    // 同上
 	starter.RegisterTaskServer(managers...)                              // 同上
 	starter.RegisterGlobalsKeepalive(managers...)                        // 同上
-	starter.AppCoreRun(managers...)                                      // 同上
+	return starter.AppCoreRun(managers...)                               // 同上
 }
 
 // BootConfig 启动配置
@@ -288,7 +292,7 @@ func (fh *FiberHouse) WithPManagers(managers ...IProviderManager) *FiberHouse {
 }
 
 // RunServer 运行应用服务器
-// TODO 记录提供者状态日志: pending、loaded、skipped、failed
+// 提供者状态/日志: pending、loaded、skipped、failed ???
 func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	// 引导配置完成位置点，获取该位点的提供者管理器列表并加载提供者
 	ms := ProviderLocationDefault().LocationBootStrapConfig.GetManagers()
@@ -481,24 +485,37 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		}
 	}
 
-	// 应用核心运行时执行位置点
-	runMS := ProviderLocationDefault().LocationServerRun.GetManagers()
-	shutdownMS := ProviderLocationDefault().LocationServerShutdown.GetManagers()
-	ms = make([]IProviderManager, 0, len(runMS)+len(shutdownMS))
-	ms = append(ms, runMS...)
-	ms = append(ms, shutdownMS...)
-	appStarter.AppCoreRun(ms...)
+	// 监听信号，优雅关闭应用
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
 
-	// 运行后执行位置点
-	afterRun := ProviderLocationDefault().LocationServerRunAfter.GetManagers()
-	if len(afterRun) > 0 {
-		for _, m := range afterRun {
-			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
-				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
-					return appStarter, nil // 向当前管理器加载提供者函数中注入当前执行位点的应用启动器实例
-				})
-				break
+	// 应用核心运行时执行位置点
+	runManagers := ProviderLocationDefault().LocationServerRun.GetManagers()
+	// 应用正常关闭时的执行位置点
+	shutdownManagers := ProviderLocationDefault().LocationServerShutdown.GetManagers()
+
+	errChan := make(chan error)
+
+	go func(webApp *WebApplication) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				errChan <- fmt.Errorf("panic: %v", recovered)
 			}
+		}()
+
+		err := webApp.AppCoreRun(runManagers...)
+		if err != nil {
+			errChan <- err
 		}
+	}(appStarter)
+
+	select {
+	case <-stopCh:
+		err := appStarter.Shutdown(shutdownManagers...)
+		fmt.Printf("Application shutdown gracefully: %v\n", err)
+	case err := <-errChan:
+		fmt.Printf("Application run server error: %v\n", err)
 	}
+
+	fmt.Println("Application RunServer exited")
 }
