@@ -304,7 +304,7 @@ func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
 	host, port := cf.GetAppContext().GetConfig().String("application.server.host"), cf.GetAppContext().GetConfig().String("application.server.port")
 
 	if err := cf.coreApp.Listen(host + ":" + port); err != nil {
-		cf.GetAppContext().GetLogger().FatalWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listen failed")
+		cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listen failed")
 		return err
 	}
 

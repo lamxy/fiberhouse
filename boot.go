@@ -371,73 +371,89 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	}
 
 	// 获取创建框架启动器选项参数列表
-	frameOptions := fh.frameStarterOpts
-	if len(frameOptions) == 0 {
+	if len(fh.frameStarterOpts) == 0 {
 		logger.WarnWith(cfg.LogOriginFrame()).Msg("FiberHouse: frameStarterOpts not set, loading from FrameStarterOptionInit location point")
 		// 配置项未设置，从框架启动器选项位置点加载
 		ms := ProviderLocationDefault().LocationFrameStarterOptionInit.GetManagers()
 		if len(ms) > 0 {
 			anyFrameOpts, err := ms[0].LoadProvider()
 			if err != nil {
-				logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msg("FrameStarterOptionInit provider load failed")
+				logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg("FrameStarterOptionInit provider load failed")
+				panic(err)
 			}
 			opts, ok := anyFrameOpts.([]FrameStarterOption)
 			if !ok {
-				logger.FatalWith(cfg.LogOriginFrame()).Msg("loaded FrameStarterOptionInit provider is not []FrameStarterOption type")
+				msg := "loaded FrameStarterOptionInit provider is not []FrameStarterOption type"
+				logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
+				panic(errors.New(msg))
 			}
-			frameOptions = opts
+			fh.frameStarterOpts = opts
 		}
 	}
 	// 创建框架启动器位置点加载获取框架启动器对象
 	ms = ProviderLocationDefault().LocationFrameStarterCreate.GetManagers()
 	if len(ms) == 0 {
-		logger.FatalWith(cfg.LogOriginFrame()).Msg("Location point:LocationFrameStarterCreate， no FrameStarterCreate provider manager found")
+		msg := "Location point:LocationFrameStarterCreate， no FrameStarterCreate provider manager found"
+		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
+		panic(errors.New(msg))
 	}
 	// 通过提供者加载回调函数(ProviderLoadFunc)参数注入框架启动器选项
 	anyStarter, err := ms[0].LoadProvider(func(manager IProviderManager) (any, error) {
-		return frameOptions, nil
+		return fh.frameStarterOpts, nil
 	})
 	if err != nil {
-		logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msg("FrameStarterCreate provider load failed")
+		msg := "FrameStarterCreate provider load failed"
+		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg(msg)
+		panic(errors.New(msg))
 	}
 	frameStarter, ok := anyStarter.(FrameStarter)
 	if !ok {
-		logger.FatalWith(cfg.LogOriginFrame()).Msg("loaded FrameStarterCreate provider is not FrameStarter type")
+		msg := "loaded FrameStarterCreate provider is not FrameStarter type"
+		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
+		panic(errors.New(msg))
 	}
 
 	// 获取创建核心启动器选项参数列表
-	coreOptions := fh.coreStarterOpts
-	if len(coreOptions) == 0 {
+	if len(fh.coreStarterOpts) == 0 {
 		logger.WarnWith(cfg.LogOriginFrame()).Msg("FiberHouse: coreStarterOpts not set, loading from CoreStarterOptionInit location point")
 		// 配置项未设置，从核心启动器选项位置点加载
 		ms = ProviderLocationDefault().LocationCoreStarterOptionInit.GetManagers()
 		if len(ms) > 0 {
 			anyCoreOpts, err := ms[0].LoadProvider()
 			if err != nil {
-				logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msg("CoreStarterOptionInit provider load failed")
+				msg := "CoreStarterOptionInit provider load failed"
+				logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg(msg)
+				panic(errors.New(msg))
 			}
 			opts, ok := anyCoreOpts.([]CoreStarterOption)
 			if !ok {
-				logger.FatalWith(cfg.LogOriginFrame()).Msg("loaded CoreStarterOptionInit provider is not []CoreStarterOption type")
+				msg := "loaded CoreStarterOptionInit provider is not []CoreStarterOption type"
+				logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
+				panic(errors.New(msg))
 			}
-			coreOptions = opts
+			fh.coreStarterOpts = opts
 		}
 	}
 	// 创建核心启动器位置点
 	ms = ProviderLocationDefault().LocationCoreStarterCreate.GetManagers()
 	if len(ms) == 0 {
-		logger.FatalWith(cfg.LogOriginFrame()).Msg("Location point: LocationCoreStarterCreate, no CoreStarterCreate provider manager found")
+		msg := "Location point: LocationCoreStarterCreate, no CoreStarterCreate provider manager found"
+		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
+		panic(errors.New(msg))
 	}
 	// 通过提供者加载回调函数(ProviderLoadFunc)参数注入核心启动器选项
 	anyCoreStarter, err := ms[0].LoadProvider(func(manager IProviderManager) (any, error) {
-		return coreOptions, nil
+		return fh.coreStarterOpts, nil
 	})
 	if err != nil {
-		logger.FatalWith(cfg.LogOriginFrame()).Err(err).Msg("CoreStarterCreate provider load failed")
+		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg("CoreStarterCreate provider load failed")
+		panic(err)
 	}
 	coreStarter, ok := anyCoreStarter.(CoreStarter)
 	if !ok {
-		logger.FatalWith(cfg.LogOriginFrame()).Msg("loaded CoreStarterCreate provider is not CoreStarter type")
+		msg := "loaded CoreStarterCreate provider is not CoreStarter type"
+		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
+		panic(errors.New(msg))
 	}
 
 	// 创建应用启动器

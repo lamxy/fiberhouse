@@ -58,7 +58,9 @@ func NewFrameApplication(ctx IApplicationContext, opts ...FrameStarterOption) Fr
 		Ctx: ctx,
 	}
 	if len(opts) == 0 {
-		ctx.GetLogger().FatalWith(ctx.GetConfig().LogOriginFrame()).Msg("no registrar option available for injection into the application starter via NewFrameApplication")
+		msg := "no registrar option available for injection into the application starter via NewFrameApplication"
+		ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(msg)
+		panic(msg)
 	}
 
 	for _, opt := range opts {

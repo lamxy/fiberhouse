@@ -35,7 +35,9 @@ func NewFrameCmdApplication(ctx fiberhouse.ICommandContext, opts ...fiberhouse.F
 	}
 
 	if len(opts) == 0 {
-		ctx.GetLogger().FatalWith(ctx.GetConfig().LogOriginFrame()).Msg("No registrar option available for injection into the command starter")
+		msg := "No registrar option available for injection into the command starter"
+		ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(msg)
+		panic(msg)
 	}
 
 	for _, opt := range opts {

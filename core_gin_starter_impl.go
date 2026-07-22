@@ -356,10 +356,11 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 		err = cg.httpServer.ListenAndServe()
 	}
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		cg.GetAppContext().GetLogger().FatalWith(cfg.LogOriginFrame()).
+		cg.GetAppContext().GetLogger().ErrorWith(cfg.LogOriginFrame()).
 			Str("applicationStarter", "GinApplication").
 			Err(err).
 			Msg("Failed to start Gin server")
+		return err
 	}
 	cg.GetAppContext().RegisterAppState(true)
 	return nil
