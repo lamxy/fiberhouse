@@ -1,25 +1,17 @@
 package entity
 
-import (
-	"database/sql"
-	"gorm.io/gorm"
-)
+import "time"
 
-/**
-Mysql数据库ORM 表模型结构
-*/
-
-type User struct {
-	Name      string
-	Age       uint8
-	Desc      sql.NullString
-	UpdatedTs int64 `gorm:"autoUpdateTime:milli"`
-	gorm.Model
+// ExampleRecord is the MySQL representation used by the example CLI.
+type ExampleRecord struct {
+	ID          uint64    `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name        string    `json:"name" gorm:"size:80;not null;uniqueIndex:ux_example_records_name"`
+	Description string    `json:"description" gorm:"size:500;not null;default:''"`
+	Status      string    `json:"status" gorm:"size:16;not null;index:idx_example_records_status_created"`
+	CreatedAt   time.Time `json:"created_at" gorm:"index:idx_example_records_status_created,sort:desc"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-type Class struct {
-	Name   string
-	Isbn   string
-	UserId uint64
-	gorm.Model
+func (ExampleRecord) TableName() string {
+	return "example_records"
 }
