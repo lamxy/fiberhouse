@@ -34,7 +34,7 @@ func (q ListExamplesReqVo) Normalize() ListExamplesReqVo {
 // migrated to the canonical CRUD API.
 type ExampleReqVo struct {
 	ExamName string                 `json:"exam_name"`
-	ExamAge  int                    `json:"exam_age"`
+	Age      int                    `json:"exam_age"`
 	Courses  []string               `json:"courses"`
 	Profile  map[string]interface{} `json:"profile"`
 }

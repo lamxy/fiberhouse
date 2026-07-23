@@ -53,7 +53,7 @@ func (s *TestService) DoAgeDoubleCreateForTaskHandle(ctx context.Context, age in
 	// 新建一个样例记录，将任务参数age的两倍作为年龄保存
 	example := requestvo.ExampleReqVo{
 		ExamName: "task_created-by-age-double",
-		ExamAge:  int(age * 2),
+		Age:      int(age * 2),
 		Courses:  []string{"c1", "c2"},
 		Profile:  map[string]interface{}{"pf1": "value1", "pf2": "value2"},
 	}
