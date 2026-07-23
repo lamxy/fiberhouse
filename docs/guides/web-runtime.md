@@ -60,7 +60,7 @@ Gin 的规范运行模式键是 `application.plugins.engine.servers.gin.mode`，
 
 选择 Gin core 会自动把 Gin 的启动、路由注册、通用 debug、默认 writer、错误 writer 和 `http.Server` 内部错误接入 FiberHouse `LoggerWrapper`。debug hook 与路由记录使用 Debug，默认 writer 使用 Info，错误 writer 和默认 server error logger 使用 Error；所有记录都带 `Component="Gin"`，并按来源带 `Channel`。Debug 记录仍受 `application.appLog.level` 过滤；Gin 没有为启动 warning 提供独立级别，因此经 debug hook 到达的 warning 也按 Debug 处理，而不会解析私有消息文本猜测级别。应用显式提供的 `http.Server.ErrorLog` 不会被替换。
 
-这些 Gin hook 和 writer 是 package 全局变量。第一次有效安装会在 Gin 活动开始前捕获原值，并把四个变量固定为进程生命周期内稳定的转发入口。一个活跃的 FiberHouse Gin core 取得独占 lease；初始化失败、server 返回或 shutdown 时只原子停用自己的 owner，此后入口按行为转发到首次捕获的原函数和 writer。后续 owner 复用同一组入口，不会在运行期写回 Gin 全局变量，因为 Gin 对这些变量的读取没有同步，写回会与并发诊断输出产生数据竞争。第二个 FiberHouse core 不能在 lease 活跃时覆盖 owner。lease 活跃期间创建的其他 Gin engine 也会把原生诊断写到同一个框架日志器，不能获得逐 engine 的原生 debug 隔离；桥接安装后由外部代码改写这些全局变量也不受支持。
+这些 Gin hook 和 writer 是 package 全局变量。第一次有效安装会在 Gin 活动开始前捕获原值，并把四个变量固定为进程生命周期内稳定的转发入口。一个活跃的 FiberHouse Gin core 取得独占 lease；初始化失败或未协调的 server 返回会原子停用自己的 owner。协调式 shutdown 会在关闭 listener 前标记生命周期，使 `AppCoreRun` 返回时保留 owner；`http.Server.Shutdown` 等活动 handler 排空后，shutdown 路径才停用 owner。此后入口按行为转发到首次捕获的原函数和 writer。后续 owner 复用同一组入口，不会在运行期写回 Gin 全局变量，因为 Gin 对这些变量的读取没有同步，写回会与并发诊断输出产生数据竞争。第二个 FiberHouse core 不能在 lease 活跃时覆盖 owner。lease 活跃期间创建的其他 Gin engine 也会把原生诊断写到同一个框架日志器，不能获得逐 engine 的原生 debug 隔离；桥接安装后由外部代码改写这些全局变量也不受支持。
 
 现有 FiberHouse 请求日志、recovery 和尾部错误处理中间件仍是访问与恢复记录的权威来源。框架不会额外安装 Gin 原生 Logger 或 Recovery，因此默认请求路径不会因日志桥接增加第二条访问或恢复记录；现有请求日志继续使用 Info、`LogOriginCoreHttp` 和原有 HTTP 字段，并增加 `Component="Gin"`。
 
@@ -89,7 +89,7 @@ Gin 的规范运行模式键是 `application.plugins.engine.servers.gin.mode`，
 
 Fiber 和 Gin 都在 goroutine 中启动服务，并在主 goroutine 等待 `SIGINT`/`SIGTERM`。两者都只在监听函数返回后才把 `AppState` 设为 `true`，因此该字段不是“已经开始接流量”的 ready 标记。受控停止都会调用 `GlobalManager.ClearAll(true)` 而不是逐项 `Close`；清空容器不等于数据库、缓存、后台 worker 已被释放，详见[《GlobalManager》](global-manager.md)。
 
-Fiber 的 `OnShutdown` 在 `Shutdown()` 触发时先停止并等待默认 keepalive，再清空容器、记录 shutdown 日志并关闭日志器。Gin 使用固定 30 秒 shutdown context，随后按停止并等待默认 keepalive、清空容器、记录完成日志、停用 Gin 日志 owner、关闭日志器的顺序清理；server 先返回时也会幂等停用同一个 lease。稳定的 Gin 转发入口不会在关闭过程中被写回，无 owner 时会转发到首次捕获的原始行为。该协调只覆盖默认 `FrameApplication` 的健康检查，不包含 task worker、应用自建 goroutine 或逐项资源关闭。
+Fiber 的 `OnShutdown` 在 `Shutdown()` 触发时先停止并等待默认 keepalive，再清空容器、记录 shutdown 日志并关闭日志器。Gin 使用固定 30 秒 shutdown context，并在调用 `http.Server.Shutdown` 前标记协调式停止；listener 先返回时由 run 路径保留 Gin 日志 owner，活动 handler 排空且 `http.Server.Shutdown` 返回后，再按停止并等待默认 keepalive、清空容器、记录完成日志、停用 owner、关闭日志器的顺序清理。稳定的 Gin 转发入口不会在关闭过程中被写回，无 owner 时会转发到首次捕获的原始行为。该协调只覆盖默认 `FrameApplication` 的健康检查，不包含 task worker、应用自建 goroutine 或逐项资源关闭。
 
 当前 Gin TLS 配置已接通证书加载和启动选择：`tls.enable=true` 且证书/私钥路径有效时会填充 `TLSConfig`，运行阶段随后调用 `ListenAndServeTLS("", "")`；没有 TLS 配置时仍调用 `ListenAndServe()`。无效的非空证书/私钥会在加载失败后 fail-stop；缺失任一路径时则只记录错误并保持 `TLSConfig == nil`，因此显式启用 TLS 的应用仍应在部署前校验配置，避免落到 HTTP 路径。现有测试覆盖有效证书加载和无效证书失败，并用 AST 核对 TLS/HTTP 调用分支；另有一条以 `127.0.0.1:0` 建立 loopback listener、通过 `http.Server.ServeTLS` 驱动真实 TLS 握手与 HTTP 请求-响应、并验证 `Shutdown` 在 3 秒内正常完成的回归测试。Fiber 默认路径同样调用普通 `Listen`；`OnListen` 能显示 TLS 标志并不等于框架已经装配证书。
 

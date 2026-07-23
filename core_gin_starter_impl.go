@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	ginJson "github.com/gin-gonic/gin/codec/json"
@@ -25,12 +26,13 @@ import (
 
 // CoreWithGin 基于Gin的核心应用启动器
 type CoreWithGin struct {
-	ctx            IApplicationContext
-	OptionFuncList []gin.OptionFunc
-	coreApp        *gin.Engine
-	httpServer     *http.Server
-	ginLoggerLease *adaptorlogging.GinLoggerLease
-	initErr        error
+	ctx                 IApplicationContext
+	OptionFuncList      []gin.OptionFunc
+	coreApp             *gin.Engine
+	httpServer          *http.Server
+	ginLoggerLease      *adaptorlogging.GinLoggerLease
+	initErr             error
+	shutdownCoordinated atomic.Bool
 }
 
 // NewCoreWithGin 创建一个基于Gin的应用核心启动器对象
@@ -66,8 +68,18 @@ func (cg *CoreWithGin) initializationFailed() bool {
 	return cg.initErr != nil
 }
 
+func (cg *CoreWithGin) initializationTerminal() bool {
+	return cg.initializationFailed() ||
+		cg.coreApp != nil ||
+		cg.ginLoggerLease != nil ||
+		(cg.httpServer != nil && cg.httpServer.Handler != nil)
+}
+
 // InitCoreApp 初始化应用核心
 func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager) {
+	if cg.initializationTerminal() {
+		return
+	}
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -458,10 +470,15 @@ func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderMa
 
 // AppCoreRun 启动Gin应用并监听信号
 func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
+	defer func() {
+		if !cg.shutdownCoordinated.Load() {
+			cg.releaseGinLogger()
+		}
+	}()
+
 	if cg.initializationFailed() {
 		return cg.initErr
 	}
-	defer cg.releaseGinLogger()
 
 	if cg.GetAppContext().GetAppState() {
 		return nil
@@ -550,6 +567,7 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	cg.shutdownCoordinated.Store(true)
 	if err = cg.httpServer.Shutdown(shutdownCtx); err != nil {
 		cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 			Str("applicationStarter", "GinApplication").
@@ -557,6 +575,7 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 			Msg("Gin server forced to shutdown")
 		return err
 	}
+	cg.releaseGinLogger()
 
 	_, _, err = loadProviderManagersAtLocation(
 		managers,
@@ -576,8 +595,6 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 		Str("applicationStarter", "GinApplication").
 		Msg("Gin server shutdown complete")
-
-	cg.releaseGinLogger()
 
 	// 关闭日志器
 	return cg.GetAppContext().GetLogger().Close()

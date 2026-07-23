@@ -41,7 +41,7 @@ Origin 子日志器只是共享底层输出的带字段 logger，不拥有独立
 
 Debug 事件仍由 `application.appLog.level` 决定是否输出。Gin 的 debug callback 不提供 warning 严重级别，桥接不会解析私有消息格式，因而从该 callback 到达的启动 warning 也保持 Debug。应用预先提供的 `http.Server.ErrorLog` 是显式覆盖，FiberHouse 不替换它。
 
-桥接第一次有效安装时，在 Gin 活动开始前捕获四个 package 全局诊断变量的原值，并把这些变量固定为进程生命周期内稳定的转发入口。lease 只原子切换当前 owner；初始化失败、server 退出或 shutdown 时会停用自己的 owner，之后转发入口按行为回退到首次捕获的 Gin 函数和 writer，而不会在运行期写回全局变量。这样设计是因为 Gin 读取这些变量时没有同步，运行期写回会与并发诊断输出产生数据竞争。lease 不关闭框架日志器；后续 owner 复用同一组稳定入口。lease 活跃期间的多个 Gin engine 共享同一个框架日志器，逐 engine 的原生 debug 隔离不受支持；第二个 FiberHouse core 会收到安装冲突，而不是覆盖现有 owner。桥接安装后由外部代码改写这些全局变量仍不受支持。
+桥接第一次有效安装时，在 Gin 活动开始前捕获四个 package 全局诊断变量的原值，并把这些变量固定为进程生命周期内稳定的转发入口。lease 只原子切换当前 owner；初始化失败或未协调的 server 退出会停用自己的 owner。协调式 shutdown 在关闭 listener 前标记生命周期，`AppCoreRun` 返回时不会提前停用 owner；`http.Server.Shutdown` 等待活动 handler 排空后，shutdown 路径才停用 owner。之后转发入口按行为回退到首次捕获的 Gin 函数和 writer，而不会在运行期写回全局变量。这样设计是因为 Gin 读取这些变量时没有同步，运行期写回会与并发诊断输出产生数据竞争。lease 不关闭框架日志器；后续 owner 复用同一组稳定入口。lease 活跃期间的多个 Gin engine 共享同一个框架日志器，逐 engine 的原生 debug 隔离不受支持；第二个 FiberHouse core 会收到安装冲突，而不是覆盖现有 owner。桥接安装后由外部代码改写这些全局变量仍不受支持。
 
 桥接不改变 FiberHouse 既有请求访问日志、recovery 或尾部错误处理的所有权，也不安装 Gin 原生 Logger/Recovery 中间件。访问日志仍由 `CoreWithGin.loggerMiddleware` 产生一条 Info 记录，recovery 仍由 FiberHouse recovery provider 处理；桥接只承接 Gin 自身的诊断出口和 server error logger。
 

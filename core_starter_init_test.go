@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -654,6 +655,59 @@ func TestCoreInit_GinLoggerConflictDefersErrorAndGuardsRegistration(t *testing.T
 	requireTask4GinLoggerActive(t)
 }
 
+func TestCoreInit_GinLoggerConflictRemainsTerminalAfterOwnerRelease(t *testing.T) {
+	preserveTask4GinMode(t)
+	externalLease, err := installTask4GinLoggerProbe(t)
+	require.NoError(t, err)
+	t.Cleanup(externalLease.Release)
+
+	ctx := newTask4InternalAppContext(t, nil)
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+	t.Cleanup(core.releaseGinLogger)
+	frame := &task4Frame{}
+	core.InitCoreApp(frame, task4GoodCodecManager())
+	require.ErrorIs(
+		t,
+		core.initErr,
+		adaptorlogging.ErrGinLoggerAlreadyInstalled,
+	)
+
+	externalLease.Release()
+	core.InitCoreApp(frame, task4GoodCodecManager())
+	runErr := core.AppCoreRun()
+
+	require.ErrorIs(
+		t,
+		runErr,
+		adaptorlogging.ErrGinLoggerAlreadyInstalled,
+	)
+	requireTask4GinLoggerReleased(t)
+}
+
+func TestCoreInit_GinLoggerSuccessfulReentryIsNoOp(t *testing.T) {
+	preserveTask4GinMode(t)
+	ctx := newTask4InternalAppContext(t, nil)
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+	t.Cleanup(core.releaseGinLogger)
+	frame := &task4Frame{}
+
+	core.InitCoreApp(frame, task4GoodCodecManager())
+	firstEngine := core.coreApp
+	firstServer := core.httpServer
+	core.InitCoreApp(frame, task4GoodCodecManager())
+
+	assert.NoError(t, core.initErr)
+	assert.Same(t, firstEngine, core.coreApp)
+	assert.Same(t, firstServer, core.httpServer)
+
+	replacement := &task4LifecycleManager{
+		typ:      ProviderTypeDefault().GroupExtendReplace,
+		location: ProviderLocationDefault().LocationServerRun,
+	}
+	assert.NoError(t, core.AppCoreRun(replacement))
+	requireTask4GinLoggerReleased(t)
+}
+
 func TestCoreInit_GinLoggerAccessRecordHasComponentWithoutDuplication(t *testing.T) {
 	preserveTask4GinMode(t)
 	ctx, output := newTask4LoggingAppContext(t, map[string]interface{}{
@@ -761,6 +815,128 @@ func TestCoreShutdown_GinLoggerReleasedOnAllPaths(t *testing.T) {
 			requireTask4GinLoggerReleased(t)
 		})
 	}
+}
+
+func TestCoreShutdown_GinLoggerLeaseSurvivesGracefulDrain(t *testing.T) {
+	preserveTask4GinMode(t)
+	ctx, output := newTask4LoggingAppContext(t, nil)
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	t.Cleanup(core.releaseGinLogger)
+	t.Cleanup(func() {
+		if core.httpServer != nil {
+			_ = core.httpServer.Close()
+		}
+	})
+
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	var releaseHandlerOnce sync.Once
+	unblockHandler := func() {
+		releaseHandlerOnce.Do(func() { close(releaseHandler) })
+	}
+	t.Cleanup(unblockHandler)
+
+	core.coreApp.Use(gin.Logger())
+	core.coreApp.GET("/drain", func(c *gin.Context) {
+		close(handlerStarted)
+		<-releaseHandler
+		c.Status(http.StatusNoContent)
+	})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	core.httpServer.Addr = listener.Addr().String()
+	require.NoError(t, listener.Close())
+
+	runResult := make(chan error, 1)
+	go func() {
+		runResult <- core.AppCoreRun()
+	}()
+
+	listenerReadyDeadline := time.Now().Add(3 * time.Second)
+	for {
+		conn, dialErr := net.DialTimeout("tcp", core.httpServer.Addr, 50*time.Millisecond)
+		if dialErr == nil {
+			require.NoError(t, conn.Close())
+			break
+		}
+		if time.Now().After(listenerReadyDeadline) {
+			require.NoError(t, dialErr)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	requestResult := make(chan error, 1)
+	go func() {
+		response, requestErr := (&http.Client{
+			Timeout: 5 * time.Second,
+		}).Get("http://" + core.httpServer.Addr + "/drain")
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		requestResult <- requestErr
+	}()
+
+	select {
+	case <-handlerStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("blocked Gin handler did not start")
+	}
+
+	shutdownResult := make(chan error, 1)
+	go func() {
+		shutdownResult <- core.Shutdown()
+	}()
+
+	var runErr error
+	select {
+	case runErr = <-runResult:
+	case <-time.After(3 * time.Second):
+		t.Fatal("AppCoreRun did not return after graceful shutdown closed the listener")
+	}
+
+	probeDuringDrain, probeDuringDrainErr := installTask4GinLoggerProbe(t)
+	if probeDuringDrain != nil {
+		probeDuringDrain.Release()
+	}
+	assert.ErrorIs(
+		t,
+		probeDuringDrainErr,
+		adaptorlogging.ErrGinLoggerAlreadyInstalled,
+	)
+
+	unblockHandler()
+
+	var requestErr error
+	select {
+	case requestErr = <-requestResult:
+	case <-time.After(3 * time.Second):
+		t.Fatal("blocked Gin request did not finish")
+	}
+	var shutdownErr error
+	select {
+	case shutdownErr = <-shutdownResult:
+	case <-time.After(3 * time.Second):
+		t.Fatal("graceful shutdown did not finish after handler drain")
+	}
+
+	require.NoError(t, runErr)
+	require.NoError(t, requestErr)
+	require.NoError(t, shutdownErr)
+
+	var foundNativeAccessRecord bool
+	for _, record := range decodeTask4LogRecords(t, output) {
+		message, _ := record["message"].(string)
+		if record["Component"] == "Gin" &&
+			record["Channel"] == "writer" &&
+			strings.Contains(message, "/drain") {
+			foundNativeAccessRecord = true
+			break
+		}
+	}
+	assert.True(t, foundNativeAccessRecord, "final native Gin access record was not forwarded")
+	requireTask4GinLoggerReleased(t)
 }
 
 // generateTask4SelfSignedCert 生成一份临时的 ECDSA 自签名证书/私钥文件，

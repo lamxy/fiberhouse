@@ -415,8 +415,8 @@ after:
 
 ```text
 listener/start failure
-normal AppCoreRun return
-successful graceful shutdown
+uncoordinated normal AppCoreRun return
+successful graceful shutdown after active handlers drain
 shutdown provider error
 replacement shutdown provider
 ```
@@ -514,12 +514,17 @@ if cg.httpServer.ErrorLog == nil {
 - [ ] **Step 5: Propagate init failure and release on all terminal paths**
 
 At the start of every Gin registration method, return if `initErr != nil`.
+Make `InitCoreApp` terminal when `initErr`, an initialized engine/server, or an
+owned lease exists, so conflict retries and successful re-entry are no-ops.
 `AppCoreRun` returns the wrapped `initErr` before using the server.
 
-After the initialization check, `AppCoreRun` defers
-`cg.releaseGinLogger()`. `Shutdown` also defers it before any early return.
-On the successful shutdown path, call `cg.releaseGinLogger()` explicitly
-before `LoggerWrapper.Close`; the deferred call remains safe.
+Before the initialization check, `AppCoreRun` registers cleanup that releases
+unless coordinated graceful shutdown is active. `Shutdown` also defers release
+before any early return and atomically marks coordinated shutdown immediately
+before calling `http.Server.Shutdown`. The run path then leaves the lease active
+when listener shutdown returns; after active handlers drain and
+`http.Server.Shutdown` completes, `Shutdown` releases before
+`LoggerWrapper.Close`. The deferred call remains safe.
 
 Add `Component="Gin"` to the existing structured access event. Do not add
 native Gin middleware.

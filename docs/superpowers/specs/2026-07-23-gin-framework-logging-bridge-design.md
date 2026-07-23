@@ -232,6 +232,11 @@ The lease is released if initialization panics or exits before the core is
 fully initialized. The existing panic is not swallowed; cleanup runs and the
 panic continues.
 
+Initialization is terminal once the core has an initialization error, engine,
+initialized server, or owned lease. Re-entering `InitCoreApp` after success is
+an idempotent no-op, and a core that lost lease acquisition cannot retry after
+the external owner releases.
+
 Methods that register middleware, routes, Swagger, or hooks return immediately
 when `initErr` is set. `AppCoreRun` returns the wrapped initialization error
 before loading run providers or dereferencing the engine/server. This carries
@@ -241,16 +246,21 @@ changing the public `InitCoreApp` interface.
 `CoreWithGin` has one private idempotent release helper. Both `AppCoreRun` and
 `Shutdown` call it:
 
-- `AppCoreRun` defers release so a normal server exit, listener error, or
-  replacement run provider cannot leave an owner active.
+- `AppCoreRun` registers cleanup before its initialization-error return. It
+  releases after uncoordinated normal server exits, listener errors, and run
+  provider errors or replacement.
+- Before `http.Server.Shutdown` closes the listener, `Shutdown` marks the
+  coordinated lifecycle. The returning listener then leaves ownership with
+  `Shutdown` while active handlers drain.
 - `Shutdown` guarantees release on every return path, including replacement
-  and provider errors.
-- On the normal shutdown path, `Shutdown` releases the Gin bridge explicitly
-  before closing the framework logger. A deferred idempotent release remains
-  as protection for early returns.
+  and provider errors. On the normal path it retains the lease until
+  `http.Server.Shutdown` returns, then releases before closing the framework
+  logger. A deferred idempotent release remains as protection for early
+  returns.
 
-This dual call is intentional: shutdown and server return occur in different
-goroutines during signal handling, and either may complete first.
+This coordinated handoff is intentional: listener return and handler drain
+occur in different goroutines, so listener return alone cannot end logging
+ownership during graceful shutdown.
 
 ## Existing Middleware
 
@@ -348,11 +358,16 @@ Core integration and contract tests cover:
 - `http.Server.ErrorLog` is non-nil and reaches the framework logger.
 - An installation conflict prevents engine creation and is returned by
   `AppCoreRun`.
+- A conflicted core remains terminal after the external owner releases, and a
+  successfully initialized core treats a second initialization call as a
+  no-op.
 - Registration methods do not dereference a missing engine after an
   initialization conflict.
 - Listener failure releases the bridge.
-- Normal server return and graceful shutdown both release the bridge exactly
-  once.
+- An uncoordinated normal server return releases the bridge.
+- Graceful shutdown retains the bridge after listener return until blocked
+  handlers finish, forwards their final native access records, and then
+  releases.
 - Shutdown provider errors and replacement paths still release the bridge.
 - Existing access logging emits one record and includes `Component="Gin"`.
 - The canonical mode key wins over the legacy key.
@@ -394,9 +409,10 @@ and is documented.
 ### Logger Closes Before Gin Stops
 
 An active forwarding target could retain writers backed by a closed logger.
-Both run and shutdown paths release idempotently, and the normal shutdown path
-deactivates the target before closing the framework logger. The stable entries
-then use the captured original writers.
+Both run and shutdown paths release idempotently. During coordinated graceful
+shutdown, the run path leaves the target active until `http.Server.Shutdown`
+has drained handlers; the shutdown path then deactivates it before closing the
+framework logger. The stable entries then use the captured original writers.
 
 ### Initialization Cannot Return An Error Directly
 
