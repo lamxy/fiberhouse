@@ -5,12 +5,18 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// Example represents an example entity.
+type ExampleStatus string
+
+const (
+	ExampleStatusActive   ExampleStatus = "active"
+	ExampleStatusArchived ExampleStatus = "archived"
+)
+
 type Example struct {
-	ID                bson.ObjectID             `json:"id" bson:"_id,omitempty"`
-	Name              string                    `json:"name" bson:"name"`
-	Age               int                       `json:"age" bson:"age,minsize"` // minsize 取int32存储数据
-	Courses           []string                  `json:"courses" bson:"courses,omitempty"`
-	Profile           map[string]interface{}    `json:"profile" bson:"profile,omitempty"`
-	fields.Timestamps `json:"-" bson:",inline"` // inline: bson文档序列化自动提升嵌入字段即自动展开继承的公共字段
+	ID                bson.ObjectID `json:"id" bson:"_id,omitempty"`
+	Name              string        `json:"name" bson:"name"`
+	Description       string        `json:"description" bson:"description,omitempty"`
+	Status            ExampleStatus `json:"status" bson:"status"`
+	Tags              []string      `json:"tags" bson:"tags,omitempty"`
+	fields.Timestamps `json:"-" bson:",inline"`
 }

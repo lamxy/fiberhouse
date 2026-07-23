@@ -7,6 +7,10 @@ import (
 
 // wire: a call to wire.Build indicates that this function is an injector, but injectors must consist of only the wire.Build call and an optional return
 var (
-	ExampleServiceWireSet = wire.NewSet(NewExampleService)
-	HealthServiceProvide  = wire.NewSet(NewHealthService, repository.NewHealthRepository)
+	ExampleServiceWireSet = wire.NewSet(
+		NewExampleService,
+		wire.Bind(new(repository.ExampleStore), new(*repository.ExampleRepository)),
+		wire.Bind(new(ExampleUseCase), new(*ExampleService)),
+	)
+	HealthServiceProvide = wire.NewSet(NewHealthService, repository.NewHealthRepository)
 )

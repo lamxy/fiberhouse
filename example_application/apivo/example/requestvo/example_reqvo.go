@@ -1,38 +1,49 @@
 package requestvo
 
-import (
-	"github.com/lamxy/fiberhouse/component/validate"
-)
-
-// ExampleReqVo 示例请求对象
-type ExampleReqVo struct {
-	ExamName string                 `json:"exam_name" validate:"required,min=5,max=20"`  // Required field, min 5 char long max 20
-	ExamAge  int                    `json:"exam_age" validate:"omitempty,min=16,max=60"` // 可选字段，存在则验证后续tag
-	Courses  []string               `json:"courses" validate:"required"`                 // 自定义tag标签
-	Profile  map[string]interface{} `json:"profile" validate:"required"`
+type CreateExampleReqVo struct {
+	Name        string   `json:"name" validate:"required,min=2,max=80"`
+	Description string   `json:"description" validate:"max=500"`
+	Status      string   `json:"status" validate:"omitempty,oneof=active archived"`
+	Tags        []string `json:"tags" validate:"max=10,dive,min=1,max=30"`
 }
 
-// ObjId 统一ID对象
+type UpdateExampleReqVo struct {
+	Name        *string   `json:"name" validate:"omitempty,min=2,max=80"`
+	Description *string   `json:"description" validate:"omitempty,max=500"`
+	Status      *string   `json:"status" validate:"omitempty,oneof=active archived"`
+	Tags        *[]string `json:"tags" validate:"omitempty,max=10,dive,min=1,max=30"`
+}
+
+type ListExamplesReqVo struct {
+	Page     int    `query:"page" form:"page" validate:"omitempty,min=1"`
+	PageSize int    `query:"page_size" form:"page_size" validate:"omitempty,min=1,max=100"`
+	Status   string `query:"status" form:"status" validate:"omitempty,oneof=active archived"`
+}
+
+func (q ListExamplesReqVo) Normalize() ListExamplesReqVo {
+	if q.Page == 0 {
+		q.Page = 1
+	}
+	if q.PageSize == 0 {
+		q.PageSize = 20
+	}
+	return q
+}
+
+// Deprecated compatibility DTOs remain until the transport adapters are
+// migrated to the canonical CRUD API.
+type ExampleReqVo struct {
+	ExamName string                 `json:"exam_name"`
+	ExamAge  int                    `json:"exam_age"`
+	Courses  []string               `json:"courses"`
+	Profile  map[string]interface{} `json:"profile"`
+}
+
 type ObjId struct {
 	ID string `json:"id" validate:"required,alphanum,min=18,max=32"`
 }
 
-// PageReqVo 分页请求
 type PageReqVo struct {
 	Page int `json:"p" validate:"required,min=1"`
 	Size int `json:"s" validate:"required,min=1,max=20"`
-}
-
-/*
-RegisterValidationWrap 接口请求到后端控制器时，注册指定的tag和翻译后进行验证，建议应用启动阶段验证器全局统一注册替代
-*/
-func (req *ExampleReqVo) RegisterValidationWrap(wrap *validate.Wrap, lang ...string) error {
-	return nil
-}
-
-/*
-RegisterTranslationWrap 接口请求到后端控制器时，注册指定的tag和翻译后进行验证，建议应用启动阶段验证器全局统一注册替代
-*/
-func (req *ExampleReqVo) RegisterTranslationWrap(wrap *validate.Wrap, lang ...string) error {
-	return nil
 }
