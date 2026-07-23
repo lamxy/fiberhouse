@@ -307,68 +307,15 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		}
 	}
 
+	// 收集提供者并注册到同类型组的管理器，解決管理器加載提供者執行初始化
+	fh.resolveManagerWithProviders(manager...)
+
 	// 全局应用上下文
 	appContext := fh.AppCtx
+	// 全局配置器
 	cfg := appContext.GetConfig()
+	// 全局日志器
 	logger := appContext.GetLogger()
-
-	// 收集提供者并注册到同类型组的管理器中
-	var defaultManager IProviderManager
-	if len(manager) == 0 {
-		// 使用默认提供者管理器
-		defaultManager = NewDefaultPManager(appContext)
-		fh.managers = append(fh.managers, defaultManager)
-	} else {
-		defaultManager = manager[0]
-		fh.managers = append(fh.managers, defaultManager)
-	}
-	var leftProviders = make([]IProvider, 0)
-	for _, pdr := range fh.providers {
-		matched := false
-		for _, mgr := range fh.managers {
-			if pdr.Type().GetTypeID() == mgr.Type().GetTypeID() {
-				matched = true
-				err := mgr.Register(pdr) // 注册子类提供者实例
-				if err != nil {
-					// 注册失败（如已注册同名提供者）记录日志即可，不影响匹配状态
-					appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
-						Err(err).
-						Msgf("provider %s register failed", pdr.Type().GetTypeName())
-				}
-				break
-			}
-		}
-		// 未找到匹配类型的管理器，收集到leftProviders中
-		if !matched {
-			leftProviders = append(leftProviders, pdr)
-		}
-	}
-
-	// 将未匹配的提供者注册到默认管理器中
-	for _, pdr := range leftProviders {
-		//err := pdr.RegisterTo(defaultManager)
-		err := defaultManager.Register(pdr)
-		if err != nil {
-			appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
-				Err(err).
-				Msgf("provider %s register to default manager failed", pdr.Type().GetTypeName())
-		}
-	}
-
-	// 加载所有管理器中的提供者，排除已绑定到特定位置点的管理器，这些管理器将在对应位置点被单独加载
-	if len(fh.managers) > 0 {
-		for _, mgr := range fh.managers {
-			// 排除已设置位点的管理器，未设置位点的管理器直接加载
-			if mgr.Location().GetLocationID() == ProviderLocationDefault().ZeroLocation.GetLocationID() {
-				_, _ = mgr.LoadProvider()
-			}
-		}
-	}
-
-	// 默认管理器加载
-	if len(defaultManager.List()) > 0 {
-		_, _ = defaultManager.LoadProvider()
-	}
 
 	// 获取创建框架启动器选项参数列表
 	if len(fh.frameStarterOpts) == 0 {
@@ -406,6 +353,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg(msg)
 		panic(errors.New(msg))
 	}
+	// 初始化框架启动器
 	frameStarter, ok := anyStarter.(FrameStarter)
 	if !ok {
 		msg := "loaded FrameStarterCreate provider is not FrameStarter type"
@@ -449,6 +397,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg("CoreStarterCreate provider load failed")
 		panic(err)
 	}
+	// 初始化核心启动器
 	coreStarter, ok := anyCoreStarter.(CoreStarter)
 	if !ok {
 		msg := "loaded CoreStarterCreate provider is not CoreStarter type"
@@ -524,13 +473,16 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	allShutdownManagers = append(allShutdownManagers, shutdownManagers...)
 	allShutdownManagers = append(allShutdownManagers, shutdownAfterManagers...)
 
+	// select 监听中断信号和错误信号，等待程序优雅退出
 	runErr, shutdownErr, shutdownRequested := coordinateServerRun(
 		appStarter,
 		runManagers,
 		allShutdownManagers,
 		stopCh,
 	)
+
 	signal.Stop(stopCh)
+
 	if runErr != nil {
 		fmt.Printf("Application run server error: %v\n", runErr)
 	}
@@ -539,4 +491,76 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	}
 
 	fmt.Println("Application RunServer exited")
+}
+
+// resolveManagerWithProviders 收集提供者并注册到同类型组的管理器中，加載 providers 執行 initialize 初始化
+// 排除已绑定到特定位置点的管理器，这些管理器将在后续对应位置点被单独加载，不在此处解决
+func (fh *FiberHouse) resolveManagerWithProviders(manager ...IProviderManager) {
+	// 全局应用上下文
+	appContext := fh.AppCtx
+
+	var defaultManager IProviderManager
+	if len(manager) == 0 {
+		// 使用默认提供者管理器
+		defaultManager = NewDefaultPManager(appContext)
+		fh.managers = append(fh.managers, defaultManager)
+	} else {
+		defaultManager = manager[0]
+		fh.managers = append(fh.managers, defaultManager)
+	}
+	var leftProviders = make([]IProvider, 0)
+	for _, pdr := range fh.providers {
+		matched := false
+		for _, mgr := range fh.managers {
+			if pdr.Type().GetTypeID() == mgr.Type().GetTypeID() {
+				matched = true
+				err := mgr.Register(pdr) // 注册子类提供者实例
+				if err != nil {
+					// 注册失败（如已注册同名提供者）记录日志即可，不影响匹配状态
+					appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
+						Err(err).
+						Msgf("provider %s register failed", pdr.Type().GetTypeName())
+				}
+				break
+			}
+		}
+		// 未找到匹配类型的管理器，收集到leftProviders中
+		if !matched {
+			leftProviders = append(leftProviders, pdr)
+		}
+	}
+
+	// 将未匹配的提供者注册到默认管理器中
+	for _, pdr := range leftProviders {
+		//err := pdr.RegisterTo(defaultManager)
+		err := defaultManager.Register(pdr)
+		if err != nil {
+			appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
+				Err(err).
+				Msgf("provider %s register to default manager failed", pdr.Type().GetTypeName())
+		}
+	}
+
+	// 加载所有管理器中的提供者，排除已绑定到特定位置点的管理器，这些管理器将在对应位置点被单独加载
+	if len(fh.managers) > 0 {
+		for _, mgr := range fh.managers {
+			// 排除已设置位点的管理器，未设置位点的管理器直接加载
+			if mgr.Location().GetLocationID() == ProviderLocationDefault().ZeroLocation.GetLocationID() {
+				_, err := mgr.LoadProvider()
+				if err != nil {
+					appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).Err(err).Msg("manager load provider failed")
+				}
+			}
+		}
+	}
+
+	// 默认管理器加载
+	if len(defaultManager.List()) > 0 {
+		_, err := defaultManager.LoadProvider()
+		if err != nil {
+			appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
+				Err(err).
+				Msgf("default manager load provider failed")
+		}
+	}
 }
