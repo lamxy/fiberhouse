@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
@@ -38,7 +40,7 @@ func (s *TestService) HelloWorld() string {
 }
 
 // DoAgeDoubleCreateForTaskHandle 示例任务处理函数
-func (s *TestService) DoAgeDoubleCreateForTaskHandle(age int8) (int, error) {
+func (s *TestService) DoAgeDoubleCreateForTaskHandle(ctx context.Context, age int8) (int, error) {
 	s.GetContext().GetLogger().InfoWith(s.GetContext().GetConfig().LogOriginTask()).Msgf("DoAgeDoubleCreateForTaskHandle result: %d", age*2)
 
 	// 通过注册key获取ExampleRepository实例
@@ -56,7 +58,7 @@ func (s *TestService) DoAgeDoubleCreateForTaskHandle(age int8) (int, error) {
 		Profile:  map[string]interface{}{"pf1": "value1", "pf2": "value2"},
 	}
 
-	id, err := exampleRepo.CreateExample(&example)
+	id, err := exampleRepo.CreateExample(ctx, &example)
 
 	if err != nil {
 		s.GetContext().GetLogger().ErrorWith(s.GetContext().GetConfig().LogOriginTask()).Err(err).Msg("Create Example record error")

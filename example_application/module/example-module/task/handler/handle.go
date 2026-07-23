@@ -34,7 +34,7 @@ func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// 将负参数传入实例的处理函数
-	result, err := instance.DoAgeDoubleCreateForTaskHandle(p.Age)
+	result, err := instance.DoAgeDoubleCreateForTaskHandle(ctx, p.Age)
 	if err != nil {
 		return err
 	}

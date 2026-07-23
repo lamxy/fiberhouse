@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
@@ -46,6 +47,9 @@ type ExampleStore interface {
 type ExampleRepository struct {
 	fiberhouse.RepositoryLocator
 	Model ExampleModelStore
+
+	readyOnce sync.Once
+	readyErr  error
 }
 
 func NewExampleRepository(ctx fiberhouse.IApplicationContext, store ExampleModelStore) *ExampleRepository {
@@ -66,6 +70,9 @@ func RegisterKeyExampleRepository(ctx fiberhouse.IApplicationContext, ns ...stri
 }
 
 func (r *ExampleRepository) Create(ctx context.Context, example *entity.Example) error {
+	if err := r.ready(ctx); err != nil {
+		return err
+	}
 	id, err := r.Model.Insert(ctx, example)
 	if err != nil {
 		return translateModelError(err)
@@ -75,6 +82,9 @@ func (r *ExampleRepository) Create(ctx context.Context, example *entity.Example)
 }
 
 func (r *ExampleRepository) Get(ctx context.Context, rawID string) (*entity.Example, error) {
+	if err := r.ready(ctx); err != nil {
+		return nil, err
+	}
 	id, err := bson.ObjectIDFromHex(rawID)
 	if err != nil {
 		return nil, ErrInvalidID
@@ -87,6 +97,9 @@ func (r *ExampleRepository) Get(ctx context.Context, rawID string) (*entity.Exam
 }
 
 func (r *ExampleRepository) List(ctx context.Context, opts ListOptions) ([]entity.Example, int64, error) {
+	if err := r.ready(ctx); err != nil {
+		return nil, 0, err
+	}
 	examples, total, err := r.Model.Find(ctx, model.ExampleFilter{
 		Page: opts.Page, PageSize: opts.PageSize, Status: opts.Status,
 	})
@@ -100,6 +113,9 @@ func (r *ExampleRepository) List(ctx context.Context, opts ListOptions) ([]entit
 }
 
 func (r *ExampleRepository) Update(ctx context.Context, rawID string, example *entity.Example) error {
+	if err := r.ready(ctx); err != nil {
+		return err
+	}
 	id, err := bson.ObjectIDFromHex(rawID)
 	if err != nil {
 		return ErrInvalidID
@@ -115,6 +131,9 @@ func (r *ExampleRepository) Update(ctx context.Context, rawID string, example *e
 }
 
 func (r *ExampleRepository) Delete(ctx context.Context, rawID string) error {
+	if err := r.ready(ctx); err != nil {
+		return err
+	}
 	id, err := bson.ObjectIDFromHex(rawID)
 	if err != nil {
 		return ErrInvalidID
@@ -127,6 +146,13 @@ func (r *ExampleRepository) Delete(ctx context.Context, rawID string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *ExampleRepository) ready(ctx context.Context) error {
+	r.readyOnce.Do(func() {
+		r.readyErr = r.Model.EnsureIndexes(ctx)
+	})
+	return r.readyErr
 }
 
 func translateModelError(err error) error {
@@ -144,9 +170,9 @@ func translateModelError(err error) error {
 
 // CreateExample temporarily supports the old demonstration service while the
 // transport layer is migrated in the next slice.
-func (r *ExampleRepository) CreateExample(req *requestvo.ExampleReqVo) (string, error) {
+func (r *ExampleRepository) CreateExample(ctx context.Context, req *requestvo.ExampleReqVo) (string, error) {
 	example := &entity.Example{Name: req.ExamName, Status: entity.ExampleStatusActive}
-	if err := r.Create(context.Background(), example); err != nil {
+	if err := r.Create(ctx, example); err != nil {
 		return "", err
 	}
 	return example.ID.Hex(), nil
