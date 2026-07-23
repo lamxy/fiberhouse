@@ -137,3 +137,111 @@ func TestRepositoryDeleteIsHardDeleteAndPropagatesContext(t *testing.T) {
 		t.Fatal("Delete() must issue an explicit hard delete")
 	}
 }
+
+func TestRepositoryPropagatesContextAcrossOperations(t *testing.T) {
+	capture := func(contexts *[]context.Context) func(*gorm.DB) {
+		return func(tx *gorm.DB) {
+			*contexts = append(*contexts, tx.Statement.Context)
+		}
+	}
+	tests := []struct {
+		name     string
+		register func(*gorm.DB, *[]context.Context)
+		run      func(context.Context, *exampleRepository) error
+		want     int
+	}{
+		{
+			name: "migrate",
+			register: func(db *gorm.DB, contexts *[]context.Context) {
+				db.Callback().Raw().Before("gorm:raw").Register("test:context", capture(contexts))
+				db.Callback().Row().Before("gorm:row").Register("test:context", capture(contexts))
+			},
+			run: func(ctx context.Context, repo *exampleRepository) error {
+				return repo.Migrate(ctx)
+			},
+			want: 4,
+		},
+		{
+			name: "create",
+			register: func(db *gorm.DB, contexts *[]context.Context) {
+				db.Callback().Create().Before("gorm:create").Register("test:context", capture(contexts))
+			},
+			run: func(ctx context.Context, repo *exampleRepository) error {
+				return repo.Create(ctx, &entity.ExampleRecord{Name: "alpha", Status: "active"})
+			},
+			want: 1,
+		},
+		{
+			name: "get",
+			register: func(db *gorm.DB, contexts *[]context.Context) {
+				db.Callback().Query().Before("gorm:query").Register("test:context", capture(contexts))
+			},
+			run: func(ctx context.Context, repo *exampleRepository) error {
+				_, err := repo.Get(ctx, 7)
+				return err
+			},
+			want: 1,
+		},
+		{
+			name: "list count and rows",
+			register: func(db *gorm.DB, contexts *[]context.Context) {
+				db.Callback().Query().Before("gorm:query").Register("test:context", capture(contexts))
+			},
+			run: func(ctx context.Context, repo *exampleRepository) error {
+				_, _, err := repo.List(ctx, ListOptions{Page: 1, PageSize: 20})
+				return err
+			},
+			want: 2,
+		},
+		{
+			name: "update and follow-up get",
+			register: func(db *gorm.DB, contexts *[]context.Context) {
+				db.Callback().Update().Before("gorm:update").Register("test:context-update", func(tx *gorm.DB) {
+					capture(contexts)(tx)
+					tx.RowsAffected = 1
+				})
+				db.Callback().Query().Before("gorm:query").Register("test:context-query", capture(contexts))
+			},
+			run: func(ctx context.Context, repo *exampleRepository) error {
+				name := "updated"
+				_, err := repo.Update(ctx, 7, UpdateInput{Name: &name})
+				return err
+			},
+			want: 2,
+		},
+		{
+			name: "delete",
+			register: func(db *gorm.DB, contexts *[]context.Context) {
+				db.Callback().Delete().Before("gorm:delete").Register("test:context", func(tx *gorm.DB) {
+					capture(contexts)(tx)
+					tx.RowsAffected = 1
+				})
+			},
+			run: func(ctx context.Context, repo *exampleRepository) error {
+				return repo.Delete(ctx, 7)
+			},
+			want: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, db := dryRunRepository(t)
+			ctx := context.WithValue(context.Background(), contextKey("operation"), tt.name)
+			var contexts []context.Context
+			tt.register(db, &contexts)
+
+			if err := tt.run(ctx, repo); err != nil {
+				t.Fatalf("%s error = %v", tt.name, err)
+			}
+			if len(contexts) != tt.want {
+				t.Fatalf("captured %d contexts, want %d", len(contexts), tt.want)
+			}
+			for i, captured := range contexts {
+				if captured != ctx {
+					t.Fatalf("callback %d context did not match caller context", i)
+				}
+			}
+		})
+	}
+}

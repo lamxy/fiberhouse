@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/entity"
@@ -61,6 +62,69 @@ func TestServiceCreateNormalizesInputAndPropagatesContext(t *testing.T) {
 	}
 	if repo.create.Name != "alpha" || repo.create.Description != "first" || repo.create.Status != "active" {
 		t.Fatalf("normalized record = %#v", repo.create)
+	}
+}
+
+func TestServicePropagatesContextAcrossUseCaseMethods(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(context.Context, *ExampleMysqlService) error
+	}{
+		{"migrate", func(ctx context.Context, svc *ExampleMysqlService) error {
+			return svc.Migrate(ctx)
+		}},
+		{"get", func(ctx context.Context, svc *ExampleMysqlService) error {
+			_, err := svc.Get(ctx, 7)
+			return err
+		}},
+		{"list", func(ctx context.Context, svc *ExampleMysqlService) error {
+			_, err := svc.List(ctx, ListInput{})
+			return err
+		}},
+		{"update", func(ctx context.Context, svc *ExampleMysqlService) error {
+			name := "updated"
+			_, err := svc.Update(ctx, 7, UpdateInput{Name: &name})
+			return err
+		}},
+		{"delete", func(ctx context.Context, svc *ExampleMysqlService) error {
+			return svc.Delete(ctx, 7)
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeRepository{result: &entity.ExampleRecord{ID: 7}}
+			svc := NewExampleMysqlService(repo)
+			ctx := context.WithValue(context.Background(), "trace", tt.name)
+
+			if err := tt.run(ctx, svc); err != nil {
+				t.Fatalf("%s error = %v", tt.name, err)
+			}
+			if repo.ctx != ctx {
+				t.Fatalf("%s did not propagate the caller context", tt.name)
+			}
+		})
+	}
+}
+
+func TestServiceCreateAcceptsMultibyteCharactersUpToMySQLVarcharLimits(t *testing.T) {
+	repo := &fakeRepository{}
+	svc := NewExampleMysqlService(repo)
+	name := strings.Repeat("界", 80)
+	description := strings.Repeat("🙂", 500)
+
+	_, err := svc.Create(context.Background(), CreateInput{
+		Name:        "  " + name + "  ",
+		Description: "  " + description + "  ",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if repo.create.Name != name {
+		t.Fatalf("name rune count = %d, want 80", len([]rune(repo.create.Name)))
+	}
+	if repo.create.Description != description {
+		t.Fatalf("description rune count = %d, want 500", len([]rune(repo.create.Description)))
 	}
 }
 
@@ -129,5 +193,26 @@ func TestServiceUpdateMapsOnlyProvidedFields(t *testing.T) {
 	}
 	if repo.update.Name != nil {
 		t.Fatalf("unexpected name update = %#v", repo.update.Name)
+	}
+}
+
+func TestServiceUpdateAcceptsMultibyteCharactersUpToMySQLVarcharLimits(t *testing.T) {
+	repo := &fakeRepository{result: &entity.ExampleRecord{ID: 4}}
+	svc := NewExampleMysqlService(repo)
+	name := "  " + strings.Repeat("界", 80) + "  "
+	description := "  " + strings.Repeat("🙂", 500) + "  "
+
+	_, err := svc.Update(context.Background(), 4, UpdateInput{
+		Name:        &name,
+		Description: &description,
+	})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if repo.update.Name == nil || len([]rune(*repo.update.Name)) != 80 {
+		t.Fatalf("name update = %#v, want 80 characters", repo.update.Name)
+	}
+	if repo.update.Description == nil || len([]rune(*repo.update.Description)) != 500 {
+		t.Fatalf("description update = %#v, want 500 characters", repo.update.Description)
 	}
 }

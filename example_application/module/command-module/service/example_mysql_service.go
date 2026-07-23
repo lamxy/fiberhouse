@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/repository"
@@ -65,10 +66,10 @@ func (s *ExampleMysqlService) Create(ctx context.Context, input CreateInput) (*e
 	if input.Name == "" {
 		return nil, invalid("name is required")
 	}
-	if len(input.Name) > 80 {
+	if utf8.RuneCountInString(input.Name) > 80 {
 		return nil, invalid("name must be at most 80 characters")
 	}
-	if len(input.Description) > 500 {
+	if utf8.RuneCountInString(input.Description) > 500 {
 		return nil, invalid("description must be at most 500 characters")
 	}
 	if input.Status == "" {
@@ -137,14 +138,14 @@ func (s *ExampleMysqlService) Update(ctx context.Context, id uint64, input Updat
 		if value == "" {
 			return nil, invalid("name must not be empty")
 		}
-		if len(value) > 80 {
+		if utf8.RuneCountInString(value) > 80 {
 			return nil, invalid("name must be at most 80 characters")
 		}
 		repoInput.Name = &value
 	}
 	if input.Description != nil {
 		value := strings.TrimSpace(*input.Description)
-		if len(value) > 500 {
+		if utf8.RuneCountInString(value) > 500 {
 			return nil, invalid("description must be at most 500 characters")
 		}
 		repoInput.Description = &value
