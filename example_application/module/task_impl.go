@@ -3,6 +3,7 @@ package module
 import (
 	"context"
 	"fmt"
+
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/cache"
@@ -51,7 +52,8 @@ func (ta *TaskAsync) GetTaskHandlerMap() map[string]func(context.Context, *asynq
 	// 注册 example-module 模块下的任务处理器
 	exampleTaskHandler.RegisterTaskHandlers(ta)
 
-	// 注册更多的模块下的任务处理器...
+	// 注册更多的模块下的任务处理器
+	//...
 
 	return ta.taskHandlerMap
 }
@@ -87,7 +89,7 @@ func (ta *TaskAsync) RegisterTaskServerToContainer() {
 				"low":      1,
 			},
 			Logger:   logadaptor.NewTaskLoggerAdapter(ta.Ctx), // 任务日志适配器，统一接入框架系统日志器
-			LogLevel: asynq.WarnLevel,                      // 指定日志级别
+			LogLevel: asynq.WarnLevel,                         // 指定日志级别
 		})
 		return worker, nil
 	})

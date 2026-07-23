@@ -3,14 +3,15 @@ package handler
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/task"
-	"time"
 )
 
-// todo start monitor: podman run --rm --name asynqmon -p 8181:8181 --env "PORT=8181" --env "REDIS_ADDR=10.89.1.8:6379" --env "ENABLE_METRICS_EXPORTER=true" hibiken/asynqmon
+// todo start monitor: docker run --rm --name asynqmon -p 8181:8181 --env "PORT=8181" --env "REDIS_ADDR=10.89.1.8:6379" --env "ENABLE_METRICS_EXPORTER=true" hibiken/asynqmon
 
 // HandleExampleCreateTask 样例任务创建处理器
 func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {

@@ -23,7 +23,7 @@ Package globalmanager 提供全局对象管理功能，用于管理应用程序�
 	// 获取对象实例
 	db, err := gm.Get("database")
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
 
 	// 类型断言使用
