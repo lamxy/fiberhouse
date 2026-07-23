@@ -7,10 +7,10 @@
 package api
 
 import (
+	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/model"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
-	"github.com/lamxy/fiberhouse"
 )
 
 // Injectors from api_provider.go:
