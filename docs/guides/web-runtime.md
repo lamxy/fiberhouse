@@ -50,7 +50,7 @@ Fiber 主要读取 `application.server`：
 | `idleTimeout`、`readTimeout`、`writeTimeout` | fallback 分别为 `60`、`30`、`30`，随后乘 `time.Second` |
 | `requestMethods` | fallback 为空切片，交由 Fiber 解释 |
 
-Gin 的规范运行模式键是 `application.plugins.engine.servers.gin.mode`，接受 Gin 定义的 `debug`、`release`、`test` 三个值。规范键缺失时才读取旧键 `application.plugins.server.gin.mode` 作为兼容 fallback；两者都缺失时使用 `release`，无效值仍由 `gin.SetMode` 按 Gin 的既有行为拒绝。`application.recover.debugMode` 只控制 recovery 响应细节与堆栈行为，不再改变 Gin mode；依赖旧耦合行为的应用必须显式设置规范键。
+Gin 的规范运行模式键是 `application.plugins.engine.servers.gin.mode`，接受 Gin 定义的 `debug`、`release`、`test` 三个值。解析时第一个非空值优先：先读取规范键；规范键缺失或为空时读取旧键 `application.plugins.server.gin.mode` 作为兼容 fallback；两者都为空时使用 `release`。不受支持的非空值仍由 `gin.SetMode` 按 Gin 的既有行为拒绝。`application.recover.debugMode` 只控制 recovery 响应细节与堆栈行为，不再改变 Gin mode；依赖旧耦合行为的应用必须显式设置规范键。
 
 同一 Gin 分组中的服务参数还包括：`host=0.0.0.0`、`port=8080`、`readTimeout=30` 秒、`writeTimeout=30` 秒、`idleTimeout=120` 秒、`readHeaderTimeout=10` 秒；`maxHeaderBytes` 的配置值先按 KiB 读取，fallback `1024`，再乘 `1024`。这些数值是具体消费方的源码 fallback，不是示例 YAML 的默认声明。
 

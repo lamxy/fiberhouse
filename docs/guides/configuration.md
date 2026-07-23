@@ -103,7 +103,7 @@ APP_CONF_application_appLog_level=debug
 
 ## Gin mode 与 recovery debug
 
-Gin mode 的规范键是 `application.plugins.engine.servers.gin.mode`，可设置为 Gin 接受的 `debug`、`release` 或 `test`。解析顺序是规范键、旧的 `application.plugins.server.gin.mode` 兼容 fallback、最后是 `release`；规范键一旦存在就优先，旧键不应再用于新配置。最终值交给 `gin.SetMode` 验证，无效值保持 Gin 既有的失败行为。
+Gin mode 的规范键是 `application.plugins.engine.servers.gin.mode`，可设置为 Gin 接受的 `debug`、`release` 或 `test`。解析时第一个非空值优先：先读取规范键；规范键缺失或为空时读取旧的 `application.plugins.server.gin.mode` 作为兼容 fallback；两者都为空时使用 `release`。旧键不应再用于新配置。最终的非空值交给 `gin.SetMode` 验证，不受支持的非空值保持 Gin 既有的失败行为。
 
 `application.recover.debugMode` 不再改变 Gin mode。它只控制 recovery 的响应细节与堆栈行为；开发和测试示例分别显式使用 `mode: debug`，生产示例显式使用 `mode: release`。从旧行为迁移时，应设置规范 mode 键，而不是依赖 recovery debug 间接切换 Gin。
 

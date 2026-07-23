@@ -34,7 +34,7 @@ Origin 子日志器只是共享底层输出的带字段 logger，不拥有独立
 | 来源 | 框架级别 | 识别字段 |
 |---|---|---|
 | `gin.DebugPrintFunc` | Debug | `Component="Gin"`、`Channel="debug"` |
-| `gin.DebugPrintRouteFunc` | Debug | component、`Channel="route"`、method、path、handler、handler count |
+| `gin.DebugPrintRouteFunc` | Debug | `Component="Gin"`、`Channel="debug"`、method、path、handler、handlerCount |
 | `gin.DefaultWriter` | Info | component、`Channel="writer"` |
 | `gin.DefaultErrorWriter` | Error | component、`Channel="error"` |
 | 默认 `http.Server.ErrorLog` | Error | component、`Channel="server"` |
