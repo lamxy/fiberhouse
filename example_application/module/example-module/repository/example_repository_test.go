@@ -162,6 +162,82 @@ func TestRepositoryReturnsIndexInitializationError(t *testing.T) {
 	}
 }
 
+func TestRepositoryRejectsMalformedIDsBeforeIndexInitialization(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*ExampleRepository) error
+	}{
+		{
+			name: "get",
+			run: func(repo *ExampleRepository) error {
+				_, err := repo.Get(context.Background(), "bad")
+				return err
+			},
+		},
+		{
+			name: "update",
+			run: func(repo *ExampleRepository) error {
+				return repo.Update(context.Background(), "bad", &entity.Example{})
+			},
+		},
+		{
+			name: "delete",
+			run: func(repo *ExampleRepository) error {
+				return repo.Delete(context.Background(), "bad")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ensureCalls := 0
+			repo := &ExampleRepository{Model: &fakeModelStore{
+				ensureIndexesFn: func(context.Context) error {
+					ensureCalls++
+					return errors.New("indexes unavailable")
+				},
+			}}
+
+			if err := tt.run(repo); !errors.Is(err, ErrInvalidID) {
+				t.Fatalf("error = %v, want ErrInvalidID", err)
+			}
+			if ensureCalls != 0 {
+				t.Fatalf("EnsureIndexes calls = %d, want 0", ensureCalls)
+			}
+		})
+	}
+}
+
+func TestRepositoryRetriesIndexInitializationAfterFailure(t *testing.T) {
+	sentinel := errors.New("indexes temporarily unavailable")
+	ensureCalls := 0
+	insertCalls := 0
+	store := &fakeModelStore{
+		ensureIndexesFn: func(context.Context) error {
+			ensureCalls++
+			if ensureCalls == 1 {
+				return sentinel
+			}
+			return nil
+		},
+		insertFn: func(context.Context, *entity.Example) (bson.ObjectID, error) {
+			insertCalls++
+			return bson.NewObjectID(), nil
+		},
+	}
+	repo := &ExampleRepository{Model: store}
+
+	if err := repo.Create(context.Background(), &entity.Example{}); !errors.Is(err, sentinel) {
+		t.Fatalf("first Create error = %v, want transient initialization error", err)
+	}
+	if err := repo.Create(context.Background(), &entity.Example{}); err != nil {
+		t.Fatalf("second Create error = %v, want retry success", err)
+	}
+	if ensureCalls != 2 || insertCalls != 1 {
+		t.Fatalf("calls: EnsureIndexes=%d Insert=%d, want 2 and 1", ensureCalls, insertCalls)
+	}
+}
+
 func TestRepositoryMutationErrors(t *testing.T) {
 	sentinel := errors.New("driver failed")
 	validID := bson.NewObjectID().Hex()

@@ -48,8 +48,8 @@ type ExampleRepository struct {
 	fiberhouse.RepositoryLocator
 	Model ExampleModelStore
 
-	readyOnce sync.Once
-	readyErr  error
+	readyMu     sync.Mutex
+	initialized bool
 }
 
 func NewExampleRepository(ctx fiberhouse.IApplicationContext, store ExampleModelStore) *ExampleRepository {
@@ -82,12 +82,12 @@ func (r *ExampleRepository) Create(ctx context.Context, example *entity.Example)
 }
 
 func (r *ExampleRepository) Get(ctx context.Context, rawID string) (*entity.Example, error) {
-	if err := r.ready(ctx); err != nil {
-		return nil, err
-	}
 	id, err := bson.ObjectIDFromHex(rawID)
 	if err != nil {
 		return nil, ErrInvalidID
+	}
+	if err := r.ready(ctx); err != nil {
+		return nil, err
 	}
 	example, err := r.Model.FindByID(ctx, id)
 	if err != nil {
@@ -113,12 +113,12 @@ func (r *ExampleRepository) List(ctx context.Context, opts ListOptions) ([]entit
 }
 
 func (r *ExampleRepository) Update(ctx context.Context, rawID string, example *entity.Example) error {
-	if err := r.ready(ctx); err != nil {
-		return err
-	}
 	id, err := bson.ObjectIDFromHex(rawID)
 	if err != nil {
 		return ErrInvalidID
+	}
+	if err := r.ready(ctx); err != nil {
+		return err
 	}
 	changed, err := r.Model.Replace(ctx, id, example)
 	if err != nil {
@@ -131,12 +131,12 @@ func (r *ExampleRepository) Update(ctx context.Context, rawID string, example *e
 }
 
 func (r *ExampleRepository) Delete(ctx context.Context, rawID string) error {
-	if err := r.ready(ctx); err != nil {
-		return err
-	}
 	id, err := bson.ObjectIDFromHex(rawID)
 	if err != nil {
 		return ErrInvalidID
+	}
+	if err := r.ready(ctx); err != nil {
+		return err
 	}
 	deleted, err := r.Model.Delete(ctx, id)
 	if err != nil {
@@ -149,10 +149,17 @@ func (r *ExampleRepository) Delete(ctx context.Context, rawID string) error {
 }
 
 func (r *ExampleRepository) ready(ctx context.Context) error {
-	r.readyOnce.Do(func() {
-		r.readyErr = r.Model.EnsureIndexes(ctx)
-	})
-	return r.readyErr
+	r.readyMu.Lock()
+	defer r.readyMu.Unlock()
+
+	if r.initialized {
+		return nil
+	}
+	if err := r.Model.EnsureIndexes(ctx); err != nil {
+		return err
+	}
+	r.initialized = true
+	return nil
 }
 
 func translateModelError(err error) error {
