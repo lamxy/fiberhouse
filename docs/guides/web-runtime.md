@@ -89,7 +89,7 @@ Gin 的规范运行模式键是 `application.plugins.engine.servers.gin.mode`，
 
 Fiber 和 Gin 都在 goroutine 中启动服务，并在主 goroutine 等待 `SIGINT`/`SIGTERM`。两者都只在监听函数返回后才把 `AppState` 设为 `true`，因此该字段不是“已经开始接流量”的 ready 标记。受控停止都会调用 `GlobalManager.ClearAll(true)` 而不是逐项 `Close`；清空容器不等于数据库、缓存、后台 worker 已被释放，详见[《GlobalManager》](global-manager.md)。
 
-Fiber 的 `OnShutdown` 在 `Shutdown()` 触发时先停止并等待默认 keepalive，再清空容器、记录 shutdown 日志并关闭日志器。Gin 使用固定 30 秒 shutdown context，并在调用 `http.Server.Shutdown` 前标记协调式停止；listener 先返回时由 run 路径保留 Gin 日志 owner，活动 handler 排空且 `http.Server.Shutdown` 返回后，再按停止并等待默认 keepalive、清空容器、记录完成日志、停用 owner、关闭日志器的顺序清理。稳定的 Gin 转发入口不会在关闭过程中被写回，无 owner 时会转发到首次捕获的原始行为。该协调只覆盖默认 `FrameApplication` 的健康检查，不包含 task worker、应用自建 goroutine 或逐项资源关闭。
+Fiber 的 `OnShutdown` 在 `Shutdown()` 触发时先停止并等待默认 keepalive，再清空容器、记录 shutdown 日志并关闭日志器。Gin 使用固定 30 秒 shutdown context，并在调用 `http.Server.Shutdown` 前标记协调式停止；listener 先返回时由 run 路径保留 Gin 日志 owner，活动 handler 排空且 `http.Server.Shutdown` 返回后，先停用 owner，再执行 post-shutdown providers、停止并等待默认 keepalive、清空容器等资源清理，随后记录完成日志，最后关闭日志器。稳定的 Gin 转发入口不会在关闭过程中被写回，无 owner 时会转发到首次捕获的原始行为。该协调只覆盖默认 `FrameApplication` 的健康检查，不包含 task worker、应用自建 goroutine 或逐项资源关闭。
 
 当前 Gin TLS 配置已接通证书加载和启动选择：`tls.enable=true` 且证书/私钥路径有效时会填充 `TLSConfig`，运行阶段随后调用 `ListenAndServeTLS("", "")`；没有 TLS 配置时仍调用 `ListenAndServe()`。无效的非空证书/私钥会在加载失败后 fail-stop；缺失任一路径时则只记录错误并保持 `TLSConfig == nil`，因此显式启用 TLS 的应用仍应在部署前校验配置，避免落到 HTTP 路径。现有测试覆盖有效证书加载和无效证书失败，并用 AST 核对 TLS/HTTP 调用分支；另有一条以 `127.0.0.1:0` 建立 loopback listener、通过 `http.Server.ServeTLS` 驱动真实 TLS 握手与 HTTP 请求-响应、并验证 `Shutdown` 在 3 秒内正常完成的回归测试。Fiber 默认路径同样调用普通 `Listen`；`OnListen` 能显示 TLS 标志并不等于框架已经装配证书。
 
