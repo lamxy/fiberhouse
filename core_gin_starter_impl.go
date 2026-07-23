@@ -513,6 +513,10 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 	defer cg.releaseGinLogger()
 
+	if cg.initializationFailed() {
+		return cg.initErr
+	}
+
 	if cg.GetAppContext().GetAppState() {
 		return nil
 	}

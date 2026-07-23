@@ -45,8 +45,8 @@ The current Gin mode configuration also has two related problems:
   captured.
 - Give one active FiberHouse Gin core exclusive, explicit ownership of the Gin
   global logging hooks.
-- Restore the previous Gin globals when the core stops or initialization
-  fails.
+- Keep stable forwarding entries installed after the first bridge installation
+  and fall back to the captured original behavior when no owner is active.
 - Make acquisition and release deterministic, concurrency-safe, and
   idempotent.
 - Keep the adapter independent of the root `fiberhouse` package to avoid an
@@ -160,7 +160,7 @@ var ErrGinLoggerAlreadyInstalled = errors.New(
 )
 
 type GinLoggerLease struct {
-	// Private ownership and once-only release state.
+	// Private immutable forwarding target.
 }
 
 func InstallGinLogger(
@@ -170,29 +170,33 @@ func InstallGinLogger(
 func (l *GinLoggerLease) Release()
 ```
 
-The package maintains one mutex-protected active installation. The first
-installation:
+The package maintains one atomic active owner and one process-lifetime set of
+stable forwarders. The first valid installation, under the documented
+pre-Gin-activity lifecycle:
 
-1. Saves `gin.DebugPrintFunc`.
-2. Saves `gin.DebugPrintRouteFunc`.
-3. Saves `gin.DefaultWriter`.
-4. Saves `gin.DefaultErrorWriter`.
-5. Installs the adapter callbacks and writers.
-6. Returns the owning lease.
+1. Captures `gin.DebugPrintFunc`.
+2. Captures `gin.DebugPrintRouteFunc`.
+3. Captures `gin.DefaultWriter`.
+4. Captures `gin.DefaultErrorWriter`.
+5. Installs stable forwarding functions and writers once.
+6. Atomically activates and returns the owning lease.
 
 A second installation while the lease is active returns
-`ErrGinLoggerAlreadyInstalled`. It does not overwrite the active callbacks,
-even if the second adapter wraps the same logger.
+`ErrGinLoggerAlreadyInstalled`. It does not replace the active target, even if
+the second adapter wraps the same logger.
 
-`Release` uses `sync.Once`, restores all four saved values, and clears the
-active owner under the package mutex. The lease does not close the
-`LoggerWrapper`. Callers must not mutate those Gin globals while a FiberHouse
-lease is active; exclusive ownership is the contract that makes restoration
-deterministic.
+`Release` atomically clears the owner only when it still owns the active
+target. Repeated and concurrent calls are therefore idempotent, including a
+late call from an older owner. With no active owner, the stable entries forward
+to the four captured original outputs, preserving observable fallback behavior.
+They are intentionally not written back at runtime because Gin reads these
+package globals without synchronization. The lease does not close the
+`LoggerWrapper`. External mutation after the bridge installs its stable entries
+is outside the supported contract.
 
-This model allows sequential cores and isolated tests. Multiple Gin engines
-may exist while the lease is active, but their native Gin diagnostics all go
-to the same framework logger.
+This model allows sequential cores to reuse the same stable entries. Multiple
+Gin engines may exist while the lease is active, but their native Gin
+diagnostics all go to the same framework logger.
 
 ## Core Integration
 
@@ -238,7 +242,7 @@ changing the public `InitCoreApp` interface.
 `Shutdown` call it:
 
 - `AppCoreRun` defers release so a normal server exit, listener error, or
-  replacement run provider cannot leave the global bridge installed.
+  replacement run provider cannot leave an owner active.
 - `Shutdown` guarantees release on every return path, including replacement
   and provider errors.
 - On the normal shutdown path, `Shutdown` releases the Gin bridge explicitly
@@ -302,8 +306,8 @@ whether Debug records are emitted.
   boundary.
 - `http.Server.ErrorLog` writes are treated as Error records without causing
   recursive standard library logging.
-- Bridge restoration is best-effort-free: it performs only in-memory
-  assignments and has no error result.
+- Bridge release atomically deactivates only its own target and has no error
+  result; it never writes Gin package globals at runtime.
 - The adapter never calls Fatal or Panic.
 - Core initialization conflicts are returned later from `AppCoreRun`, not
   converted into a panic and not silently ignored.
@@ -318,15 +322,23 @@ Adapter unit tests cover:
   length, and ignore empty messages.
 - Multi-line diagnostics remain one event.
 - The HTTP server logger writes at Error level without a standard prefix.
-- Installation replaces all four Gin globals.
+- The first valid installation replaces all four Gin globals with stable
+  forwarding entries.
 - A second active installation returns the sentinel error without changing
   the first installation.
-- Release restores every previous value.
+- Release leaves all four entry identities stable and falls back to every
+  captured original behavior.
+- Gin's default nil debug callbacks retain their built-in formatting and write
+  to the captured original `DefaultWriter`.
 - Repeated and concurrent release is idempotent.
 - A new installation succeeds after release.
+- Concurrent emission through all four Gin outputs while releasing is clean
+  under the race detector.
+- Nil and typed-nil framework loggers are rejected before bridge state changes.
 
-Gin global tests run serially and always register cleanup before assertions.
-They do not use `t.Parallel`.
+Gin global tests run serially, install shared fallback sentinels only before
+the first bridge installation, and release each active owner before the next
+test. They do not write back the stable entries and do not use `t.Parallel`.
 
 Core integration and contract tests cover:
 
@@ -374,14 +386,17 @@ framework logger, and per-engine native debug isolation is not supported.
 ### Gin Globals Are Shared
 
 Any library can mutate the same hooks. The lease declares exclusive ownership,
-rejects a second FiberHouse owner, and restores the exact previous values.
-External mutation during an active lease remains unsupported and is documented.
+rejects a second FiberHouse owner, and leaves stable forwarding entries in
+place. With no owner, those entries forward to the exact outputs captured on
+first installation. External mutation after installation remains unsupported
+and is documented.
 
 ### Logger Closes Before Gin Stops
 
-Gin globals could retain writers backed by a closed logger. Both run and
-shutdown paths release idempotently, and the normal shutdown path restores Gin
-before closing the framework logger.
+An active forwarding target could retain writers backed by a closed logger.
+Both run and shutdown paths release idempotently, and the normal shutdown path
+deactivates the target before closing the framework logger. The stable entries
+then use the captured original writers.
 
 ### Initialization Cannot Return An Error Directly
 
@@ -399,7 +414,9 @@ still use the error writer or explicit FiberHouse error paths.
 ### Tests Share Package Globals
 
 Tests that modify Gin globals can interfere with one another. Adapter and core
-tests run serially, install cleanup immediately, and assert restoration.
+tests run serially, establish any fallback sentinel before the first
+installation, release active owners, and assert stable entry identity plus
+inactive fallback behavior.
 
 ### Legacy Mode Behavior Changes
 

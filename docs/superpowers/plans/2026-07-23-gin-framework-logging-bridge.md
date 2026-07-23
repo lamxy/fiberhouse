@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Route Gin diagnostics and `net/http.Server` errors through the FiberHouse logger with a process-level, restorable single-owner lease.
+**Goal:** Route Gin diagnostics and `net/http.Server` errors through the FiberHouse logger with process-level stable forwarding entries and a single active owner.
 
-**Architecture:** Add a root-independent `adaptor/logging` package that converts Gin callback and writer output into structured `bootstrap.LoggerWrapper` events. A mutex-protected lease installs and restores Gin's package globals. `CoreWithGin` owns that lease across initialization, serving, and shutdown, while retaining the existing FiberHouse access and recovery middleware.
+**Architecture:** Add a root-independent `adaptor/logging` package that converts Gin callback and writer output into structured `bootstrap.LoggerWrapper` events. The first valid installation captures Gin's package globals and replaces them once with stable forwarders; an atomic lease target selects the active owner or the captured fallback behavior. `CoreWithGin` owns that lease across initialization, serving, and shutdown, while retaining the existing FiberHouse access and recovery middleware.
 
 **Tech Stack:** Go 1.25, Gin 1.12, zerolog, testify, standard `log`/`io`/`sync` packages.
 
@@ -19,7 +19,8 @@
 - Do not change the public `CoreStarter.InitCoreApp` signature.
 - The adapter borrows `bootstrap.LoggerWrapper`; it never closes it.
 - Only one Gin logging lease may be active in the process.
-- Gin-global tests must remain serial and restore global state with `t.Cleanup`.
+- Gin-global tests must remain serial, install fallback sentinels before the
+  first bridge installation, and never write back stable entries afterward.
 - Commit after each task and do not push.
 
 ---
@@ -246,8 +247,8 @@ func (l *GinLoggerLease) Release()
 
 - [ ] **Step 1: Write failing lease tests**
 
-Save the four Gin globals at test start and restore them in `t.Cleanup`.
-Install sentinel callbacks and buffer writers before acquiring the lease.
+Install shared sentinel callbacks and buffer writers once before the first
+bridge acquisition. Keep the Gin globals stable after that first installation.
 
 Require the first installation to:
 
@@ -267,13 +268,18 @@ Require a second active installation to return
 `ErrGinLoggerAlreadyInstalled`, leave the first bridge active, and return no
 lease.
 
-Require `Release` to restore the sentinel callbacks/writers. Verify callbacks
-by invoking them and checking sentinel counters, because Go functions cannot
-be compared.
+Require `Release` to leave the four installed entry identities unchanged and
+to fall back behaviorally to the sentinel callbacks/writers. Verify callbacks
+by invoking them and checking sentinel counters. Also cover Gin's default nil
+debug callbacks: inactive forwarding must reproduce Gin's built-in formatting
+through the captured `DefaultWriter` rather than calling a nil function.
 
-Call `Release` from multiple goroutines and require it to restore once without
-panic or race. Finally, require a new installation to succeed after release.
-Add nil adapter and nil logger cases and require a non-nil error.
+Call `Release` from multiple goroutines and require idempotent deactivation
+without panic or race. Concurrently emit through all four Gin outputs while
+releasing and require a clean race test. Finally, require a new installation
+to succeed after release without replacing the stable entries. Add nil
+adapter, nil logger, and typed-nil logger cases; require an error before any
+bridge state change.
 
 - [ ] **Step 2: Run lease tests and verify RED**
 
@@ -287,31 +293,31 @@ Expected: FAIL because `InstallGinLogger` and `GinLoggerLease` do not exist.
 
 - [ ] **Step 3: Implement the lease**
 
-Use one package-level owner:
+Use one process-lifetime installation and one atomic owner:
 
 ```go
 var ginLoggerInstallation struct {
-	sync.Mutex
-	active *GinLoggerLease
+	once     sync.Once
+	active   atomic.Pointer[GinLoggerLease]
+	fallback ginLoggerOutputs
 }
 
 type GinLoggerLease struct {
-	once sync.Once
-
-	previousDebugPrint      func(string, ...any)
-	previousDebugPrintRoute func(string, string, string, int)
-	previousWriter          io.Writer
-	previousErrorWriter     io.Writer
+	adapter     *GinLoggerAdapter
+	writer      io.Writer
+	errorWriter io.Writer
 }
 ```
 
-`InstallGinLogger` validates the adapter and its logger, locks the owner,
-rejects an existing lease, captures all four globals, installs adapter
-callbacks/writers, records the active lease, and returns it.
+`InstallGinLogger` validates the adapter and its logger, including typed nil,
+before touching state. A `sync.Once` captures all four globals and installs
+stable forwarding functions/writers under the pre-Gin-activity lifecycle.
+An atomic compare-and-swap rejects an existing owner or publishes the new
+immutable lease target.
 
-`Release` executes once. Under the owner mutex, restore all four globals only
-when the lease is still the active owner, then clear the owner. Do not close
-the adapter logger and do not return an error.
+`Release` compare-and-swaps its own lease to nil. It does not write Gin globals,
+close the adapter logger, or return an error. With no owner, the stable
+forwarders use the captured functions and writers.
 
 - [ ] **Step 4: Run lease tests and race verification**
 
@@ -369,7 +375,8 @@ func (cg *CoreWithGin) initializationFailed() bool
 
 - [ ] **Step 1: Write failing Core integration tests**
 
-Add serial tests that restore Gin globals with `t.Cleanup`.
+Add serial tests that retain the process-lifetime stable Gin entries and
+release only the owner acquired by each core.
 
 Cover mode resolution with an `IAppConfig` wrapper or test config:
 
@@ -400,7 +407,8 @@ require.ErrorIs(t, core.AppCoreRun(), adaptorlogging.ErrGinLoggerAlreadyInstalle
 ```
 
 Call registration methods after that failed initialization and require no
-panic.
+panic. Call `Shutdown`, require the stored conflict error without panic, and
+prove the external owner's lease remains active.
 
 Extend existing server-run/shutdown tests to require the bridge is released
 after:
@@ -594,8 +602,9 @@ Document:
 - The canonical Gin mode key and accepted Gin values.
 - `recover.debugMode` no longer changes Gin mode.
 - The old `application.plugins.server.gin.mode` key is a compatibility fallback.
-- The bridge owns Gin package globals for one active Core and restores them on
-  exit.
+- The first valid bridge installation fixes stable Gin forwarding entries for
+  the process; releasing an owner falls back to the captured original behavior
+  without runtime global write-back.
 - Multiple Gin engines share the same framework logger while the bridge is
   active; per-engine native debug isolation is unsupported.
 - Existing FiberHouse access and recovery middleware remain authoritative.

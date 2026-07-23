@@ -182,20 +182,6 @@ func preserveTask4GinMode(t *testing.T) {
 	t.Cleanup(func() { gin.SetMode(oldMode) })
 }
 
-func preserveTask4GinGlobals(t *testing.T) {
-	t.Helper()
-	previousDebugPrint := gin.DebugPrintFunc
-	previousDebugPrintRoute := gin.DebugPrintRouteFunc
-	previousWriter := gin.DefaultWriter
-	previousErrorWriter := gin.DefaultErrorWriter
-	t.Cleanup(func() {
-		gin.DebugPrintFunc = previousDebugPrint
-		gin.DebugPrintRouteFunc = previousDebugPrintRoute
-		gin.DefaultWriter = previousWriter
-		gin.DefaultErrorWriter = previousErrorWriter
-	})
-}
-
 func cleanupTask4GinCore(t *testing.T, core *CoreWithGin) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -551,7 +537,6 @@ func TestCoreInit_GinModeResolution(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			preserveTask4GinGlobals(t)
 			preserveTask4GinMode(t)
 			ctx := newTask4InternalAppContext(t, testCase.values)
 			core := NewCoreWithGin(ctx).(*CoreWithGin)
@@ -565,7 +550,6 @@ func TestCoreInit_GinModeResolution(t *testing.T) {
 }
 
 func TestCoreInit_GinLoggerCapturesStartupAndRouteDiagnostics(t *testing.T) {
-	preserveTask4GinGlobals(t)
 	preserveTask4GinMode(t)
 	ctx, output := newTask4LoggingAppContext(t, map[string]interface{}{
 		"application.plugins.engine.servers.gin.mode": gin.DebugMode,
@@ -597,7 +581,6 @@ func TestCoreInit_GinLoggerCapturesStartupAndRouteDiagnostics(t *testing.T) {
 
 func TestCoreInit_GinHTTPErrorLoggerDefaultsAndPreservesCustom(t *testing.T) {
 	t.Run("default server logger", func(t *testing.T) {
-		preserveTask4GinGlobals(t)
 		preserveTask4GinMode(t)
 		ctx, output := newTask4LoggingAppContext(t, nil)
 		core := NewCoreWithGin(ctx).(*CoreWithGin)
@@ -615,7 +598,6 @@ func TestCoreInit_GinHTTPErrorLoggerDefaultsAndPreservesCustom(t *testing.T) {
 	})
 
 	t.Run("custom server logger", func(t *testing.T) {
-		preserveTask4GinGlobals(t)
 		preserveTask4GinMode(t)
 		ctx := newTask4InternalAppContext(t, nil)
 		customOutput := &bytes.Buffer{}
@@ -633,7 +615,6 @@ func TestCoreInit_GinHTTPErrorLoggerDefaultsAndPreservesCustom(t *testing.T) {
 }
 
 func TestCoreInit_GinLoggerConflictDefersErrorAndGuardsRegistration(t *testing.T) {
-	preserveTask4GinGlobals(t)
 	preserveTask4GinMode(t)
 	isolateTask4ErrorHandlerSingleton(t)
 	externalLease, err := installTask4GinLoggerProbe(t)
@@ -660,10 +641,20 @@ func TestCoreInit_GinLoggerConflictDefersErrorAndGuardsRegistration(t *testing.T
 		core.RegisterModuleSwagger(frame)
 		core.RegisterAppHooks(frame)
 	})
+
+	var shutdownErr error
+	require.NotPanics(t, func() {
+		shutdownErr = core.Shutdown()
+	})
+	require.ErrorIs(
+		t,
+		shutdownErr,
+		adaptorlogging.ErrGinLoggerAlreadyInstalled,
+	)
+	requireTask4GinLoggerActive(t)
 }
 
 func TestCoreInit_GinLoggerAccessRecordHasComponentWithoutDuplication(t *testing.T) {
-	preserveTask4GinGlobals(t)
 	preserveTask4GinMode(t)
 	ctx, output := newTask4LoggingAppContext(t, map[string]interface{}{
 		"application.middleware.coreHttp": true,
@@ -690,7 +681,6 @@ func TestCoreInit_GinLoggerAccessRecordHasComponentWithoutDuplication(t *testing
 }
 
 func TestCoreRun_GinLoggerReleasedOnListenerFailure(t *testing.T) {
-	preserveTask4GinGlobals(t)
 	preserveTask4GinMode(t)
 	ctx := newTask4InternalAppContext(t, nil)
 	core := NewCoreWithGin(ctx).(*CoreWithGin)
@@ -705,7 +695,6 @@ func TestCoreRun_GinLoggerReleasedOnListenerFailure(t *testing.T) {
 }
 
 func TestCoreRun_GinLoggerReleasedOnNormalReturn(t *testing.T) {
-	preserveTask4GinGlobals(t)
 	preserveTask4GinMode(t)
 	ctx := newTask4InternalAppContext(t, nil)
 	core := NewCoreWithGin(ctx).(*CoreWithGin)
@@ -751,7 +740,6 @@ func TestCoreShutdown_GinLoggerReleasedOnAllPaths(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			preserveTask4GinGlobals(t)
 			preserveTask4GinMode(t)
 			ctx := newTask4InternalAppContext(t, nil)
 			core := NewCoreWithGin(ctx).(*CoreWithGin)

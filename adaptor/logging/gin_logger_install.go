@@ -8,8 +8,12 @@ package logging
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"reflect"
+	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,71 +22,173 @@ var ErrGinLoggerAlreadyInstalled = errors.New(
 	"gin framework logger is already installed",
 )
 
+type ginLoggerOutputs struct {
+	debugPrint      func(string, ...any)
+	debugPrintRoute func(string, string, string, int)
+	writer          io.Writer
+	errorWriter     io.Writer
+}
+
 var ginLoggerInstallation struct {
-	sync.Mutex
-	active *GinLoggerLease
+	once     sync.Once
+	active   atomic.Pointer[GinLoggerLease]
+	fallback ginLoggerOutputs
 }
 
-// GinLoggerLease owns the process-level Gin logging hooks until Release.
+// GinLoggerLease owns the active forwarding target until Release.
 type GinLoggerLease struct {
-	once sync.Once
-
-	previousDebugPrint      func(string, ...any)
-	previousDebugPrintRoute func(string, string, string, int)
-	previousWriter          io.Writer
-	previousErrorWriter     io.Writer
+	adapter     *GinLoggerAdapter
+	writer      io.Writer
+	errorWriter io.Writer
 }
+
+var (
+	ginInfoForwardWriter  = &ginLoggerForwardWriter{}
+	ginErrorForwardWriter = &ginLoggerForwardWriter{errorChannel: true}
+)
 
 // InstallGinLogger routes Gin's process-level logging hooks through adapter.
 func InstallGinLogger(adapter *GinLoggerAdapter) (*GinLoggerLease, error) {
 	if adapter == nil {
 		return nil, errors.New("gin logger adapter is nil")
 	}
-	if adapter.logger == nil {
+	if isNilGinFrameworkLogger(adapter.logger) {
 		return nil, errors.New("gin logger adapter has no framework logger")
 	}
 
-	ginLoggerInstallation.Lock()
-	defer ginLoggerInstallation.Unlock()
+	lease := &GinLoggerLease{
+		adapter:     adapter,
+		writer:      adapter.InfoWriter(),
+		errorWriter: adapter.ErrorWriter(),
+	}
 
-	if ginLoggerInstallation.active != nil {
+	// Installation happens before Gin activity. The package globals remain
+	// stable afterward so concurrent Gin reads never race with owner changes.
+	ginLoggerInstallation.once.Do(func() {
+		ginLoggerInstallation.fallback = ginLoggerOutputs{
+			debugPrint:      gin.DebugPrintFunc,
+			debugPrintRoute: gin.DebugPrintRouteFunc,
+			writer:          gin.DefaultWriter,
+			errorWriter:     gin.DefaultErrorWriter,
+		}
+		gin.DebugPrintFunc = forwardGinDebugPrint
+		gin.DebugPrintRouteFunc = forwardGinDebugPrintRoute
+		gin.DefaultWriter = ginInfoForwardWriter
+		gin.DefaultErrorWriter = ginErrorForwardWriter
+	})
+
+	if !ginLoggerInstallation.active.CompareAndSwap(nil, lease) {
 		return nil, ErrGinLoggerAlreadyInstalled
 	}
-
-	lease := &GinLoggerLease{
-		previousDebugPrint:      gin.DebugPrintFunc,
-		previousDebugPrintRoute: gin.DebugPrintRouteFunc,
-		previousWriter:          gin.DefaultWriter,
-		previousErrorWriter:     gin.DefaultErrorWriter,
-	}
-
-	gin.DebugPrintFunc = adapter.DebugPrint
-	gin.DebugPrintRouteFunc = adapter.DebugPrintRoute
-	gin.DefaultWriter = adapter.InfoWriter()
-	gin.DefaultErrorWriter = adapter.ErrorWriter()
-	ginLoggerInstallation.active = lease
 
 	return lease, nil
 }
 
-// Release restores the Gin logging hooks captured during installation.
+// Release deactivates this owner without mutating Gin's package globals.
 func (l *GinLoggerLease) Release() {
 	if l == nil {
 		return
 	}
 
-	l.once.Do(func() {
-		ginLoggerInstallation.Lock()
-		defer ginLoggerInstallation.Unlock()
+	ginLoggerInstallation.active.CompareAndSwap(l, nil)
+}
 
-		if ginLoggerInstallation.active != l {
-			return
+func isNilGinFrameworkLogger(logger any) bool {
+	if logger == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(logger)
+	switch value.Kind() {
+	case reflect.Chan,
+		reflect.Func,
+		reflect.Interface,
+		reflect.Map,
+		reflect.Ptr,
+		reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
+func forwardGinDebugPrint(format string, values ...any) {
+	if lease := ginLoggerInstallation.active.Load(); lease != nil {
+		lease.adapter.DebugPrint(format, values...)
+		return
+	}
+
+	forwardCapturedGinDebugPrint(format, values...)
+}
+
+func forwardGinDebugPrintRoute(
+	httpMethod string,
+	absolutePath string,
+	handlerName string,
+	handlerCount int,
+) {
+	if lease := ginLoggerInstallation.active.Load(); lease != nil {
+		lease.adapter.DebugPrintRoute(
+			httpMethod,
+			absolutePath,
+			handlerName,
+			handlerCount,
+		)
+		return
+	}
+
+	if ginLoggerInstallation.fallback.debugPrintRoute != nil {
+		ginLoggerInstallation.fallback.debugPrintRoute(
+			httpMethod,
+			absolutePath,
+			handlerName,
+			handlerCount,
+		)
+		return
+	}
+
+	forwardCapturedGinDebugPrint(
+		"%-6s %-25s --> %s (%d handlers)\n",
+		httpMethod,
+		absolutePath,
+		handlerName,
+		handlerCount,
+	)
+}
+
+func forwardCapturedGinDebugPrint(format string, values ...any) {
+	if ginLoggerInstallation.fallback.debugPrint != nil {
+		ginLoggerInstallation.fallback.debugPrint(format, values...)
+		return
+	}
+	if !gin.IsDebugging() {
+		return
+	}
+
+	if !strings.HasSuffix(format, "\n") {
+		format += "\n"
+	}
+	_, _ = fmt.Fprintf(
+		ginLoggerInstallation.fallback.writer,
+		"[GIN-debug] "+format,
+		values...,
+	)
+}
+
+type ginLoggerForwardWriter struct {
+	errorChannel bool
+}
+
+func (w *ginLoggerForwardWriter) Write(p []byte) (int, error) {
+	if lease := ginLoggerInstallation.active.Load(); lease != nil {
+		if w.errorChannel {
+			return lease.errorWriter.Write(p)
 		}
+		return lease.writer.Write(p)
+	}
 
-		gin.DebugPrintFunc = l.previousDebugPrint
-		gin.DebugPrintRouteFunc = l.previousDebugPrintRoute
-		gin.DefaultWriter = l.previousWriter
-		gin.DefaultErrorWriter = l.previousErrorWriter
-		ginLoggerInstallation.active = nil
-	})
+	if w.errorChannel {
+		return ginLoggerInstallation.fallback.errorWriter.Write(p)
+	}
+	return ginLoggerInstallation.fallback.writer.Write(p)
 }

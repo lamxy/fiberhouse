@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,37 +17,52 @@ import (
 )
 
 type ginGlobalSentinels struct {
-	debugCalls int
-	routeCalls int
-	info       bytes.Buffer
-	err        bytes.Buffer
+	info synchronizedBuffer
+	err  synchronizedBuffer
 }
+
+type synchronizedBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
+
+func (b *synchronizedBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buffer.Reset()
+}
+
+var (
+	ginGlobalSentinelsOnce sync.Once
+	sharedGinSentinels     = &ginGlobalSentinels{}
+)
 
 func installGinGlobalSentinels(t *testing.T) *ginGlobalSentinels {
 	t.Helper()
 
-	previousDebugPrint := gin.DebugPrintFunc
-	previousDebugPrintRoute := gin.DebugPrintRouteFunc
-	previousWriter := gin.DefaultWriter
-	previousErrorWriter := gin.DefaultErrorWriter
-	t.Cleanup(func() {
-		gin.DebugPrintFunc = previousDebugPrint
-		gin.DebugPrintRouteFunc = previousDebugPrintRoute
-		gin.DefaultWriter = previousWriter
-		gin.DefaultErrorWriter = previousErrorWriter
+	ginGlobalSentinelsOnce.Do(func() {
+		gin.DebugPrintFunc = nil
+		gin.DebugPrintRouteFunc = nil
+		gin.DefaultWriter = &sharedGinSentinels.info
+		gin.DefaultErrorWriter = &sharedGinSentinels.err
 	})
 
-	sentinels := &ginGlobalSentinels{}
-	gin.DebugPrintFunc = func(string, ...any) {
-		sentinels.debugCalls++
-	}
-	gin.DebugPrintRouteFunc = func(string, string, string, int) {
-		sentinels.routeCalls++
-	}
-	gin.DefaultWriter = &sentinels.info
-	gin.DefaultErrorWriter = &sentinels.err
+	sharedGinSentinels.info.Reset()
+	sharedGinSentinels.err.Reset()
 
-	return sentinels
+	return sharedGinSentinels
 }
 
 type closeTrackingWriter struct {
@@ -209,7 +225,27 @@ func TestGinLoggerAdapter_HTTPServerErrorLoggerEmitsUnprefixedError(t *testing.T
 	require.Equal(t, "accept failed", records[0]["message"])
 }
 
-func TestInstallGinLogger_RoutesAllGlobalsAndReleaseRestores(t *testing.T) {
+func TestInstallGinLogger_NilGinDebugCallbacksPreserveFallback(t *testing.T) {
+	sentinels := installGinGlobalSentinels(t)
+	adapter, _ := newTestAdapter(t)
+	previousMode := gin.Mode()
+	gin.SetMode(gin.DebugMode)
+	t.Cleanup(func() {
+		gin.SetMode(previousMode)
+	})
+
+	lease, err := InstallGinLogger(adapter)
+	require.NoError(t, err)
+	require.NotNil(t, lease)
+	lease.Release()
+
+	require.NotPanics(t, func() {
+		gin.New()
+	})
+	require.Contains(t, sentinels.info.String(), "[GIN-debug]")
+}
+
+func TestInstallGinLogger_RoutesAllGlobalsAndReleaseFallsBack(t *testing.T) {
 	sentinels := installGinGlobalSentinels(t)
 	adapter, output := newTestAdapter(t)
 
@@ -217,6 +253,12 @@ func TestInstallGinLogger_RoutesAllGlobalsAndReleaseRestores(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, lease)
 	t.Cleanup(lease.Release)
+	installedDebugPrint := reflect.ValueOf(gin.DebugPrintFunc).Pointer()
+	installedDebugPrintRoute := reflect.ValueOf(
+		gin.DebugPrintRouteFunc,
+	).Pointer()
+	installedWriter := gin.DefaultWriter
+	installedErrorWriter := gin.DefaultErrorWriter
 
 	gin.DebugPrintFunc("message %d", 1)
 	gin.DebugPrintRouteFunc("GET", "/route", "handler", 2)
@@ -238,8 +280,6 @@ func TestInstallGinLogger_RoutesAllGlobalsAndReleaseRestores(t *testing.T) {
 	require.Equal(t, "writer", records[2]["Channel"])
 	require.Equal(t, "error", records[3]["message"])
 	require.Equal(t, "error", records[3]["Channel"])
-	require.Zero(t, sentinels.debugCalls)
-	require.Zero(t, sentinels.routeCalls)
 	require.Empty(t, sentinels.info.String())
 	require.Empty(t, sentinels.err.String())
 
@@ -251,10 +291,26 @@ func TestInstallGinLogger_RoutesAllGlobalsAndReleaseRestores(t *testing.T) {
 	_, err = gin.DefaultErrorWriter.Write([]byte("sentinel error"))
 	require.NoError(t, err)
 
-	require.Equal(t, 1, sentinels.debugCalls)
-	require.Equal(t, 1, sentinels.routeCalls)
-	require.Equal(t, "sentinel info", sentinels.info.String())
+	require.Contains(t, sentinels.info.String(), "[GIN-debug] sentinel\n")
+	require.Contains(
+		t,
+		sentinels.info.String(),
+		"[GIN-debug] GET    /sentinel",
+	)
+	require.Contains(t, sentinels.info.String(), "sentinel info")
 	require.Equal(t, "sentinel error", sentinels.err.String())
+	require.Equal(
+		t,
+		installedDebugPrint,
+		reflect.ValueOf(gin.DebugPrintFunc).Pointer(),
+	)
+	require.Equal(
+		t,
+		installedDebugPrintRoute,
+		reflect.ValueOf(gin.DebugPrintRouteFunc).Pointer(),
+	)
+	require.Same(t, installedWriter, gin.DefaultWriter)
+	require.Same(t, installedErrorWriter, gin.DefaultErrorWriter)
 }
 
 func TestInstallGinLogger_RejectsSecondActiveLease(t *testing.T) {
@@ -317,9 +373,13 @@ func TestGinLoggerLease_ConcurrentReleaseIsIdempotentAndAllowsReinstall(t *testi
 	require.NoError(t, err)
 	_, err = gin.DefaultErrorWriter.Write([]byte("sentinel error"))
 	require.NoError(t, err)
-	require.Equal(t, 1, sentinels.debugCalls)
-	require.Equal(t, 1, sentinels.routeCalls)
-	require.Equal(t, "sentinel info", sentinels.info.String())
+	require.Contains(t, sentinels.info.String(), "[GIN-debug] sentinel\n")
+	require.Contains(
+		t,
+		sentinels.info.String(),
+		"[GIN-debug] GET    /sentinel",
+	)
+	require.Contains(t, sentinels.info.String(), "sentinel info")
 	require.Equal(t, "sentinel error", sentinels.err.String())
 	require.Zero(t, atomic.LoadInt32(&output.closeCalls))
 
@@ -331,6 +391,75 @@ func TestGinLoggerLease_ConcurrentReleaseIsIdempotentAndAllowsReinstall(t *testi
 	require.Zero(t, atomic.LoadInt32(&output.closeCalls))
 }
 
+func TestGinLoggerLease_ReleaseConcurrentWithGinOutputsIsRaceFree(t *testing.T) {
+	installGinGlobalSentinels(t)
+	logger := zerolog.New(io.Discard).Level(zerolog.DebugLevel)
+	adapter := NewGinLoggerAdapter(
+		bootstrap.NewLoggerWrap(&logger),
+		appconfig.LogOrigin("Frame"),
+	)
+
+	lease, err := InstallGinLogger(adapter)
+	require.NoError(t, err)
+	require.NotNil(t, lease)
+	t.Cleanup(lease.Release)
+
+	const emitCount = 1_000
+	start := make(chan struct{})
+	writeErrors := make(chan error, 2)
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(5)
+
+	go func() {
+		defer waitGroup.Done()
+		<-start
+		for range emitCount {
+			gin.DebugPrintFunc("debug")
+		}
+	}()
+	go func() {
+		defer waitGroup.Done()
+		<-start
+		for range emitCount {
+			gin.DebugPrintRouteFunc("GET", "/race", "handler", 1)
+		}
+	}()
+	go func() {
+		defer waitGroup.Done()
+		<-start
+		for range emitCount {
+			if _, writeErr := gin.DefaultWriter.Write([]byte("info")); writeErr != nil {
+				writeErrors <- writeErr
+				return
+			}
+		}
+	}()
+	go func() {
+		defer waitGroup.Done()
+		<-start
+		for range emitCount {
+			if _, writeErr := gin.DefaultErrorWriter.Write(
+				[]byte("error"),
+			); writeErr != nil {
+				writeErrors <- writeErr
+				return
+			}
+		}
+	}()
+	go func() {
+		defer waitGroup.Done()
+		<-start
+		lease.Release()
+	}()
+
+	close(start)
+	waitGroup.Wait()
+	close(writeErrors)
+	for writeErr := range writeErrors {
+		require.NoError(t, writeErr)
+	}
+}
+
 func TestInstallGinLogger_RejectsNilDependencies(t *testing.T) {
 	lease, err := InstallGinLogger(nil)
 	require.Error(t, err)
@@ -339,4 +468,31 @@ func TestInstallGinLogger_RejectsNilDependencies(t *testing.T) {
 	lease, err = InstallGinLogger(&GinLoggerAdapter{})
 	require.Error(t, err)
 	require.Nil(t, lease)
+
+	debugPrint := reflect.ValueOf(gin.DebugPrintFunc).Pointer()
+	debugPrintRoute := reflect.ValueOf(gin.DebugPrintRouteFunc).Pointer()
+	writer := gin.DefaultWriter
+	errorWriter := gin.DefaultErrorWriter
+	var typedNilLogger *bootstrap.LoggerWrap
+	lease, err = InstallGinLogger(NewGinLoggerAdapter(
+		typedNilLogger,
+		appconfig.LogOrigin("Frame"),
+	))
+	if lease != nil {
+		t.Cleanup(lease.Release)
+	}
+	require.Error(t, err)
+	require.Nil(t, lease)
+	require.Equal(
+		t,
+		debugPrint,
+		reflect.ValueOf(gin.DebugPrintFunc).Pointer(),
+	)
+	require.Equal(
+		t,
+		debugPrintRoute,
+		reflect.ValueOf(gin.DebugPrintRouteFunc).Pointer(),
+	)
+	require.Same(t, writer, gin.DefaultWriter)
+	require.Same(t, errorWriter, gin.DefaultErrorWriter)
 }
