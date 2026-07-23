@@ -9,7 +9,7 @@ import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
-	"github.com/redis/go-redis/v9"
+	"github.com/lamxy/fiberhouse/component/cache/cacheremote"
 	"github.com/rs/zerolog"
 )
 
@@ -28,17 +28,6 @@ type taskAsyncStarter struct {
 }
 
 func (s *taskAsyncStarter) GetApplication() fiberhouse.IApplication { return s.application }
-
-type taskAsyncRedisClient struct {
-	client *redis.Client
-}
-
-func (c *taskAsyncRedisClient) GetRedisClient() *redis.Client {
-	if c == nil {
-		return nil
-	}
-	return c.client
-}
 
 func newTaskAsyncForTest(t *testing.T) (*TaskAsync, string, string) {
 	t.Helper()
@@ -96,7 +85,7 @@ func TestTaskAsyncDispatcherInitializerRejectsInvalidRedisInstances(t *testing.T
 			name: "typed nil",
 			register: func(t *testing.T, taskAsync *TaskAsync, redisKey string) {
 				t.Helper()
-				var client *taskAsyncRedisClient
+				var client *cacheremote.RedisDb
 				if !taskAsync.Ctx.GetContainer().Register(redisKey, func() (interface{}, error) {
 					return client, nil
 				}) {

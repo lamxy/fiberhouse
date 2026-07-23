@@ -3,6 +3,7 @@ package module
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
@@ -107,7 +108,7 @@ func (ta *TaskAsync) RegisterTaskDispatcherToContainer() {
 			return nil, fmt.Errorf("get redis instance %q for task dispatcher: %w", redisKey, err)
 		}
 		rdb, ok := cacheIns.(cache.IRedisClient)
-		if !ok || rdb == nil || rdb.GetRedisClient() == nil {
+		if !ok || isNilRedisClient(rdb) || rdb.GetRedisClient() == nil {
 			return nil, fmt.Errorf("invalid redis instance %q for task dispatcher", redisKey)
 		}
 		dispatcher := fiberhouse.NewTaskDispatcher(rdb.GetRedisClient())
@@ -116,6 +117,19 @@ func (ta *TaskAsync) RegisterTaskDispatcherToContainer() {
 		}
 		return dispatcher, nil
 	})
+}
+
+func isNilRedisClient(client cache.IRedisClient) bool {
+	if client == nil {
+		return true
+	}
+	value := reflect.ValueOf(client)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 // GetTaskDispatcher 从容器获取任务分发器实例
