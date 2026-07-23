@@ -12,7 +12,7 @@ FiberHouse 用 `BootConfig.CoreType` 在同一套启动位点中选择 Fiber 或
 
 ```text
 CoreType 选择 CoreStarter
-  → InitCoreApp：创建引擎、安装 JSON codec/错误入口
+  → InitCoreApp：安装框架日志桥接、创建引擎、安装 JSON codec/错误入口
   → RegisterAppHooks
   → RegisterAppMiddleware：recover、错误/访问日志、应用中间件
   → RegisterModuleInitialize：模块注册路由
@@ -27,7 +27,7 @@ CoreType 选择 CoreStarter
 | 关注点 | Fiber | Gin |
 |---|---|---|
 | 引擎对象 | `*fiber.App` | `*gin.Engine`，外加 `*http.Server` |
-| `InitCoreApp` | 将选中的 `JsonWrapper.Marshal/Unmarshal` 固化为该 app 的 `JSONEncoder/JSONDecoder`，并在 `fiber.Config` 安装全局 `ErrorHandler` | `gin.New(...)` 后把选中的 codec 写入 `gin/codec/json.API`，再构造 `http.Server` |
+| `InitCoreApp` | 将选中的 `JsonWrapper.Marshal/Unmarshal` 固化为该 app 的 `JSONEncoder/JSONDecoder`，并在 `fiber.Config` 安装全局 `ErrorHandler` | 先取得 Gin 框架日志桥接的进程级 lease，再调用 `gin.New(...)`，随后把选中的 codec 写入 `gin/codec/json.API` 并构造 `http.Server` |
 | 内建中间件顺序 | recover → `fiberzerolog` → `ApplicationRegister.RegisterAppMiddleware` | recover → 尾部错误处理 → 请求日志 → `ApplicationRegister.RegisterAppMiddleware` |
 | 普通错误入口 | Fiber handler 返回 `error`，由 `fiber.Config.ErrorHandler` 处理 | handler 调用 `c.Error(err)`，或在没有 `c.Errors` 时用 `c.Set("error", err)`；尾部中间件在 `c.Next()` 后处理 |
 | panic 入口 | Fiber recovery Provider | Gin recovery Provider |
@@ -50,9 +50,19 @@ Fiber 主要读取 `application.server`：
 | `idleTimeout`、`readTimeout`、`writeTimeout` | fallback 分别为 `60`、`30`、`30`，随后乘 `time.Second` |
 | `requestMethods` | fallback 为空切片，交由 Fiber 解释 |
 
-Gin 的运行模式键是 `application.plugins.server.gin.mode`，fallback 为 `release`；`application.recover.debugMode=true` 会强制调用 `gin.SetMode(gin.DebugMode)`。服务参数位于另一分组 `application.plugins.engine.servers.gin`：`host=0.0.0.0`、`port=8080`、`readTimeout=30` 秒、`writeTimeout=30` 秒、`idleTimeout=120` 秒、`readHeaderTimeout=10` 秒；`maxHeaderBytes` 的配置值先按 KiB 读取，fallback `1024`，再乘 `1024`。这些数值是具体消费方的源码 fallback，不是示例 YAML 的默认声明。
+Gin 的规范运行模式键是 `application.plugins.engine.servers.gin.mode`，接受 Gin 定义的 `debug`、`release`、`test` 三个值。规范键缺失时才读取旧键 `application.plugins.server.gin.mode` 作为兼容 fallback；两者都缺失时使用 `release`，无效值仍由 `gin.SetMode` 按 Gin 的既有行为拒绝。`application.recover.debugMode` 只控制 recovery 响应细节与堆栈行为，不再改变 Gin mode；依赖旧耦合行为的应用必须显式设置规范键。
+
+同一 Gin 分组中的服务参数还包括：`host=0.0.0.0`、`port=8080`、`readTimeout=30` 秒、`writeTimeout=30` 秒、`idleTimeout=120` 秒、`readHeaderTimeout=10` 秒；`maxHeaderBytes` 的配置值先按 KiB 读取，fallback `1024`，再乘 `1024`。这些数值是具体消费方的源码 fallback，不是示例 YAML 的默认声明。
 
 两个引擎的 duration getter 结果都会再次乘 `time.Second`，当前约定应填写数值秒；不要传带 `ms`/`s` 单位的 duration 字符串并期待原样使用。
+
+## Gin 框架诊断与请求日志
+
+选择 Gin core 会自动把 Gin 的启动、路由注册、通用 debug、默认 writer、错误 writer 和 `http.Server` 内部错误接入 FiberHouse `LoggerWrapper`。debug hook 与路由记录使用 Debug，默认 writer 使用 Info，错误 writer 和默认 server error logger 使用 Error；所有记录都带 `Component="Gin"`，并按来源带 `Channel`。Debug 记录仍受 `application.appLog.level` 过滤；Gin 没有为启动 warning 提供独立级别，因此经 debug hook 到达的 warning 也按 Debug 处理，而不会解析私有消息文本猜测级别。应用显式提供的 `http.Server.ErrorLog` 不会被替换。
+
+这些 Gin hook 和 writer 是 package 全局变量。一个活跃的 FiberHouse Gin core 取得独占 lease，初始化失败、server 返回或 shutdown 时恢复取得 lease 前的原值；第二个 FiberHouse core 不能在 lease 活跃时覆盖它。lease 活跃期间创建的其他 Gin engine 也会把原生诊断写到同一个框架日志器，不能获得逐 engine 的原生 debug 隔离；外部代码同时改写这些全局变量也不受支持。
+
+现有 FiberHouse 请求日志、recovery 和尾部错误处理中间件仍是访问与恢复记录的权威来源。框架不会额外安装 Gin 原生 Logger 或 Recovery，因此默认请求路径不会因日志桥接增加第二条访问或恢复记录；现有请求日志继续使用 Info、`LogOriginCoreHttp` 和原有 HTTP 字段，并增加 `Component="Gin"`。
 
 ## JSON codec 是启动期引擎配置
 
@@ -79,16 +89,16 @@ Gin 的运行模式键是 `application.plugins.server.gin.mode`，fallback 为 `
 
 Fiber 和 Gin 都在 goroutine 中启动服务，并在主 goroutine 等待 `SIGINT`/`SIGTERM`。两者都只在监听函数返回后才把 `AppState` 设为 `true`，因此该字段不是“已经开始接流量”的 ready 标记。受控停止都会调用 `GlobalManager.ClearAll(true)` 而不是逐项 `Close`；清空容器不等于数据库、缓存、后台 worker 已被释放，详见[《GlobalManager》](global-manager.md)。
 
-Fiber 的 `OnShutdown` 在 `Shutdown()` 触发时先停止并等待默认 keepalive，再清空容器、记录 shutdown 日志并关闭日志器。Gin 使用固定 30 秒 shutdown context，随后按停止并等待默认 keepalive、清空容器、记录完成日志、关闭日志器的顺序清理。该协调只覆盖默认 `FrameApplication` 的健康检查，不包含 task worker、应用自建 goroutine 或逐项资源关闭。
+Fiber 的 `OnShutdown` 在 `Shutdown()` 触发时先停止并等待默认 keepalive，再清空容器、记录 shutdown 日志并关闭日志器。Gin 使用固定 30 秒 shutdown context，随后按停止并等待默认 keepalive、清空容器、记录完成日志、恢复 Gin 日志全局变量、关闭日志器的顺序清理；server 先返回时也会幂等释放同一个 lease。该协调只覆盖默认 `FrameApplication` 的健康检查，不包含 task worker、应用自建 goroutine 或逐项资源关闭。
 
 当前 Gin TLS 配置已接通证书加载和启动选择：`tls.enable=true` 且证书/私钥路径有效时会填充 `TLSConfig`，运行阶段随后调用 `ListenAndServeTLS("", "")`；没有 TLS 配置时仍调用 `ListenAndServe()`。无效的非空证书/私钥会在加载失败后 fail-stop；缺失任一路径时则只记录错误并保持 `TLSConfig == nil`，因此显式启用 TLS 的应用仍应在部署前校验配置，避免落到 HTTP 路径。现有测试覆盖有效证书加载和无效证书失败，并用 AST 核对 TLS/HTTP 调用分支；另有一条以 `127.0.0.1:0` 建立 loopback listener、通过 `http.Server.ServeTLS` 驱动真实 TLS 握手与 HTTP 请求-响应、并验证 `Shutdown` 在 3 秒内正常完成的回归测试。Fiber 默认路径同样调用普通 `Listen`；`OnListen` 能显示 TLS 标志并不等于框架已经装配证书。
 
 ## 已知限制
 
 - `ICoreContext` 不是完整 Web API，也没有公开的统一 `Release` 生命周期。
-- Gin JSON codec 和 Gin mode 都是进程级副作用；多应用/并行测试不能假设隔离。
+- Gin JSON codec、mode 和原生日志 hook 都是进程级副作用；同一时刻只有一个 FiberHouse core 能持有日志 lease，其他 Gin engine 会共享该 lease 的框架日志器，不能假设逐 engine 隔离。
 - 自定义 Fiber `CoreCfg` 早退路径不安装标准 `FiberErrorHandler`；`cf.json` 会在标准启动链（非 nil `fs`）下正确装配，但仅验证配置本身、不传 `fs` 的调用方式仍会跳过这一步。
 - Gin TLS 的证书加载与 HTTPS 启动路径已接通，并有真实 loopback listener 握手回归测试；但缺失路径仍可能保留 HTTP 路径。
 - 两条受控停止路径清空全局容器，但不提供所有资源和后台 goroutine 的统一关闭协议。
 
-源码入口：[`core_fiber_starter_impl.go`](../../core_fiber_starter_impl.go)、[`core_gin_starter_impl.go`](../../core_gin_starter_impl.go)、[`json_codec_manager.go`](../../json_codec_manager.go)、[`component/codec/json`](../../component/codec/json/)、[`adaptor/context`](../../adaptor/context/) 与 [`adaptor/errorhandler`](../../adaptor/errorhandler/)。
+源码入口：[`core_fiber_starter_impl.go`](../../core_fiber_starter_impl.go)、[`core_gin_starter_impl.go`](../../core_gin_starter_impl.go)、[`json_codec_manager.go`](../../json_codec_manager.go)、[`component/codec/json`](../../component/codec/json/)、[`adaptor/context`](../../adaptor/context/)、[`adaptor/errorhandler`](../../adaptor/errorhandler/) 与 [`adaptor/logging`](../../adaptor/logging/)。

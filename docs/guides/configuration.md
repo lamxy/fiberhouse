@@ -91,6 +91,7 @@ APP_CONF_application_appLog_level=debug
 | `application.env` | 选择配置文件；引导默认是 `dev` |
 | `application.appId`、`appName`、`version` | `Initialize` 建立应用基础视图；非空 `BootConfig` 值随后覆盖 typed 视图 |
 | `application.appLog` | console/file、level、`logOriginEnum`、轮转与异步 writer；详见[《日志》](logging.md) |
+| `application.plugins.engine.servers.gin` | Gin mode、监听地址、timeout、header 限制与 TLS；详见[《Web 运行时》](web-runtime.md) |
 | `application.recover` | debug、堆栈打印和请求调试标识 |
 | `application.trace.requestID` | trace 请求 ID 键；`Initialize` 的源码 fallback 为 `requestId` |
 | `application.middleware` | 初始化时复制到中间件开关 map |
@@ -99,6 +100,12 @@ APP_CONF_application_appLog_level=debug
 | `application.swagger.enable` | 是否进入模块 Swagger 注册 |
 
 布尔键缺失时读取为 `false`。未显式提供 fallback 的数值和字符串按 koanf 的零值读取；这不代表示例文件中的数值是框架默认。
+
+## Gin mode 与 recovery debug
+
+Gin mode 的规范键是 `application.plugins.engine.servers.gin.mode`，可设置为 Gin 接受的 `debug`、`release` 或 `test`。解析顺序是规范键、旧的 `application.plugins.server.gin.mode` 兼容 fallback、最后是 `release`；规范键一旦存在就优先，旧键不应再用于新配置。最终值交给 `gin.SetMode` 验证，无效值保持 Gin 既有的失败行为。
+
+`application.recover.debugMode` 不再改变 Gin mode。它只控制 recovery 的响应细节与堆栈行为；开发和测试示例分别显式使用 `mode: debug`，生产示例显式使用 `mode: release`。从旧行为迁移时，应设置规范 mode 键，而不是依赖 recovery debug 间接切换 Gin。
 
 ## 读取与启动期修改
 

@@ -27,6 +27,24 @@ console 与 file 同时启用时，`io.MultiWriter` 按顺序写两个目标。`
 
 Origin 子日志器只是共享底层输出的带字段 logger，不拥有独立文件或独立 `Close`。Context 与容器访问边界见[《Context 与 Locator》](../concepts/context-and-locators.md)。
 
+## Gin 框架日志桥接
+
+选择 Gin core 时，FiberHouse 会自动把 Gin 原生诊断和 `http.Server` 默认错误日志接入同一个 `LoggerWrapper`：
+
+| 来源 | 框架级别 | 识别字段 |
+|---|---|---|
+| `gin.DebugPrintFunc` | Debug | `Component="Gin"`、`Channel="debug"` |
+| `gin.DebugPrintRouteFunc` | Debug | component、`Channel="route"`、method、path、handler、handler count |
+| `gin.DefaultWriter` | Info | component、`Channel="writer"` |
+| `gin.DefaultErrorWriter` | Error | component、`Channel="error"` |
+| 默认 `http.Server.ErrorLog` | Error | component、`Channel="server"` |
+
+Debug 事件仍由 `application.appLog.level` 决定是否输出。Gin 的 debug callback 不提供 warning 严重级别，桥接不会解析私有消息格式，因而从该 callback 到达的启动 warning 也保持 Debug。应用预先提供的 `http.Server.ErrorLog` 是显式覆盖，FiberHouse 不替换它。
+
+桥接通过 lease 独占 Gin 的四个 package 全局诊断变量；一个活跃 FiberHouse Gin core 持有它们，并在初始化失败、server 退出或 shutdown 时恢复原值。lease 不关闭框架日志器。lease 活跃期间的多个 Gin engine 共享同一个框架日志器，逐 engine 的原生 debug 隔离不受支持；第二个 FiberHouse core 会收到安装冲突，而不是覆盖现有 owner。
+
+桥接不改变 FiberHouse 既有请求访问日志、recovery 或尾部错误处理的所有权，也不安装 Gin 原生 Logger/Recovery 中间件。访问日志仍由 `CoreWithGin.loggerMiddleware` 产生一条 Info 记录，recovery 仍由 FiberHouse recovery provider 处理；桥接只承接 Gin 自身的诊断出口和 server error logger。
+
 ## 文件轮转
 
 同步与两种异步 writer 都把以下值交给 lumberjack：
@@ -97,5 +115,6 @@ FiberHouse 构造器没有为这些键提供非零 fallback；缺失时把 koanf
 - `AsyncChannelWriter.Write` 在超时丢弃后仍报告成功；`AsyncDiodeWriter.Write` 也不把覆盖作为调用错误返回。
 - `Close` 只回收日志 file writer，不会停止 keepalive、任务或其他仍可能记录日志的 goroutine。
 - 配置、日志器、异步 writer initializer 与 Origin 子日志器都连接进程级单例；同进程热切换输出或并行测试多套日志配置不受支持。
+- Gin 日志桥接同样依赖 package 全局 hook；一个活跃 owner 和共享 logger 是明确限制，不能用它实现多 engine 的诊断隔离。
 
-源码入口见 [`bootstrap/bootstrap.go`](../../bootstrap/bootstrap.go) 与 [`component/logging/writer`](../../component/logging/writer/)。
+源码入口见 [`bootstrap/bootstrap.go`](../../bootstrap/bootstrap.go)、[`component/logging/writer`](../../component/logging/writer/) 与 [`adaptor/logging`](../../adaptor/logging/)。
