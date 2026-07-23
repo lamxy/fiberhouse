@@ -4,16 +4,24 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/hibiken/asynq"
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/appconfig"
+	"github.com/lamxy/fiberhouse/bootstrap"
+	"github.com/lamxy/fiberhouse/component/cache"
+	jsoncodec "github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/common-module/fields"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
+	"github.com/lamxy/fiberhouse/globalmanager"
+	"github.com/rs/zerolog"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -26,6 +34,53 @@ func (f fakeExampleTaskDispatcher) EnqueueContext(ctx context.Context, task *asy
 }
 
 type contextKey string
+
+type listTestApplication struct {
+	fiberhouse.IApplication
+	level2Key globalmanager.KeyName
+	codecKey  globalmanager.KeyName
+}
+
+func (a *listTestApplication) GetLevel2CacheKey() globalmanager.KeyName { return a.level2Key }
+func (a *listTestApplication) GetDefaultTrafficCodecKey() globalmanager.KeyName {
+	return a.codecKey
+}
+
+type listTestStarter struct {
+	fiberhouse.IStarter
+	application fiberhouse.IApplication
+}
+
+func (s *listTestStarter) GetApplication() fiberhouse.IApplication { return s.application }
+
+type listTestContext struct {
+	fiberhouse.IApplicationContext
+	starter fiberhouse.IStarter
+}
+
+func (c *listTestContext) GetStarter() fiberhouse.IStarter { return c.starter }
+
+type listMemoryCache struct {
+	values map[string]string
+}
+
+func (c *listMemoryCache) Get(_ context.Context, key string, _ *cache.CacheOption) (string, error) {
+	value, ok := c.values[key]
+	if !ok {
+		return "", cache.ErrKeyNotFound
+	}
+	return value, nil
+}
+
+func (c *listMemoryCache) Set(_ context.Context, key string, value interface{}, _ *cache.CacheOption) error {
+	c.values[key] = value.(string)
+	return nil
+}
+
+func (*listMemoryCache) Delete(context.Context, ...string) error { return nil }
+func (*listMemoryCache) Close() error                            { return nil }
+func (*listMemoryCache) Wait() error                             { return nil }
+func (*listMemoryCache) GetLevel() cache.Level                   { return cache.Level2 }
 
 type fakeExampleStore struct {
 	createFn func(context.Context, *entity.Example) error
@@ -106,6 +161,37 @@ func TestCreateTrimsInputDefaultsStatusMapsResponseAndPreservesContext(t *testin
 	}
 }
 
+func TestCreateRejectsInvalidCanonicalValuesAfterNormalization(t *testing.T) {
+	tests := []struct {
+		name string
+		req  requestvo.CreateExampleReqVo
+	}{
+		{name: "blank name", req: requestvo.CreateExampleReqVo{Name: "  "}},
+		{name: "short trimmed name", req: requestvo.CreateExampleReqVo{Name: " a "}},
+		{name: "long rune name", req: requestvo.CreateExampleReqVo{Name: strings.Repeat("界", 81)}},
+		{name: "long rune description", req: requestvo.CreateExampleReqVo{Name: "ok", Description: strings.Repeat("界", 501)}},
+		{name: "unsupported status", req: requestvo.CreateExampleReqVo{Name: "ok", Status: "pending"}},
+		{name: "too many tags", req: requestvo.CreateExampleReqVo{Name: "ok", Tags: make([]string, 11)}},
+		{name: "blank tag", req: requestvo.CreateExampleReqVo{Name: "ok", Tags: []string{" "}}},
+		{name: "long rune tag", req: requestvo.CreateExampleReqVo{Name: "ok", Tags: []string{strings.Repeat("界", 31)}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			service := &ExampleService{Store: &fakeExampleStore{createFn: func(context.Context, *entity.Example) error {
+				called = true
+				return nil
+			}}}
+			if _, err := service.Create(context.Background(), tt.req); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("Create() error = %v, want ErrInvalidInput", err)
+			}
+			if called {
+				t.Fatal("invalid canonical input reached the store")
+			}
+		})
+	}
+}
+
 func TestUpdatePreservesUnspecifiedFields(t *testing.T) {
 	now := time.Date(2026, 7, 24, 2, 0, 0, 0, time.UTC)
 	created := now.Add(-time.Hour)
@@ -150,6 +236,34 @@ func TestUpdatePreservesUnspecifiedFields(t *testing.T) {
 	}
 	if resp.Name != "renamed" || resp.Description != "keep" {
 		t.Fatalf("response = %#v", resp)
+	}
+}
+
+func TestUpdateRejectsInvalidProvidedCanonicalValuesBeforeLoading(t *testing.T) {
+	blank := " "
+	short := " a "
+	longDescription := strings.Repeat("界", 501)
+	unsupportedStatus := "pending"
+	blankTags := []string{" "}
+	tests := []requestvo.UpdateExampleReqVo{
+		{Name: &blank},
+		{Name: &short},
+		{Description: &longDescription},
+		{Status: &unsupportedStatus},
+		{Tags: &blankTags},
+	}
+	for i, req := range tests {
+		called := false
+		service := &ExampleService{Store: &fakeExampleStore{getFn: func(context.Context, string) (*entity.Example, error) {
+			called = true
+			return nil, nil
+		}}}
+		if _, err := service.Update(context.Background(), "id", req); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("case %d Update() error = %v, want ErrInvalidInput", i, err)
+		}
+		if called {
+			t.Fatalf("case %d invalid canonical input reached the store", i)
+		}
 	}
 }
 
@@ -213,6 +327,51 @@ func TestListCacheUsesNormalizedKeyAndCallerContext(t *testing.T) {
 
 	if _, err := service.List(ctx, requestvo.ListExamplesReqVo{Status: " active "}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestListProductionCacheOptionsLoadStoreOnceAndPreserveCallerContext(t *testing.T) {
+	logger := zerolog.Nop()
+	base := fiberhouse.NewAppContext(appconfig.NewAppConfig(), bootstrap.NewLoggerWrap(&logger))
+	key := globalmanager.KeyName("example-list-cache-test")
+	codecKey := globalmanager.KeyName("example-list-codec-test")
+	app := &listTestApplication{level2Key: key, codecKey: codecKey}
+	ctx := &listTestContext{
+		IApplicationContext: base,
+		starter:             &listTestStarter{application: app},
+	}
+	memory := &listMemoryCache{values: make(map[string]string)}
+	ctx.GetContainer().Clear(key)
+	ctx.GetContainer().Clear(codecKey)
+	if !ctx.GetContainer().Register(key, func() (interface{}, error) { return memory, nil }) {
+		t.Fatal("register list cache")
+	}
+	if !ctx.GetContainer().Register(codecKey, func() (interface{}, error) { return jsoncodec.StdJsonDefault(), nil }) {
+		t.Fatal("register list codec")
+	}
+	t.Cleanup(func() {
+		ctx.GetContainer().Clear(key)
+		ctx.GetContainer().Clear(codecKey)
+	})
+
+	caller := context.WithValue(context.Background(), contextKey("request"), "same")
+	loads := 0
+	store := &fakeExampleStore{listFn: func(got context.Context, _ repository.ListOptions) ([]entity.Example, int64, error) {
+		loads++
+		if got != caller {
+			t.Fatal("cache loader replaced caller context")
+		}
+		return nil, 0, nil
+	}}
+	service := NewExampleService(ctx, store)
+
+	for i := 0; i < 2; i++ {
+		if _, err := service.List(caller, requestvo.ListExamplesReqVo{Status: "active"}); err != nil {
+			t.Fatalf("List() call %d error = %v", i+1, err)
+		}
+	}
+	if loads != 1 {
+		t.Fatalf("store loader calls = %d, want 1", loads)
 	}
 }
 

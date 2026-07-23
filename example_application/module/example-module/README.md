@@ -41,6 +41,10 @@ context. Mutations emit a best-effort `example:changed` task only after the
 database write succeeds. There is no prefix invalidation; freshness is bounded
 by TTL expiry.
 
+Both HTTP adapters map canonical domain failures identically: invalid input or
+IDs return 400, missing examples return 404, and conflicts or unchanged updates
+return 409. Unknown errors retain the framework's existing 500 envelope.
+
 ## Local services and tests
 
 Defaults match the repository's Docker Compose services:

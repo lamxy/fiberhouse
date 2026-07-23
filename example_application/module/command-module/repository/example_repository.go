@@ -114,7 +114,7 @@ func (r *exampleRepository) Update(ctx context.Context, id uint64, input UpdateI
 		return nil, translateError("update example record", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return nil, ErrNotFound
+		return r.Get(ctx, id)
 	}
 	return r.Get(ctx, id)
 }

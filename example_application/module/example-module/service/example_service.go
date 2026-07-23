@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
@@ -21,6 +22,8 @@ import (
 )
 
 const exampleListCacheTTL = 30 * time.Second
+
+var ErrInvalidInput = errors.New("invalid example input")
 
 type exampleListLoader func(context.Context) (*responsevo.ExampleListRespVo, error)
 type exampleListCache func(context.Context, string, time.Duration, exampleListLoader) (*responsevo.ExampleListRespVo, error)
@@ -68,15 +71,21 @@ func GetKeyExampleService(ns ...string) string {
 
 func (s *ExampleService) Create(ctx context.Context, req requestvo.CreateExampleReqVo) (*responsevo.ExampleRespVo, error) {
 	now := s.currentTime()
-	status := entity.ExampleStatus(req.Status)
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+	status := entity.ExampleStatus(strings.TrimSpace(req.Status))
 	if status == "" {
 		status = entity.ExampleStatusActive
 	}
+	tags := trimTags(req.Tags)
+	if err := validateCanonicalExample(name, description, status, tags); err != nil {
+		return nil, err
+	}
 	example := &entity.Example{
-		Name:        strings.TrimSpace(req.Name),
-		Description: strings.TrimSpace(req.Description),
+		Name:        name,
+		Description: description,
 		Status:      status,
-		Tags:        trimTags(req.Tags),
+		Tags:        tags,
 		Timestamps:  fields.NewTimestamps(now),
 	}
 	if err := s.Store.Create(ctx, example); err != nil {
@@ -125,6 +134,9 @@ func (s *ExampleService) listFromStore(ctx context.Context, req requestvo.ListEx
 }
 
 func (s *ExampleService) Update(ctx context.Context, id string, req requestvo.UpdateExampleReqVo) (*responsevo.ExampleRespVo, error) {
+	if err := normalizeAndValidateUpdate(&req); err != nil {
+		return nil, err
+	}
 	example, err := s.Store.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -173,6 +185,7 @@ func (s *ExampleService) readThroughList(ctx context.Context, key string, ttl ti
 	option := cache.OptionPoolGet(appCtx)
 	defer cache.OptionPoolPut(option)
 	option.Level2().
+		EnableCache().
 		SetCacheKey(key).
 		SetLocalTTL(ttl).
 		SetRemoteTTL(ttl).
@@ -231,6 +244,65 @@ func trimTags(tags []string) []string {
 		result = append(result, strings.TrimSpace(tag))
 	}
 	return result
+}
+
+func validateCanonicalExample(name, description string, status entity.ExampleStatus, tags []string) error {
+	if count := utf8.RuneCountInString(name); count < 2 || count > 80 {
+		return fmt.Errorf("%w: name must contain 2 to 80 nonblank characters", ErrInvalidInput)
+	}
+	if utf8.RuneCountInString(description) > 500 {
+		return fmt.Errorf("%w: description must contain at most 500 characters", ErrInvalidInput)
+	}
+	if status != entity.ExampleStatusActive && status != entity.ExampleStatusArchived {
+		return fmt.Errorf("%w: status must be active or archived", ErrInvalidInput)
+	}
+	if len(tags) > 10 {
+		return fmt.Errorf("%w: at most 10 tags are allowed", ErrInvalidInput)
+	}
+	for _, tag := range tags {
+		if count := utf8.RuneCountInString(tag); count < 1 || count > 30 {
+			return fmt.Errorf("%w: tags must contain 1 to 30 nonblank characters", ErrInvalidInput)
+		}
+	}
+	return nil
+}
+
+func normalizeAndValidateUpdate(req *requestvo.UpdateExampleReqVo) error {
+	if req.Name != nil {
+		normalized := strings.TrimSpace(*req.Name)
+		req.Name = &normalized
+		if count := utf8.RuneCountInString(normalized); count < 2 || count > 80 {
+			return fmt.Errorf("%w: name must contain 2 to 80 nonblank characters", ErrInvalidInput)
+		}
+	}
+	if req.Description != nil {
+		normalized := strings.TrimSpace(*req.Description)
+		req.Description = &normalized
+		if utf8.RuneCountInString(normalized) > 500 {
+			return fmt.Errorf("%w: description must contain at most 500 characters", ErrInvalidInput)
+		}
+	}
+	if req.Status != nil {
+		normalized := strings.TrimSpace(*req.Status)
+		req.Status = &normalized
+		status := entity.ExampleStatus(normalized)
+		if status != entity.ExampleStatusActive && status != entity.ExampleStatusArchived {
+			return fmt.Errorf("%w: status must be active or archived", ErrInvalidInput)
+		}
+	}
+	if req.Tags != nil {
+		normalized := trimTags(*req.Tags)
+		req.Tags = &normalized
+		if len(normalized) > 10 {
+			return fmt.Errorf("%w: at most 10 tags are allowed", ErrInvalidInput)
+		}
+		for _, tag := range normalized {
+			if count := utf8.RuneCountInString(tag); count < 1 || count > 30 {
+				return fmt.Errorf("%w: tags must contain 1 to 30 nonblank characters", ErrInvalidInput)
+			}
+		}
+	}
+	return nil
 }
 
 func toResponse(example entity.Example) responsevo.ExampleRespVo {

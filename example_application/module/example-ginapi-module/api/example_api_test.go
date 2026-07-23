@@ -14,13 +14,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lamxy/fiberhouse"
+	adaptorerrorhandler "github.com/lamxy/fiberhouse/adaptor/errorhandler"
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
+	jsoncodec "github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/lamxy/fiberhouse/component/database/dbmongo"
 	fiberhouseconstant "github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/example_application"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
+	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
+	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	appexceptions "github.com/lamxy/fiberhouse/example_application/providers/exceptions"
 	"github.com/rs/zerolog"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -28,6 +32,28 @@ import (
 )
 
 type contextKey string
+
+const exampleAPITestCodecKey = "example-ginapi-test-codec"
+
+type exampleTestApplication struct{ fiberhouse.IApplication }
+
+func (*exampleTestApplication) GetFastTrafficCodecKey() string { return exampleAPITestCodecKey }
+
+type exampleTestStarter struct {
+	fiberhouse.ApplicationStarter
+	application fiberhouse.IApplication
+}
+
+func (s *exampleTestStarter) GetApplication() fiberhouse.IApplication { return s.application }
+
+type exampleRecoverManager struct {
+	fiberhouse.IProviderManager
+	recovery fiberhouse.IRecover
+}
+
+func (m *exampleRecoverManager) LoadProvider(...fiberhouse.ProviderLoadFunc) (any, error) {
+	return m.recovery, nil
+}
 
 type fakeExampleUseCase struct {
 	operation string
@@ -39,11 +65,77 @@ type fakeExampleUseCase struct {
 	err       error
 }
 
+func TestExampleHandler_GinMapsStableDomainErrorsThroughErrorHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := newExampleHandlerTestContext(t)
+	errorHandler := fiberhouse.NewErrorHandler(ctx)
+	errorHandler.SetRecoverManager(&exampleRecoverManager{
+		IProviderManager: fiberhouse.NewProviderManager(ctx),
+		recovery:         fiberhouse.NewGinRecovery(ctx),
+	})
+	const validID = "0123456789abcdef01234567"
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   int
+		wantMsg    string
+		wantNil    bool
+		method     string
+		path       string
+		body       string
+	}{
+		{name: "invalid input after whitespace normalization", err: service.ErrInvalidInput, wantStatus: http.StatusBadRequest, wantCode: http.StatusBadRequest, wantMsg: service.ErrInvalidInput.Error(), wantNil: true, method: http.MethodPost, path: "/examples", body: `{"name":"  "}`},
+		{name: "invalid id", err: repository.ErrInvalidID, wantStatus: http.StatusBadRequest, wantCode: http.StatusBadRequest, wantMsg: repository.ErrInvalidID.Error(), wantNil: true},
+		{name: "not found", err: repository.ErrNotFound, wantStatus: http.StatusNotFound, wantCode: http.StatusNotFound, wantMsg: repository.ErrNotFound.Error(), wantNil: true},
+		{name: "conflict", err: repository.ErrConflict, wantStatus: http.StatusConflict, wantCode: http.StatusConflict, wantMsg: repository.ErrConflict.Error(), wantNil: true},
+		{name: "unchanged", err: repository.ErrUnchanged, wantStatus: http.StatusConflict, wantCode: http.StatusConflict, wantMsg: repository.ErrUnchanged.Error(), wantNil: true},
+		{name: "unknown", err: errors.New("private cause"), wantStatus: http.StatusInternalServerError, wantCode: fiberhouseconstant.UnknownErrCode, wantMsg: fiberhouseconstant.UnknownErrMsg},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(adaptorerrorhandler.GinErrorHandler(errorHandler.ErrorHandler))
+			registerExampleRoutes(router, NewExampleHandler(ctx, &fakeExampleUseCase{err: tt.err}))
+			method, path := tt.method, tt.path
+			if method == "" {
+				method, path = http.MethodGet, "/examples/"+validID
+			}
+			request := httptest.NewRequest(method, path, strings.NewReader(tt.body))
+			if tt.body != "" {
+				request.Header.Set("Content-Type", "application/json")
+			}
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			var envelope map[string]interface{}
+			if err := json.NewDecoder(recorder.Body).Decode(&envelope); err != nil {
+				t.Fatal(err)
+			}
+			if recorder.Code != tt.wantStatus ||
+				envelope["code"] != float64(tt.wantCode) ||
+				envelope["msg"] != tt.wantMsg ||
+				(envelope["data"] == nil) != tt.wantNil {
+				t.Fatalf("status/envelope = %d %#v, want %d code/msg/data=%d/%q/nil",
+					recorder.Code, envelope, tt.wantStatus, tt.wantCode, tt.wantMsg)
+			}
+		})
+	}
+}
+
 func newExampleHandlerTestContext(t *testing.T) fiberhouse.IApplicationContext {
 	t.Helper()
 	cfg := appconfig.NewAppConfig()
 	logger := zerolog.Nop()
 	ctx := fiberhouse.NewAppContext(cfg, bootstrap.NewLoggerWrap(&logger))
+	ctx.RegisterBootConfig(&fiberhouse.BootConfig{})
+	ctx.RegisterStarterApp(&exampleTestStarter{application: &exampleTestApplication{}})
+	fiberhouse.NewRespInfoPManager(ctx)
+	ctx.GetContainer().Unregister(exampleAPITestCodecKey)
+	if !ctx.GetContainer().Register(exampleAPITestCodecKey, func() (interface{}, error) {
+		return jsoncodec.StdJsonDefault(), nil
+	}) {
+		t.Fatalf("register test codec")
+	}
 	exceptionKey := fiberhouseconstant.RegisterKeyPrefix + "exceptions"
 	ctx.GetContainer().Unregister(exceptionKey)
 	if !ctx.GetContainer().Register(exceptionKey, func() (interface{}, error) {
@@ -53,6 +145,7 @@ func newExampleHandlerTestContext(t *testing.T) fiberhouse.IApplicationContext {
 	}
 	t.Cleanup(func() {
 		ctx.GetContainer().Unregister(exceptionKey)
+		ctx.GetContainer().Unregister(exampleAPITestCodecKey)
 	})
 	return ctx
 }

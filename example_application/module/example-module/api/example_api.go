@@ -10,6 +10,7 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	moduleconstant "github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
+	"github.com/lamxy/fiberhouse/example_application/module/example-module/transport"
 )
 
 type ExampleHandler struct {
@@ -55,7 +56,7 @@ func (h *ExampleHandler) Create(c *fiber.Ctx) error {
 	}
 	resp, err := h.UseCase.Create(c.UserContext(), req)
 	if err != nil {
-		return err
+		return transport.MapDomainError(err)
 	}
 	return fiberhouse.Response().
 		SuccessWithData(resp).
@@ -70,7 +71,7 @@ func (h *ExampleHandler) Get(c *fiber.Ctx) error {
 	}
 	resp, err := h.UseCase.Get(c.UserContext(), id)
 	if err != nil {
-		return err
+		return transport.MapDomainError(err)
 	}
 	return fiberhouse.Response().
 		SuccessWithData(resp).
@@ -88,7 +89,7 @@ func (h *ExampleHandler) List(c *fiber.Ctx) error {
 	}
 	resp, err := h.UseCase.List(c.UserContext(), req)
 	if err != nil {
-		return err
+		return transport.MapDomainError(err)
 	}
 	return fiberhouse.Response().
 		SuccessWithData(resp).
@@ -110,7 +111,7 @@ func (h *ExampleHandler) Update(c *fiber.Ctx) error {
 	}
 	resp, err := h.UseCase.Update(c.UserContext(), id, req)
 	if err != nil {
-		return err
+		return transport.MapDomainError(err)
 	}
 	return fiberhouse.Response().
 		SuccessWithData(resp).
@@ -124,7 +125,7 @@ func (h *ExampleHandler) Delete(c *fiber.Ctx) error {
 		return err
 	}
 	if err := h.UseCase.Delete(c.UserContext(), id); err != nil {
-		return err
+		return transport.MapDomainError(err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }

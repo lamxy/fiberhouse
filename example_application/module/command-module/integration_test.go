@@ -45,7 +45,11 @@ func TestMySQLCRUDIntegration(t *testing.T) {
 		t.Fatalf("create isolated integration database: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = admin.Exec("DROP DATABASE `" + databaseName + "`").Error
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		if dropErr := admin.WithContext(cleanupCtx).Exec("DROP DATABASE `" + databaseName + "`").Error; dropErr != nil {
+			t.Errorf("drop isolated integration database %q: %v", databaseName, dropErr)
+		}
 		sqlDB, _ := admin.DB()
 		if sqlDB != nil {
 			_ = sqlDB.Close()
@@ -83,6 +87,10 @@ func TestMySQLCRUDIntegration(t *testing.T) {
 	updated, err := app.Update(ctx, created.ID, service.UpdateInput{Status: &archived})
 	if err != nil || updated.Status != archived {
 		t.Fatalf("update result = %#v, err = %v", updated, err)
+	}
+	updated, err = app.Update(ctx, created.ID, service.UpdateInput{Status: &archived})
+	if err != nil || updated.Status != archived {
+		t.Fatalf("same-value update result = %#v, err = %v", updated, err)
 	}
 	if err := app.Delete(ctx, created.ID); err != nil {
 		t.Fatal(err)

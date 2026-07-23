@@ -116,6 +116,47 @@ func TestRepositoryUpdatePreservesExplicitEmptyDescription(t *testing.T) {
 	}
 }
 
+func TestRepositoryUpdateReturnsExistingRecordWhenMySQLReportsNoChangedRows(t *testing.T) {
+	repo, db := dryRunRepository(t)
+	ctx := context.WithValue(context.Background(), contextKey("trace"), "same-value")
+	db.Callback().Update().After("gorm:update").Register("test:no-change", func(tx *gorm.DB) {
+		tx.RowsAffected = 0
+	})
+	db.Callback().Query().Before("gorm:query").Register("test:existing", func(tx *gorm.DB) {
+		record, ok := tx.Statement.Dest.(*entity.ExampleRecord)
+		if !ok {
+			t.Fatalf("query destination = %T", tx.Statement.Dest)
+		}
+		*record = entity.ExampleRecord{ID: 7, Name: "alpha", Status: "active"}
+		tx.RowsAffected = 1
+	})
+
+	status := "active"
+	record, err := repo.Update(ctx, 7, UpdateInput{Status: &status})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if record.ID != 7 || record.Status != status {
+		t.Fatalf("Update() record = %#v", record)
+	}
+}
+
+func TestRepositoryUpdateStillReturnsNotFoundWhenNoChangedRowDoesNotExist(t *testing.T) {
+	repo, db := dryRunRepository(t)
+	db.Callback().Update().After("gorm:update").Register("test:no-change", func(tx *gorm.DB) {
+		tx.RowsAffected = 0
+	})
+	db.Callback().Query().Before("gorm:query").Register("test:missing", func(tx *gorm.DB) {
+		tx.AddError(gorm.ErrRecordNotFound)
+	})
+
+	status := "active"
+	_, err := repo.Update(context.Background(), 404, UpdateInput{Status: &status})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Update() error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestRepositoryDeleteIsHardDeleteAndPropagatesContext(t *testing.T) {
 	repo, db := dryRunRepository(t)
 	ctx := context.WithValue(context.Background(), contextKey("trace"), "request-19")
