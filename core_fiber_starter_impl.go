@@ -54,6 +54,22 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationCoreEngineInit,
+		cf,
+	)
+	if err != nil {
+		cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+			Err(err).
+			Msg("InitCoreApp providers failed")
+		return
+	}
+	if replaced {
+		return
+	}
+
 	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("InitCoreApp starting...")
 
 	// 自定义核心配置
@@ -123,7 +139,7 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 // 抽取为独立方法避免自定义 CoreCfg 路径遗漏 cf.json 赋值。
 func (cf *CoreWithFiber) resolveJSONCodec(fs FrameStarter, managers ...IProviderManager) JsonWrapper {
 	// fiberhouse.JsonWrapper序列化反序列化接口，默认编解码器实例
-	//json := GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultTrafficCodecKey())
+	// JSON := GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultTrafficCodecKey())
 
 	// 配置JSON序列化器
 	var (
@@ -138,7 +154,8 @@ func (cf *CoreWithFiber) resolveJSONCodec(fs FrameStarter, managers ...IProvider
 	} else {
 		var jsonCodecManager IProviderManager
 		for _, manager := range managers {
-			if manager.Type().GetTypeID() == ProviderTypeDefault().GroupTrafficCodecChoose.GetTypeID() {
+			if manager.Location().GetLocationID() == ProviderLocationDefault().LocationCoreCodecInit.GetLocationID() &&
+				manager.Type().GetTypeID() == ProviderTypeDefault().GroupTrafficCodecChoose.GetTypeID() {
 				jsonCodecManager = manager
 				break
 			}
@@ -174,6 +191,22 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IPro
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationAppMiddlewareInit,
+		cf,
+	)
+	if err != nil {
+		cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+			Err(err).
+			Msg("RegisterAppMiddleware providers failed")
+		return
+	}
+	if replaced {
+		return
+	}
+
 	cf.GetAppContext().GetLogger().Info(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware")
 	debugMode := cf.GetAppContext().GetConfig().GetRecover().DebugMode
 
@@ -219,12 +252,35 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IPro
 	}
 }
 
-// RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器、swagger、etc...
+// RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器、etc...
 func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter, managers ...IProviderManager) {
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
-	if fs.GetModule() != nil {
+
+	_, _, moduleErr := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationModuleMiddlewareInit,
+		cf,
+	)
+	if moduleErr != nil {
+		fs.GetContext().GetLogger().ErrorWith(fs.GetContext().GetConfig().LogOriginFrame()).
+			Err(moduleErr).
+			Msg("RegisterModuleInitialize module middleware providers failed")
+	}
+
+	routeHandled, _, routeErr := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationRouteRegisterInit,
+		cf,
+	)
+	if routeErr != nil {
+		fs.GetContext().GetLogger().ErrorWith(fs.GetContext().GetConfig().LogOriginFrame()).
+			Err(routeErr).
+			Msg("RegisterModuleInitialize route providers failed")
+	}
+
+	if !routeHandled && fs.GetModule() != nil {
 		// 注册模块/子系统路由处理器
 		fs.GetModule().RegisterModuleRouteHandlers(cf)
 	}
@@ -235,6 +291,22 @@ func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter, managers ...IPro
 	if cf.GetAppContext().GetAppState() {
 		return
 	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationModuleSwaggerInit,
+		cf,
+	)
+	if err != nil {
+		cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+			Err(err).
+			Msg("RegisterModuleSwagger providers failed")
+		return
+	}
+	if replaced {
+		return
+	}
+
 	registerOrNot := cf.GetAppContext().GetConfig().Bool("application.swagger.enable")
 	if registerOrNot {
 		if fs.GetModule() != nil {
@@ -247,6 +319,21 @@ func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter, managers ...IPro
 // RegisterAppHooks 注册核心应用的生命周期钩子函数（如果存在）
 func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProviderManager) {
 	if cf.GetAppContext().GetAppState() {
+		return
+	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationCoreHookInit,
+		cf,
+	)
+	if err != nil {
+		cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+			Err(err).
+			Msg("RegisterAppHooks providers failed")
+		return
+	}
+	if replaced {
 		return
 	}
 
@@ -279,31 +366,28 @@ func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProvider
 
 // AppCoreRun 监听核心应用套接字
 func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
+	if cf.GetAppContext().GetAppState() {
+		return nil
+	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationServerRun,
+		cf,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load server run providers: %w", err)
+	}
+	if replaced {
+		return nil
+	}
+
 	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listening...")
-
 	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App: Manager for application processing server runtime")
-
-	var errs []error
-
-	if len(managers) > 0 {
-		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("LocationServerRun LoadProvider")
-		for _, m := range managers {
-			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerRun.GetLocationID() {
-				_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
-					return cf, nil
-				})
-				errs = append(errs, err)
-			}
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to load providers: %v", errs)
-	}
 
 	host, port := cf.GetAppContext().GetConfig().String("application.server.host"), cf.GetAppContext().GetConfig().String("application.server.port")
 
-	if err := cf.coreApp.Listen(host + ":" + port); err != nil {
+	if err = cf.coreApp.Listen(host + ":" + port); err != nil {
 		cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App listen failed")
 		return err
 	}
@@ -315,56 +399,45 @@ func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
 
 // Shutdown 关闭应用
 func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
-	var (
-		shutdownBeforeManagers []IProviderManager
-		shutdownAfterManagers  []IProviderManager
-		errs                   []error
+	if cf.GetAppContext().GetAppState() {
+		return nil
+	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationServerShutdown,
+		cf,
 	)
-
-	if len(managers) > 0 {
-		for _, m := range managers {
-			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerShutdownBefore.GetLocationID() {
-				shutdownBeforeManagers = append(shutdownBeforeManagers, m)
-				continue
-			}
-			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerShutdownAfter.GetLocationID() {
-				shutdownAfterManagers = append(shutdownAfterManagers, m)
-				continue
-			}
-		}
+	if err != nil {
+		return fmt.Errorf("failed to load server shutdown providers: %w", err)
 	}
-	if len(shutdownBeforeManagers) > 0 {
-		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("shutdownBeforeManagers LoadProvider")
-		for _, m := range shutdownBeforeManagers {
-			_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
-				return cf, nil
-			})
-			errs = append(errs, err)
-		}
+	if replaced {
+		return nil
 	}
 
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to load providers: %v", errs)
+	_, _, err = loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationServerShutdownBefore,
+		cf,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load pre-shutdown providers: %w", err)
 	}
 
 	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("Fiber app Shutting down...")
-	err := cf.coreApp.Shutdown()
+	err = cf.coreApp.Shutdown()
 	if err != nil {
 		cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Err(err).Msg("Fiber app Shutdown failed.")
 		return err
 	}
 
-	if len(shutdownAfterManagers) > 0 {
-		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("shutdownAfterManagers LoadProvider")
-		for _, m := range shutdownAfterManagers {
-			_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
-				return cf, nil
-			})
-			errs = append(errs, err)
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to load providers: %v", errs)
+	_, _, err = loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationServerShutdownAfter,
+		cf,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load post-shutdown providers: %w", err)
 	}
 
 	// 关闭日志器

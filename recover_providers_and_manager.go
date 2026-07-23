@@ -34,9 +34,10 @@ func NewFiberRecoveryProvider() *FiberRecoveryProvider {
 
 // Initialize 重载fiber提供者初始化方法
 func (p *FiberRecoveryProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	p.Check()
-	p.SetStatus(StateLoaded)
-	return NewFiberRecovery(ctx.(IApplicationContext)), nil
+	if !p.Check() {
+		return p.ReturnDirectly()
+	}
+	return p.SetAndReturnSucceededInitialized(NewFiberRecovery(ctx.(IApplicationContext)), nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -60,9 +61,10 @@ func NewGinRecoveryProvider() *GinRecoveryProvider {
 
 // Initialize 重载gin提供者初始化方法
 func (p *GinRecoveryProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	p.Check()
-	defer p.SetStatus(StateLoaded)
-	return NewGinRecovery(ctx.(IApplicationContext)), nil
+	if !p.Check() {
+		return p.ReturnDirectly()
+	}
+	return p.SetAndReturnSucceededInitialized(NewGinRecovery(ctx.(IApplicationContext)), nil)
 }
 
 // PManager-----------------------------------------------------------------------------------
@@ -109,7 +111,7 @@ func (m *RecoveryPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, erro
 
 	for _, provider := range m.List() {
 		if provider.Target() == coreType {
-			result, err := provider.Initialize(m.GetContext())
+			result, err := m.InitializeProvider(provider)
 			if err != nil {
 				return nil, err
 			}

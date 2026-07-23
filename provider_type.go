@@ -59,7 +59,8 @@ const (
 // 2. GroupYYYType Type结尾，表示受Target、Name、Version等约束条件限制，符合条件的多个提供者都可以执行（比如多个中间件注册、多个路由组注册的提供者都应用执行）
 // 3. GroupZZZAutoRun AutoRun结尾，表示自动运行，不受条件约束，所有注册的提供者均执行一次（比如全局对象注册、默认启动对象初始化的提供者）
 // 4. GroupWWWUnique Unique结尾，表示有且只有一个提供者存在和执行（比如框架启动器选项初始化提供者，唯一绑定管理器，管理器将无法注册更多的提供者）
-// 5. 其他自定义，由开发者自行约定和实现
+// 5. GroupAAAReplace Replace结尾，表示扩展替换组，该类型提供者可以在特定执行位置点扩展和替代其他的实现逻辑
+// 6. 其他自定义，由开发者自行约定和实现
 type DefaultPType struct {
 	ZeroType                        IProviderType // 默认零值类型
 	GroupDefaultManagerType         IProviderType // 默认管理器类型组，该类型提供者都注册进默认管理器进行处理
@@ -75,6 +76,7 @@ type DefaultPType struct {
 	GroupCoreStarterOptsInitUnique  IProviderType // 核心启动器选项初始化唯一组，该类型提供者中仅唯一绑定一个管理器，并由该唯一的提供者进行处理
 	GroupRecoverMiddlewareChoose    IProviderType // 恢复中间件选择组，该类型提供者中仅选择一个进行恢复中间件处理（根据核心类型选择）
 	GroupResponseInfoChoose         IProviderType // 响应信息选择组，该类型提供者中仅选择一个进行响应信息处理（根据name存储的http内容类型来选择）
+	GroupExtendReplace              IProviderType // 扩展替代组，该类型提供者仅用于在特定执行位置点扩展和替代其他的实现逻辑
 }
 
 var (
@@ -101,6 +103,7 @@ func ProviderTypeDefault() *DefaultPType {
 			GroupCoreStarterOptsInitUnique:  registry.MustDefault("CoreStarterOptsInitUnique"),
 			GroupRecoverMiddlewareChoose:    registry.MustDefault("RecoverMiddlewareChoose"),
 			GroupResponseInfoChoose:         registry.MustDefault("ResponseInfoChoose"),
+			GroupExtendReplace:              registry.MustDefault("ExtendReplace"),
 		}
 	})
 	return providerTypeInstance

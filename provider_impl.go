@@ -11,52 +11,34 @@ import (
 	"sync"
 )
 
-// 状态变量 pending、loaded、skipped、failed
-var (
-	StatePending = new(State).Set(0, "pending")
-	StateLoaded  = new(State).Set(1, "loaded")
-	StateSkipped = new(State).Set(2, "skipped")
-	StateFailed  = new(State).Set(3, "failed")
+type State uint8
+
+const (
+	StatePending State = iota
+	StateLoaded
+	StateSkipped
+	StateFailed
 )
 
-// State 提供者的状态结构体，实现状态器接口
-type State struct {
-	id   uint8
-	name string
-	lock sync.RWMutex
-}
-
 // Id 状态Id
-func (s *State) Id() uint8 {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.id
+func (s State) Id() uint8 {
+	return uint8(s)
 }
 
 // Name 状态名称
-func (s *State) Name() string {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.name
-}
-
-// Set 设置状态Id和名称
-func (s *State) Set(id uint8, name string) IState {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	s.id = id
-	s.name = name
-	return s
-}
-
-// SetState 从另一个状态器设置状态
-func (s *State) SetState(state IState) IState {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.id = state.Id()
-	s.name = state.Name()
-	return s
+func (s State) Name() string {
+	switch s {
+	case StatePending:
+		return "pending"
+	case StateLoaded:
+		return "loaded"
+	case StateSkipped:
+		return "skipped"
+	case StateFailed:
+		return "failed"
+	default:
+		return "unknown"
+	}
 }
 
 // 定义提供者错误类型
@@ -79,29 +61,37 @@ func (e *ProviderError) Error() string {
 //
 // 注意：提供者基类实现中未使用锁机制保护并发安全，仅在应用启动阶段初始化、写操作，运行时仅允许读取操作；否则子类应自行实现并发安全保护
 type Provider struct {
-	sonProvider IProvider // 允许子类继承该接口以实现多态
-	name        string
-	version     string
-	target      string
-	status      IState
-	statOnce    sync.Once
-	pType       IProviderType
-	pTypeOnce   sync.Once
+	sonProvider  IProvider // 允许子类继承该接口以实现多态
+	name         string
+	version      string
+	target       string
+	status       State
+	statOnce     sync.Once
+	pType        IProviderType
+	pTypeOnce    sync.Once
+	initInstance any
+	initErr      error
 }
 
 // NewProvider 创建一个基础提供者
 func NewProvider() *Provider {
 	return &Provider{
-		status: StatePending,                   // 默认状态为待定
+		status: StatePending,
 		pType:  ProviderTypeDefault().ZeroType, // 默认零值类型
 	}
 }
 
 // Check 检查提供者类型是否设置，未设置则抛出异常，强制Initialize方法内优先进行检查
-func (p *Provider) Check() {
+func (p *Provider) Check() bool {
 	if p.pType.GetTypeID() == ProviderTypeDefault().ZeroType.GetTypeID() {
 		panic(fmt.Errorf("provider '%s' type is not set", p.name))
 	}
+
+	if p.status == StateLoaded || p.status == StateFailed || p.status == StateSkipped {
+		return false
+	}
+
+	return true
 }
 
 // Name 返回提供者名称
@@ -116,13 +106,46 @@ func (p *Provider) Version() string {
 
 // Initialize 初始化提供者
 func (p *Provider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	p.Check()
+	if !p.Check() {
+		return p.ReturnDirectly()
+	}
 	// 检查sonProvider字段是否存在
 	err := p.checkSonProvider()
 	if err != nil {
-		return nil, err
+		return p.SetAndReturnFailedInitialized(nil, err)
+		//return nil, err
 	}
 	return p.sonProvider.Initialize(ctx, initFunc...)
+}
+
+// SetAndReturnSucceededInitialized 设置并返回成功的初始化结果
+func (p *Provider) SetAndReturnSucceededInitialized(initInstance any, initErr error) (any, error) {
+	p.setLifecycleStatus(StateLoaded)
+	p.initInstance = initInstance
+	p.initErr = initErr
+	return p.initInstance, p.initErr
+}
+
+// SetAndReturnFailedInitialized 设置并返回失败的初始化结果
+func (p *Provider) SetAndReturnFailedInitialized(initInstance any, initErr error) (any, error) {
+	p.setLifecycleStatus(StateFailed)
+	p.initInstance = initInstance
+	p.initErr = initErr
+	return p.initInstance, p.initErr
+}
+
+// ReturnDirectly 依据状态直接返回
+func (p *Provider) ReturnDirectly() (any, error) {
+	switch p.Status() {
+	case StateLoaded:
+		return p.initInstance, p.initErr
+	case StateFailed:
+		return nil, p.initErr
+	case StateSkipped:
+		return nil, fmt.Errorf("provider '%s' is skipped, cannot return initialized result", p.name)
+	default:
+		return nil, fmt.Errorf("provider '%s' is in an unknown state", p.name)
+	}
 }
 
 // checkSonProvider 检查子类提供者是否设置
@@ -137,7 +160,7 @@ func (p *Provider) checkSonProvider() error {
 }
 
 // Status 返回提供者状态
-func (p *Provider) Status() IState {
+func (p *Provider) Status() State {
 	return p.status
 }
 
@@ -165,11 +188,15 @@ func (p *Provider) SetTarget(t string) IProvider {
 }
 
 // SetStatus 设置提供者状态(仅允许设置一次)
-func (p *Provider) SetStatus(status IState) IProvider {
+func (p *Provider) SetStatus(status State) IProvider {
 	p.statOnce.Do(func() {
 		p.status = status
 	})
 	return p
+}
+
+func (p *Provider) setLifecycleStatus(status State) {
+	p.status = status
 }
 
 // Type 返回提供者类型

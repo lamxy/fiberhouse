@@ -15,7 +15,7 @@ func NewJsonCodecPManager(ctx IApplicationContext) *JsonCodecPManager {
 		IProviderManager: NewProviderManager(ctx).
 			SetName("JsonCodecPManager").
 			SetType(ProviderTypeDefault().GroupTrafficCodecChoose).
-			SetOrBindToLocation(ProviderLocationDefault().LocationCoreEngineInit, true), // 设置并绑定到核心引擎初始化位置点
+			SetOrBindToLocation(ProviderLocationDefault().LocationCoreCodecInit, true), // 设置并绑定到核心编解码初始化位置点
 	}
 	// 将子管理器挂载到父管理器
 	son.MountToParent(son)
@@ -47,7 +47,7 @@ func (m *JsonCodecPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, err
 	if finalProvider == nil {
 		return nil, fmt.Errorf("manager '%s': no matching json codec provider found", m.Name())
 	}
-	return finalProvider.Initialize(m.GetContext())
+	return m.InitializeProvider(finalProvider)
 }
 
 // MountToParent 重载挂载到父级提供者管理器

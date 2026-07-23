@@ -29,7 +29,10 @@ func NewRespInfoProtobufProvider() *RespInfoProtobufProvider {
 
 // Initialize 初始化
 func (p *RespInfoProtobufProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	return response.GetRespInfoPB(), nil
+	if !p.Check() {
+		return p.ReturnDirectly()
+	}
+	return p.SetAndReturnSucceededInitialized(response.GetRespInfoPB(), nil)
 }
 
 // RespInfoMsgpackProvider 响应信息 Msgpack 提供者
@@ -47,7 +50,10 @@ func NewRespInfoMsgpackProvider() *RespInfoMsgpackProvider {
 
 // Initialize 初始化
 func (p *RespInfoMsgpackProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	return response.GetRespInfoMsgPack(), nil
+	if !p.Check() {
+		return p.ReturnDirectly()
+	}
+	return p.SetAndReturnSucceededInitialized(response.GetRespInfoMsgPack(), nil)
 }
 
 // PManager------------------------------------------------------------------------------------------------------------

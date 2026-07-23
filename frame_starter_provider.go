@@ -3,6 +3,7 @@ package fiberhouse
 import (
 	"errors"
 	"fmt"
+
 	"github.com/lamxy/fiberhouse/constant"
 )
 
@@ -25,15 +26,19 @@ func NewFrameDefaultProvider() *FrameDefaultProvider {
 
 // Initialize 重载初始化框架默认提供者
 func (p *FrameDefaultProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	p.Check()
+	if !p.Check() {
+		return p.ReturnDirectly()
+	}
 	if len(initFunc) == 0 {
-		return nil, errors.New("no initFunc provided")
+		return p.SetAndReturnFailedInitialized(nil, errors.New("no initFunc provided"))
+		//return nil, errors.New("no initFunc provided")
 	}
 
 	// 通过 initFunc 获取外部传递的 FrameStarterOption列表
 	anything, err := initFunc[0](p)
 	if err != nil {
-		return nil, err
+		return p.SetAndReturnFailedInitialized(nil, err)
+		//return nil, err
 	}
 
 	var (
@@ -42,11 +47,11 @@ func (p *FrameDefaultProvider) Initialize(ctx IContext, initFunc ...ProviderInit
 	)
 
 	if opts, ok = anything.([]FrameStarterOption); !ok {
-		return nil, fmt.Errorf("invalid type %T, []FrameStarterOption expected", anything)
+		return p.SetAndReturnFailedInitialized(nil, fmt.Errorf("invalid type %T, []FrameStarterOption expected", anything))
 	}
 
 	// 创建 FrameApplication 实例
-	return NewFrameApplication(ctx.(IApplicationContext), opts...), nil
+	return p.SetAndReturnSucceededInitialized(NewFrameApplication(ctx.(IApplicationContext), opts...), nil)
 }
 
 // MountToParent 重载挂载到父级提供者

@@ -33,7 +33,7 @@ func (m *AppCoreHookPManager) LoadProvider(loadFunc ...fiberhouse.ProviderLoadFu
 	for _, provider := range m.List() {
 		if provider.Target() == coreType &&
 			provider.Type().GetTypeID() == fiberhouse.ProviderTypeDefault().GroupCoreHookChoose.GetTypeID() {
-			_, err := provider.Initialize(m.GetContext(), func(provider fiberhouse.IProvider) (any, error) {
+			_, err := m.InitializeProvider(provider, func(provider fiberhouse.IProvider) (any, error) {
 				return instance, nil
 			})
 			if err != nil {

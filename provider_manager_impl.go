@@ -154,6 +154,25 @@ func (m *ProviderManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 	return m.sonManager.LoadProvider(loadFunc...)
 }
 
+// InitializeProvider 统一执行提供者初始化，确保子类覆写 Initialize 时仍受状态和结果缓存约束
+func (m *ProviderManager) InitializeProvider(provider IProvider, initFunc ...ProviderInitFunc) (any, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("provider is nil")
+	}
+	if !provider.Check() {
+		return provider.ReturnDirectly()
+	}
+
+	instance, err := provider.Initialize(m.GetContext(), initFunc...)
+	if err != nil {
+		return provider.SetAndReturnFailedInitialized(instance, err)
+	}
+	if provider.Status() == StateSkipped {
+		return provider.ReturnDirectly()
+	}
+	return provider.SetAndReturnSucceededInitialized(instance, nil)
+}
+
 // IsUnique 返回管理器是否处于唯一提供者模式
 func (m *ProviderManager) IsUnique() bool {
 	return m.isUnique
@@ -255,7 +274,7 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 	for _, provider := range m.List() {
 		if provider.Type().GetTypeID() == ProviderTypeDefault().GroupProviderAutoRun.GetTypeID() {
 			// 自动运行类型的提供者，不依赖Target约束可以直接初始化
-			_, err := provider.Initialize(m.GetContext(), func(provider IProvider) (any, error) {
+			_, err := m.InitializeProvider(provider, func(provider IProvider) (any, error) {
 				if fh != nil {
 					return fh, nil
 				}
@@ -269,7 +288,7 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 			}
 		} else if provider.Target() == bootCfg.CoreType {
 			// 目标类型匹配启动配置的核心类型的提供者，进行初始化
-			_, err := provider.Initialize(m.GetContext(), func(provider IProvider) (any, error) {
+			_, err := m.InitializeProvider(provider, func(provider IProvider) (any, error) {
 				if fh != nil {
 					return fh, nil
 				}

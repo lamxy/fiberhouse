@@ -31,6 +31,5 @@ func (j *JsonJCodecGinProvider) Initialize(ctx IContext, fn ...ProviderInitFunc)
 	jcodec := jsoncodec.StdJsonDefault()
 	ginJson.API = jcodec
 	j.jcodec = jcodec
-	j.SetStatus(StateLoaded)
-	return jcodec, nil
+	return j.SetAndReturnSucceededInitialized(jcodec, nil)
 }

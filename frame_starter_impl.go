@@ -128,6 +128,21 @@ func (fa *FrameApplication) RegisterApplicationGlobals(managers ...IProviderMana
 	if fa.GetContext().GetAppState() {
 		return
 	}
+
+	if len(managers) > 0 {
+		for _, manager := range managers {
+			if manager != nil && manager.Location().GetLocationID() == ProviderLocationDefault().LocationGlobalInit.GetLocationID() {
+				_, err := manager.LoadProvider(func(manager IProviderManager) (any, error) {
+					return fa, nil
+				})
+				if err != nil {
+					fa.GetContext().GetLogger().ErrorWith(fa.GetContext().GetConfig().LogOriginFrame()).Err(err).Msgf("RegisterApplicationGlobals error, manager: %s", manager.Location().GetLocationName())
+				}
+			}
+		}
+		return
+	}
+
 	fa.GetContext().GetLogger().InfoWith(fa.GetContext().GetConfig().LogOriginFrame()).
 		Str("applicationStarter", "FrameApplication").Msg("RegisterApplicationGlobals")
 
@@ -245,6 +260,21 @@ func (fa *FrameApplication) RegisterTaskServer(managers ...IProviderManager) {
 	if fa.GetContext().GetAppState() {
 		return
 	}
+
+	if len(managers) > 0 {
+		for _, manager := range managers {
+			if manager != nil && manager.Location().GetLocationID() == ProviderLocationDefault().LocationTaskServerInit.GetLocationID() {
+				_, err := manager.LoadProvider(func(manager IProviderManager) (any, error) {
+					return fa, nil
+				})
+				if err != nil {
+					fa.GetContext().GetLogger().ErrorWith(fa.GetContext().GetConfig().LogOriginFrame()).Err(err).Msgf("RegisterTaskServer error, manager: %s", manager.Location().GetLocationName())
+				}
+			}
+		}
+		return
+	}
+
 	enable := fa.GetContext().GetConfig().Bool("application.task.enableServer")
 	if enable {
 		if fa.GetTask() == nil {
@@ -267,6 +297,21 @@ func (fa *FrameApplication) RegisterGlobalsKeepalive(managers ...IProviderManage
 	if fa.GetContext().GetAppState() {
 		return
 	}
+
+	if len(managers) > 0 {
+		for _, manager := range managers {
+			if manager != nil && manager.Location().GetLocationID() == ProviderLocationDefault().LocationGlobalKeepaliveInit.GetLocationID() {
+				_, err := manager.LoadProvider(func(manager IProviderManager) (any, error) {
+					return fa, nil
+				})
+				if err != nil {
+					fa.GetContext().GetLogger().ErrorWith(fa.GetContext().GetConfig().LogOriginFrame()).Err(err).Msgf("RegisterGlobalsKeepalive error, manager: %s", manager.Location().GetLocationName())
+				}
+			}
+		}
+		return
+	}
+
 	// 全局对象健康检测和保活
 	if fa.GetContext().GetConfig().Bool("application.globalManage.keepAlive") {
 		d := fa.GetContext().GetConfig().Duration("application.globalManage.interval", 180) * time.Second

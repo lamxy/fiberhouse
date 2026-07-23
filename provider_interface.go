@@ -23,7 +23,7 @@ type IProvider interface {
 	// RegisterTo 将提供者注册到提供者管理器中
 	RegisterTo(manager IProviderManager) error
 	// Status 返回提供者当前状态
-	Status() IState
+	Status() State
 	// Target 返回提供者的目标框架引擎类型, e.g., "gin", "fiber",...。该字段区分不同框架引擎类型的提供者实现，也可以用区分其他维度
 	Target() string
 	// Type 返回提供者的类型, e.g., "middleware", "route_register", "sonic_json_codec", "std_json_codec",...
@@ -35,11 +35,11 @@ type IProvider interface {
 	// SetTarget 设置提供者目标框架
 	SetTarget(string) IProvider
 	// SetStatus 设置提供者状态
-	SetStatus(IState) IProvider
+	SetStatus(State) IProvider
 	// SetType 设置提供者类型，仅允许设置一次
 	SetType(IProviderType) IProvider
 	// Check 检查提供者是否设置类型值
-	Check()
+	Check() bool
 	// BindToUniqueManagerIfSingleton 将提供者绑定到唯一的管理器
 	// 注意：传入的管理器对象应当是一个单例实现，以确保全局唯一性
 	// 该方法内部调用管理器的 BindToUniqueProvider 方法进行彼此唯一绑定
@@ -48,6 +48,12 @@ type IProvider interface {
 	BindToUniqueManagerIfSingleton(IProviderManager) IProvider
 	// MountToParent 将当前提供者挂载到父级提供者中
 	MountToParent(son ...IProvider) IProvider
+	// SetAndReturnSucceededInitialized 设置并返回成功的初始化结果
+	SetAndReturnSucceededInitialized(any, error) (any, error)
+	// SetAndReturnFailedInitialized 设置并返回失败的初始化结果
+	SetAndReturnFailedInitialized(any, error) (any, error)
+	// ReturnDirectly 依据状态直接返回
+	ReturnDirectly() (any, error)
 }
 
 // IProviderManager 提供者管理器接口
@@ -78,6 +84,8 @@ type IProviderManager interface {
 	Map() map[string]IProvider
 	// LoadProvider 加载提供者
 	LoadProvider(loadFunc ...ProviderLoadFunc) (any, error)
+	// InitializeProvider 通过管理器统一初始化提供者，并复用已完成的初始化结果
+	InitializeProvider(provider IProvider, initFunc ...ProviderInitFunc) (any, error)
 	// Check 检查提供者管理器是否设置类型值
 	Check()
 	// BindToUniqueProvider 绑定唯一的提供者到管理器
@@ -90,18 +98,6 @@ type IProviderManager interface {
 	IsUnique() bool
 	// MountToParent 将当前管理器挂载到父级管理器中
 	MountToParent(son ...IProviderManager) IProviderManager
-}
-
-// IState 提供者状态接口
-type IState interface {
-	// Id 返回状态标识符
-	Id() uint8
-	// Name 返回状态名称
-	Name() string
-	// Set 设置状态标识符和名称
-	Set(uint8, string) IState
-	// SetState 用另一个状态对象的值设置当前状态对象
-	SetState(IState) IState
 }
 
 // IProviderLocation 提供者位点接口，用于标识提供者管理器的执行位置，应用启动流程或生命周期的相关阶段，以及其他自定义执行点

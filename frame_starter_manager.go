@@ -51,7 +51,7 @@ func (m *FrameDefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, 
 
 	for _, provider := range m.List() {
 		if provider.Target() == defaultFrame {
-			return provider.Initialize(m.GetContext(), func(provider IProvider) (any, error) {
+			return m.InitializeProvider(provider, func(provider IProvider) (any, error) {
 				return frameStarterOpts, nil
 			})
 		}

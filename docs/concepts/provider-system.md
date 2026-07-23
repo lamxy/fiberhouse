@@ -34,16 +34,31 @@ WithProviders → RunServer 按 Type ID 分发 → Manager.Register
 
 ## 状态
 
-源码声明四个状态：
+`State` 是不可变的封闭值枚举，只有以下四个受支持状态：
 
 | 状态 | ID | 含义 |
 |---|---:|---|
 | `StatePending` | 0 | 待处理，也是 `NewProvider()` 的默认值 |
-| `StateLoaded` | 1 | 声明为已加载 |
-| `StateSkipped` | 2 | 声明为已跳过 |
-| `StateFailed` | 3 | 声明为失败 |
+| `StateLoaded` | 1 | 初始化成功 |
+| `StateSkipped` | 2 | 初始化被 Provider 明确跳过 |
+| `StateFailed` | 3 | 初始化失败 |
 
-当前 Manager 和 `RunServer` 不会在成功、跳过或失败时自动更新状态；`SetStatus` 也只通过 `sync.Once` 接受一次赋值。因此这些值目前是可用的状态词汇，不是可靠的运行时观测系统。不要根据 `Status()` 推断 Provider 已执行，也不要在请求期修改状态。
+`ProviderManager.InitializeProvider` 是受状态约束的初始化入口。Provider 初始化成功后，Manager 记录 `StateLoaded` 并缓存实例；初始化返回错误后，Manager 记录 `StateFailed` 并缓存错误。Provider 在初始化过程中把自身标为 `StateSkipped` 时，Manager 保留该状态并返回 skipped error。再次通过 Manager 初始化同一个已结束的 Provider 时，会直接返回已缓存的结果或错误，不会再次调用 Provider。
+
+公开的 `SetStatus(State)` 仍是 first-call-wins，只适合 Provider 在初始化期间声明状态，例如主动跳过。包内生命周期辅助方法不受这次公开赋值限制，因此 Manager 能以实际的成功或失败结果记录最终状态。状态与其他启动配置一样不提供运行期并发重配保证。
+
+### Breaking migration：Provider 状态 API
+
+这是不兼容变更。`IState`、`State.Set` 和 `SetState` 已删除；升级外部 Provider 实现时需要同时调整接口签名：
+
+| 旧 API | 新 API |
+|---|---|
+| `Status() IState` | `Status() State` |
+| `SetStatus(IState)` | `SetStatus(State)` |
+
+- 外部 `IProvider` 实现必须同时更新 `Status` 和 `SetStatus` 的签名。
+- 自定义 `IState` 实现和运行时定义 Provider 状态名称不再受支持。
+- 把 `new(State).Set(...)` 或 `SetState(...)` 改为 `StatePending`、`StateLoaded`、`StateSkipped`、`StateFailed` 四个类型化常量之一。
 
 ## 基类组合与 parent mounting
 
@@ -109,7 +124,9 @@ func (p *WarmupProvider) Initialize(
 	ctx fh.IContext,
 	initFuncs ...fh.ProviderInitFunc,
 ) (any, error) {
-	p.Check()
+	if !p.Check() {
+		return p.ReturnDirectly()
+	}
 	// 只在启动期执行初始化；ctx 提供配置、日志与容器。
 	return nil, nil
 }
@@ -133,7 +150,7 @@ func (m *WarmupManager) LoadProvider(
 ) (any, error) {
 	m.Check()
 	for _, provider := range m.List() {
-		if _, err := provider.Initialize(m.GetContext()); err != nil {
+		if _, err := m.InitializeProvider(provider); err != nil {
 			return nil, err
 		}
 	}
@@ -159,6 +176,6 @@ func AddWarmup(house *fh.FiberHouse) {
 - Manager 用 map 保存 Provider，`List()` 顺序不稳定。若存在优先级，应由具体 Manager 排序或按唯一选择条件确定。
 - Location 用锁保护 Manager 切片并返回副本；但当前 `Bind` 以 Location ID 检查重复，会拒绝同一 Location 的后续 Manager，`SetOrBindToLocation` 又忽略该错误。不要承诺同一位置可可靠执行多个 Manager。
 - Provider/Manager 基类没有保护其名称、Type、Target、map 等全部启动写入；默认集合虽然对切片加锁，也不使内部对象可在运行期安全重配。推荐模式是启动期注册、运行期只读。
-- `Unregister` 当前为空操作；不要用它实现热卸载。Provider 状态也未形成自动转换与日志链。
+- `Unregister` 当前为空操作；不要用它实现热卸载。Manager 经 `InitializeProvider` 会记录终态，但没有通用日志或运行期状态观测链；绕过 `InitializeProvider` 的自定义 Manager 自行负责生命周期。
 
 源码入口为 [`provider_interface.go`](../../provider_interface.go)、[`provider_impl.go`](../../provider_impl.go)、[`provider_manager_impl.go`](../../provider_manager_impl.go)、[`provider_type.go`](../../provider_type.go)、[`provider_location.go`](../../provider_location.go) 和 [`default.go`](../../default.go)。

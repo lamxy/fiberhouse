@@ -31,7 +31,7 @@ func (m *FrameOptionInitPManager) LoadProvider(loadFunc ...fiberhouse.ProviderLo
 	if len(m.List()) == 0 {
 		return nil, fmt.Errorf("%s, no provider found", m.Name())
 	}
-	return m.List()[0].Initialize(m.GetContext().(fiberhouse.IApplicationContext))
+	return m.InitializeProvider(m.List()[0])
 }
 
 // MountToParent 重载挂载到父级提供者管理器方法

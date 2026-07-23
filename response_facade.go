@@ -89,7 +89,7 @@ func (r *ResponseWrap) SendWithCtx(c adaptorctx.ICoreContext, status ...int) err
 			// 获取指定协议的响应信息提供者
 			p, err := m.GetProvider(ct)
 			if err == nil && p != nil {
-				rpb, err := p.Initialize(m.GetContext())
+				rpb, err := m.InitializeProvider(p)
 				if err == nil && rpb != nil {
 					if resp, ok := rpb.(response.IResponse); ok {
 						// 设置响应内容类型

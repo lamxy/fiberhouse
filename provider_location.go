@@ -127,6 +127,7 @@ type DefaultPLocation struct {
 	LocationGlobalInit             IProviderLocation // 全局初始化位点
 	LocationGlobalKeepaliveInit    IProviderLocation // 全局对象保活初始化位点
 	LocationCoreEngineInit         IProviderLocation // 核心引擎初始化位点
+	LocationCoreCodecInit          IProviderLocation // 核心编解码初始化位点
 	LocationCoreHookInit           IProviderLocation // 核心引擎生命周期钩子（如有）初始化位点
 	LocationAppMiddlewareInit      IProviderLocation // 注册应用中间件初始化位点
 	LocationModuleMiddlewareInit   IProviderLocation // 注册模块中间件初始化位点
@@ -162,6 +163,7 @@ func ProviderLocationDefault() *DefaultPLocation {
 			LocationGlobalInit:             registry.MustDefault("GlobalInit"),             // 全局初始化位点
 			LocationGlobalKeepaliveInit:    registry.MustDefault("GlobalKeepaliveInit"),    // 全局对象保活初始化位点
 			LocationCoreEngineInit:         registry.MustDefault("CoreEngineInit"),         // 核心引擎初始化位点
+			LocationCoreCodecInit:          registry.MustDefault("CoreCodecInit"),          // 核心编解码初始化位点
 			LocationCoreHookInit:           registry.MustDefault("CoreHookInit"),           // 核心引擎钩子（如有）初始化位点
 			LocationAppMiddlewareInit:      registry.MustDefault("AppMiddlewareInit"),      // 注册核心应用中间件初始化位点
 			LocationModuleMiddlewareInit:   registry.MustDefault("ModuleMiddlewareInit"),   // 注册模块中间件初始化位点

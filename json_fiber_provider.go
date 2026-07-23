@@ -31,6 +31,5 @@ func (j *JsonJCodecFiberProvider) Initialize(ctx IContext, fn ...ProviderInitFun
 	jcodec := jsoncodec.StdJsonDefault()
 
 	j.jcodec = jcodec
-	j.SetStatus(StateLoaded)
-	return jcodec, nil
+	return j.SetAndReturnSucceededInitialized(jcodec, nil)
 }

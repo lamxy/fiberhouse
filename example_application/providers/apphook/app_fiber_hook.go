@@ -7,7 +7,10 @@ import (
 
 // RegisterFiberAppCoreHook 注册应用钩子函数
 func RegisterFiberAppCoreHook(appCtx fiberhouse.IApplicationContext, cs fiberhouse.CoreStarter) {
-	coreApp := cs.GetCoreApp().(*fiber.App)
+	coreApp, ok := cs.GetCoreApp().(*fiber.App)
+	if !ok {
+		return
+	}
 	coreApp.Hooks().OnGroup(func(group fiber.Group) error {
 		appCtx.GetLogger().InfoWith(appCtx.GetConfig().LogOriginFrame()).Str("ApplicationRegister", "Application").Msg("ApplicationRegister OnGroup...")
 		return nil

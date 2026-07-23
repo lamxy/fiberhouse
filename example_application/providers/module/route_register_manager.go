@@ -46,7 +46,7 @@ func (m *RouteRegisterPManager) LoadProvider(loadFunc ...fiberhouse.ProviderLoad
 	for _, provider := range m.List() {
 		if provider.Target() == coreType &&
 			provider.Type() == fiberhouse.ProviderTypeDefault().GroupRouteRegisterType {
-			_, err := provider.Initialize(m.GetContext(), func(provider fiberhouse.IProvider) (any, error) {
+			_, err := m.InitializeProvider(provider, func(provider fiberhouse.IProvider) (any, error) {
 				return instance, nil // 注入核心启动器实例
 			})
 			if err != nil {

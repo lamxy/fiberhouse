@@ -50,7 +50,7 @@ func (m *AppMiddlewarePManager) LoadProvider(loadFunc ...fiberhouse.ProviderLoad
 
 	for _, provider := range m.List() {
 		if provider.Target() == bootCfg.CoreType {
-			_, err := provider.Initialize(m.GetContext(), func(provider fiberhouse.IProvider) (any, error) {
+			_, err := m.InitializeProvider(provider, func(provider fiberhouse.IProvider) (any, error) {
 				return cs, nil
 			})
 			if err != nil {

@@ -1,11 +1,38 @@
 package fiberhouse
 
 import (
+	"os"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type coordinatedServerStarter struct {
+	ApplicationStarter
+	runStarted    chan struct{}
+	runReleased   chan struct{}
+	shutdownCalls int
+}
+
+func (s *coordinatedServerStarter) AppCoreRun(...IProviderManager) error {
+	if s.runStarted != nil {
+		close(s.runStarted)
+	}
+	if s.runReleased != nil {
+		<-s.runReleased
+	}
+	return nil
+}
+
+func (s *coordinatedServerStarter) Shutdown(...IProviderManager) error {
+	s.shutdownCalls++
+	if s.runReleased != nil {
+		close(s.runReleased)
+	}
+	return nil
+}
 
 type lifecycleRecordingStarter struct {
 	ApplicationStarter
@@ -111,4 +138,31 @@ func TestFiberHouse_FluentCollectionsPreserveAppendOrder(t *testing.T) {
 	assert.Len(t, house.coreStarterOpts, 1)
 	assert.Equal(t, []IProvider{providerFirst, providerSecond}, house.providers)
 	assert.Equal(t, []IProviderManager{managerFirst, managerSecond}, house.managers)
+}
+
+func TestCoordinateServerRun_ReturnsWhenCoreReturnsNil(t *testing.T) {
+	starter := &coordinatedServerStarter{}
+
+	runErr, shutdownErr, shutdownRequested := coordinateServerRun(starter, nil, nil, make(chan os.Signal))
+
+	require.NoError(t, runErr)
+	require.NoError(t, shutdownErr)
+	assert.False(t, shutdownRequested)
+	assert.Zero(t, starter.shutdownCalls)
+}
+
+func TestCoordinateServerRun_SignalInvokesShutdown(t *testing.T) {
+	starter := &coordinatedServerStarter{
+		runStarted:  make(chan struct{}),
+		runReleased: make(chan struct{}),
+	}
+	stopCh := make(chan os.Signal, 1)
+	stopCh <- syscall.SIGTERM
+
+	runErr, shutdownErr, shutdownRequested := coordinateServerRun(starter, nil, nil, stopCh)
+
+	require.NoError(t, runErr)
+	require.NoError(t, shutdownErr)
+	assert.True(t, shutdownRequested)
+	assert.Equal(t, 1, starter.shutdownCalls)
 }

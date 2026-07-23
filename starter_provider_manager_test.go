@@ -155,13 +155,16 @@ func TestFrameDefaultProvider_ValidatesCallbackAndBuildsFrame(t *testing.T) {
 	_, err := provider.Initialize(ctx)
 	assert.ErrorContains(t, err, "no initFunc")
 
+	provider = NewFrameDefaultProvider()
 	sentinel := errors.New("frame options failed")
 	_, err = provider.Initialize(ctx, func(IProvider) (any, error) { return nil, sentinel })
 	assert.ErrorIs(t, err, sentinel)
 
+	provider = NewFrameDefaultProvider()
 	_, err = provider.Initialize(ctx, func(IProvider) (any, error) { return "wrong", nil })
 	assert.ErrorContains(t, err, "[]FrameStarterOption expected")
 
+	provider = NewFrameDefaultProvider()
 	result, err := provider.Initialize(ctx, func(got IProvider) (any, error) {
 		assert.Same(t, provider, got)
 		return []FrameStarterOption{func(FrameStarter) {}}, nil

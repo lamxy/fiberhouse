@@ -27,9 +27,8 @@ func (j *SonicJCodecFiberProvider) Initialize(ctx IContext, fn ...ProviderInitFu
 	// 实现 JSON 编解码器的注册逻辑
 	jcodec, err := GetInstance[JsonWrapper](ctx.GetStarter().GetApplication().GetDefaultTrafficCodecKey())
 	if err != nil {
-		return nil, err
+		return j.SetAndReturnFailedInitialized(nil, err)
 	}
 	j.jcodec = jcodec
-	j.SetStatus(StateLoaded)
-	return jcodec, nil
+	return j.SetAndReturnSucceededInitialized(jcodec, nil)
 }

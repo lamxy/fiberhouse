@@ -59,7 +59,7 @@ func (h *CommonHandler) TestGetMustInstanceFailed(c *fiber.Ctx) error {
 	t := c.Query("t", "test")
 
 	// 通过fiberhouse.GetMustInstance[T](key) 泛型方法获取注册实例
-	testService := fiberhouse.GetMustInstance[service.TestService](h.KeyTestService)
+	testService := fiberhouse.GetMustInstance[*service.TestService](h.KeyTestService)
 
 	return fiberhouse.Response().SuccessWithData(t + testService.HelloWorld()).SendWithCtx(adaptorctx.WithFiberContext(c))
 }

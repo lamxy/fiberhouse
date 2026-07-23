@@ -23,14 +23,16 @@ func NewCoreStarterFiberProvider() *CoreStarterFiberProvider {
 
 // Initialize 重载初始化核心Fiber提供者
 func (p *CoreStarterFiberProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	p.Check()
+	if !p.Check() {
+		return p.ReturnDirectly()
+	}
 	if len(initFunc) == 0 {
-		return NewCoreWithFiber(ctx.(IApplicationContext)), nil
+		return p.SetAndReturnSucceededInitialized(NewCoreWithFiber(ctx.(IApplicationContext)), nil)
 	}
 
 	anything, err := initFunc[0](p) // 匿名函数参数获取核心启动器初始化的选项参数切片
 	if err != nil {
-		return nil, fmt.Errorf("CoreFiberProvider initialize failed: %w", err)
+		return p.SetAndReturnFailedInitialized(nil, fmt.Errorf("CoreFiberProvider initialize failed: %w", err))
 	}
 
 	var (
@@ -39,7 +41,7 @@ func (p *CoreStarterFiberProvider) Initialize(ctx IContext, initFunc ...Provider
 	)
 
 	if coreStarterOptions, ok = anything.([]CoreStarterOption); ok {
-		return NewCoreWithFiber(ctx.(IApplicationContext), coreStarterOptions...), nil
+		return p.SetAndReturnSucceededInitialized(NewCoreWithFiber(ctx.(IApplicationContext), coreStarterOptions...), nil)
 	}
 
 	return anything, err

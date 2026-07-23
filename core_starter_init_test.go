@@ -34,12 +34,16 @@ import (
 type task4CodecManager struct {
 	IProviderManager
 	typ       IProviderType
+	location  IProviderLocation
 	result    any
 	err       error
 	loadCalls int
 }
 
 func (m *task4CodecManager) Type() IProviderType { return m.typ }
+func (m *task4CodecManager) Location() IProviderLocation {
+	return m.location
+}
 
 func (m *task4CodecManager) LoadProvider(...ProviderLoadFunc) (any, error) {
 	m.loadCalls++
@@ -75,6 +79,23 @@ type task4Module struct {
 func (m *task4Module) RegisterModuleRouteHandlers(CoreStarter) { m.routeCalls++ }
 func (m *task4Module) RegisterSwagger(CoreStarter)             { m.swaggerCalls++ }
 
+type task4LifecycleManager struct {
+	IProviderManager
+	typ       IProviderType
+	location  IProviderLocation
+	loadCalls int
+}
+
+func (m *task4LifecycleManager) Type() IProviderType         { return m.typ }
+func (m *task4LifecycleManager) Location() IProviderLocation { return m.location }
+func (m *task4LifecycleManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
+	m.loadCalls++
+	if len(loadFunc) > 0 {
+		return loadFunc[0](m)
+	}
+	return nil, nil
+}
+
 func newTask4InternalAppContext(t *testing.T, values map[string]interface{}) IApplicationContext {
 	t.Helper()
 	cfg := appconfig.NewAppConfig()
@@ -88,13 +109,17 @@ func newTask4InternalAppContext(t *testing.T, values map[string]interface{}) IAp
 
 func task4GoodCodecManager() *task4CodecManager {
 	return &task4CodecManager{
-		typ:    ProviderTypeDefault().GroupTrafficCodecChoose,
-		result: jsoncodec.StdJsonDefault(),
+		typ:      ProviderTypeDefault().GroupTrafficCodecChoose,
+		location: ProviderLocationDefault().LocationCoreCodecInit,
+		result:   jsoncodec.StdJsonDefault(),
 	}
 }
 
 func task4WrongManager() *task4CodecManager {
-	return &task4CodecManager{typ: ProviderTypeDefault().GroupCoreStarterChoose}
+	return &task4CodecManager{
+		typ:      ProviderTypeDefault().GroupCoreStarterChoose,
+		location: ProviderLocationDefault().ZeroLocation,
+	}
 }
 
 func preserveTask4GinMode(t *testing.T) {
@@ -202,6 +227,116 @@ func TestCoreInit_AppStateStopsInitializationAndRegistration(t *testing.T) {
 	assert.Zero(t, module.routeCalls)
 	assert.Zero(t, module.swaggerCalls)
 	assert.Zero(t, application.hookCalls)
+}
+
+func TestCoreRegisterModuleInitialize_LoadsRouteManagerOnlyOnce(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		core func(IApplicationContext) CoreStarter
+	}{
+		{name: "fiber", core: func(ctx IApplicationContext) CoreStarter { return &CoreWithFiber{ctx: ctx} }},
+		{name: "gin", core: func(ctx IApplicationContext) CoreStarter { return &CoreWithGin{ctx: ctx} }},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := newTask4InternalAppContext(t, nil)
+			module := &task4Module{}
+			frame := &task4Frame{module: module}
+			routeManager := &task4LifecycleManager{
+				typ:      ProviderTypeDefault().GroupRouteRegisterType,
+				location: ProviderLocationDefault().LocationRouteRegisterInit,
+			}
+
+			testCase.core(ctx).RegisterModuleInitialize(frame, routeManager)
+
+			assert.Equal(t, 1, routeManager.loadCalls)
+			assert.Zero(t, module.routeCalls)
+		})
+	}
+}
+
+func TestCoreRegisterModuleInitialize_ReplacementIsScopedToItsLocation(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		core func(IApplicationContext) CoreStarter
+	}{
+		{name: "fiber", core: func(ctx IApplicationContext) CoreStarter { return &CoreWithFiber{ctx: ctx} }},
+		{name: "gin", core: func(ctx IApplicationContext) CoreStarter { return &CoreWithGin{ctx: ctx} }},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := newTask4InternalAppContext(t, nil)
+			frame := &task4Frame{module: &task4Module{}}
+			moduleManager := &task4LifecycleManager{
+				typ:      ProviderTypeDefault().GroupMiddlewareRegisterType,
+				location: ProviderLocationDefault().LocationModuleMiddlewareInit,
+			}
+			routeReplacement := &task4LifecycleManager{
+				typ:      ProviderTypeDefault().GroupExtendReplace,
+				location: ProviderLocationDefault().LocationRouteRegisterInit,
+			}
+
+			testCase.core(ctx).RegisterModuleInitialize(frame, moduleManager, routeReplacement)
+
+			assert.Equal(t, 1, moduleManager.loadCalls)
+			assert.Equal(t, 1, routeReplacement.loadCalls)
+		})
+	}
+}
+
+func TestCoreAppCoreRun_SuccessfulReplacementReturnsNil(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		core func(IApplicationContext) CoreStarter
+	}{
+		{name: "fiber", core: func(ctx IApplicationContext) CoreStarter { return &CoreWithFiber{ctx: ctx} }},
+		{name: "gin", core: func(ctx IApplicationContext) CoreStarter { return &CoreWithGin{ctx: ctx} }},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := newTask4InternalAppContext(t, nil)
+			replacement := &task4LifecycleManager{
+				typ:      ProviderTypeDefault().GroupExtendReplace,
+				location: ProviderLocationDefault().LocationServerRun,
+			}
+
+			require.NoError(t, testCase.core(ctx).AppCoreRun(replacement))
+			assert.Equal(t, 1, replacement.loadCalls)
+		})
+	}
+}
+
+func TestCoreShutdown_SuccessfulLifecycleManagersDoNotBecomeErrors(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		core func(IApplicationContext) CoreStarter
+	}{
+		{
+			name: "fiber",
+			core: func(ctx IApplicationContext) CoreStarter {
+				return &CoreWithFiber{ctx: ctx, coreApp: fiber.New()}
+			},
+		},
+		{
+			name: "gin",
+			core: func(ctx IApplicationContext) CoreStarter {
+				return &CoreWithGin{ctx: ctx, httpServer: &http.Server{}}
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := newTask4InternalAppContext(t, nil)
+			before := &task4LifecycleManager{
+				typ:      ProviderTypeDefault().GroupProviderAutoRun,
+				location: ProviderLocationDefault().LocationServerShutdownBefore,
+			}
+			after := &task4LifecycleManager{
+				typ:      ProviderTypeDefault().GroupProviderAutoRun,
+				location: ProviderLocationDefault().LocationServerShutdownAfter,
+			}
+
+			require.NoError(t, testCase.core(ctx).Shutdown(before, after))
+			assert.Equal(t, 1, before.loadCalls)
+			assert.Equal(t, 1, after.loadCalls)
+		})
+	}
 }
 
 func TestCoreInit_FiberRejectsMissingWrongAndFailedCodecManagers(t *testing.T) {

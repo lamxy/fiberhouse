@@ -466,8 +466,13 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	appStarter.RegisterToCtx(appStarter)
 	// 注册全局应用对象执行位置点
 	appStarter.RegisterApplicationGlobals(ProviderLocationDefault().LocationGlobalInit.GetManagers()...)
-	// 初始化应用核心执行位置点
-	appStarter.InitCoreApp(appStarter.GetFrameApp(), ProviderLocationDefault().LocationCoreEngineInit.GetManagers()...)
+	// 初始化应用核心执行位置点&json编解码初始化位置点
+	engineInitManagers := ProviderLocationDefault().LocationCoreEngineInit.GetManagers()
+	engineCodecManagers := ProviderLocationDefault().LocationCoreCodecInit.GetManagers()
+	initCoreManagers := make([]IProviderManager, 0, len(engineInitManagers)+len(engineCodecManagers))
+	initCoreManagers = append(initCoreManagers, engineInitManagers...)
+	initCoreManagers = append(initCoreManagers, engineCodecManagers...)
+	appStarter.InitCoreApp(appStarter.GetFrameApp(), initCoreManagers...)
 	// 应用钩子函数注册执行位置点
 	appStarter.RegisterAppHooks(appStarter.GetFrameApp(), ProviderLocationDefault().LocationCoreHookInit.GetManagers()...)
 	// 应用中间件注册执行位置点
@@ -489,9 +494,9 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	appStarter.RegisterGlobalsKeepalive(ProviderLocationDefault().LocationGlobalKeepaliveInit.GetManagers()...)
 
 	// 运行前执行位置点
-	beforeRuns := ProviderLocationDefault().LocationServerRunBefore.GetManagers()
-	if len(beforeRuns) > 0 {
-		for _, m := range beforeRuns {
+	runBeforeManagers := ProviderLocationDefault().LocationServerRunBefore.GetManagers()
+	if len(runBeforeManagers) > 0 {
+		for _, m := range runBeforeManagers {
 			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
 				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
 					return appStarter, nil // 向当前管理器加载提供者函数中注入当前执行位点的应用启动器实例
@@ -507,30 +512,30 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 
 	// 应用核心运行时执行位置点
 	runManagers := ProviderLocationDefault().LocationServerRun.GetManagers()
-	// 应用正常关闭时的执行位置点
+	shutdownBeforeManagers := ProviderLocationDefault().LocationServerShutdownBefore.GetManagers()
 	shutdownManagers := ProviderLocationDefault().LocationServerShutdown.GetManagers()
+	shutdownAfterManagers := ProviderLocationDefault().LocationServerShutdownAfter.GetManagers()
+	allShutdownManagers := make(
+		[]IProviderManager,
+		0,
+		len(shutdownBeforeManagers)+len(shutdownManagers)+len(shutdownAfterManagers),
+	)
+	allShutdownManagers = append(allShutdownManagers, shutdownBeforeManagers...)
+	allShutdownManagers = append(allShutdownManagers, shutdownManagers...)
+	allShutdownManagers = append(allShutdownManagers, shutdownAfterManagers...)
 
-	errChan := make(chan error)
-
-	go func(webApp *WebApplication) {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				errChan <- fmt.Errorf("panic: %v", recovered)
-			}
-		}()
-
-		err := webApp.AppCoreRun(runManagers...)
-		if err != nil {
-			errChan <- err
-		}
-	}(appStarter)
-
-	select {
-	case <-stopCh:
-		err := appStarter.Shutdown(shutdownManagers...)
-		fmt.Printf("Application shutdown gracefully: %v\n", err)
-	case err := <-errChan:
-		fmt.Printf("Application run server error: %v\n", err)
+	runErr, shutdownErr, shutdownRequested := coordinateServerRun(
+		appStarter,
+		runManagers,
+		allShutdownManagers,
+		stopCh,
+	)
+	signal.Stop(stopCh)
+	if runErr != nil {
+		fmt.Printf("Application run server error: %v\n", runErr)
+	}
+	if shutdownRequested {
+		fmt.Printf("Application shutdown gracefully: %v\n", shutdownErr)
 	}
 
 	fmt.Println("Application RunServer exited")

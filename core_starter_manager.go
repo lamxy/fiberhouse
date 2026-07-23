@@ -57,7 +57,7 @@ func (m *CoreStarterPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, e
 
 	for _, provider := range m.List() {
 		if provider.Target() == defaultCore {
-			return provider.Initialize(m.GetContext(), func(provider IProvider) (any, error) {
+			return m.InitializeProvider(provider, func(provider IProvider) (any, error) {
 				return coreStarterOpts, nil
 			})
 		}

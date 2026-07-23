@@ -30,10 +30,9 @@ func (j *SonicJCodecGinProvider) Initialize(ctx IContext, fn ...ProviderInitFunc
 	// 实现 JSON 编解码器的注册逻辑
 	jcodec, err := GetInstance[ginJson.Core](ctx.GetStarter().GetApplication().GetDefaultTrafficCodecKey())
 	if err != nil {
-		return nil, err
+		return j.SetAndReturnFailedInitialized(nil, err)
 	}
 	ginJson.API = jcodec
 	j.jcodec = jcodec
-	j.SetStatus(StateLoaded)
-	return jcodec, nil
+	return j.SetAndReturnSucceededInitialized(jcodec, nil)
 }

@@ -51,6 +51,22 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationCoreEngineInit,
+		cg,
+	)
+	if err != nil {
+		cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
+			Err(err).
+			Msg("InitCoreApp providers failed")
+		return
+	}
+	if replaced {
+		return
+	}
+
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 		Str("applicationStarter", "GinApplication").
 		Msg("InitCoreApp starting...")
@@ -76,7 +92,8 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 		var jsonCodecManager IProviderManager
 
 		for _, manager := range managers {
-			if manager.Type().GetTypeID() == ProviderTypeDefault().GroupTrafficCodecChoose.GetTypeID() {
+			if manager.Location().GetLocationID() == ProviderLocationDefault().LocationCoreCodecInit.GetLocationID() &&
+				manager.Type().GetTypeID() == ProviderTypeDefault().GroupTrafficCodecChoose.GetTypeID() {
 				jsonCodecManager = manager
 				break
 			}
@@ -198,6 +215,22 @@ func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProvi
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationAppMiddlewareInit,
+		cg,
+	)
+	if err != nil {
+		cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
+			Err(err).
+			Msg("RegisterAppMiddleware providers failed")
+		return
+	}
+	if replaced {
+		return
+	}
+
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 		Str("applicationStarter", "GinApplication").
 		Msg("RegisterAppMiddleware")
@@ -282,7 +315,30 @@ func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter, managers ...IPr
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
-	if fs.GetModule() != nil {
+
+	_, _, moduleErr := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationModuleMiddlewareInit,
+		cg,
+	)
+	if moduleErr != nil {
+		fs.GetContext().GetLogger().ErrorWith(fs.GetContext().GetConfig().LogOriginFrame()).
+			Err(moduleErr).
+			Msg("RegisterModuleInitialize module middleware providers failed")
+	}
+
+	routeHandled, _, routeErr := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationRouteRegisterInit,
+		cg,
+	)
+	if routeErr != nil {
+		fs.GetContext().GetLogger().ErrorWith(fs.GetContext().GetConfig().LogOriginFrame()).
+			Err(routeErr).
+			Msg("RegisterModuleInitialize route providers failed")
+	}
+
+	if !routeHandled && fs.GetModule() != nil {
 		// 注册模块/子系统路由处理器
 		fs.GetModule().RegisterModuleRouteHandlers(cg)
 	}
@@ -293,6 +349,22 @@ func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter, managers ...IProvi
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationModuleSwaggerInit,
+		cg,
+	)
+	if err != nil {
+		cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
+			Err(err).
+			Msg("RegisterModuleSwagger providers failed")
+		return
+	}
+	if replaced {
+		return
+	}
+
 	registerOrNot := cg.GetAppContext().GetConfig().Bool("application.swagger.enable")
 	if registerOrNot {
 		if fs.GetModule() != nil {
@@ -308,6 +380,21 @@ func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderMa
 		return
 	}
 
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationCoreHookInit,
+		cg,
+	)
+	if err != nil {
+		cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
+			Err(err).
+			Msg("RegisterAppHooks providers failed")
+		return
+	}
+	if replaced {
+		return
+	}
+
 	// 注册应用注册器的钩子函数
 	if fs.GetApplication() != nil {
 		fs.GetApplication().(ApplicationRegister).RegisterCoreHook(cg)
@@ -316,6 +403,22 @@ func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderMa
 
 // AppCoreRun 启动Gin应用并监听信号
 func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
+	if cg.GetAppContext().GetAppState() {
+		return nil
+	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationServerRun,
+		cg,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load server run providers: %w", err)
+	}
+	if replaced {
+		return nil
+	}
+
 	cfg := cg.GetAppContext().GetConfig()
 	scheme := "http"
 	if cg.httpServer.TLSConfig != nil {
@@ -330,26 +433,6 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App: Manager for application processing server runtime")
 
-	var errs []error
-
-	if len(managers) > 0 {
-		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("LocationServerRun LoadProvider")
-
-		for _, m := range managers {
-			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerRun.GetLocationID() {
-				_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
-					return cg, nil
-				})
-				errs = append(errs, err)
-			}
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to load providers: %v", errs)
-	}
-
-	var err error
 	if cg.httpServer.TLSConfig != nil {
 		err = cg.httpServer.ListenAndServeTLS("", "")
 	} else {
@@ -368,37 +451,29 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 
 // Shutdown 关闭应用
 func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
-	var (
-		shutdownBeforeManagers []IProviderManager
-		shutdownAfterManagers  []IProviderManager
-		errs                   []error
+	if cg.GetAppContext().GetAppState() {
+		return nil
+	}
+
+	_, replaced, err := loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationServerShutdown,
+		cg,
 	)
-
-	if len(managers) > 0 {
-		for _, m := range managers {
-			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerShutdownBefore.GetLocationID() {
-				shutdownBeforeManagers = append(shutdownBeforeManagers, m)
-				continue
-			}
-			if m.Location().GetLocationID() == ProviderLocationDefault().LocationServerShutdownAfter.GetLocationID() {
-				shutdownAfterManagers = append(shutdownAfterManagers, m)
-				continue
-			}
-		}
+	if err != nil {
+		return fmt.Errorf("failed to load server shutdown providers: %w", err)
+	}
+	if replaced {
+		return nil
 	}
 
-	if len(shutdownBeforeManagers) > 0 {
-		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("shutdownBeforeManagers LoadProvider")
-		for _, m := range shutdownBeforeManagers {
-			_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
-				return cg, nil
-			})
-			errs = append(errs, err)
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to load providers: %v", errs)
+	_, _, err = loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationServerShutdownBefore,
+		cg,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load pre-shutdown providers: %w", err)
 	}
 
 	// 执行优雅关闭
@@ -409,7 +484,7 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := cg.httpServer.Shutdown(shutdownCtx); err != nil {
+	if err = cg.httpServer.Shutdown(shutdownCtx); err != nil {
 		cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 			Str("applicationStarter", "GinApplication").
 			Err(err).
@@ -417,17 +492,13 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 		return err
 	}
 
-	if len(shutdownAfterManagers) > 0 {
-		cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("shutdownAfterManagers LoadProvider")
-		for _, m := range shutdownAfterManagers {
-			_, err := m.LoadProvider(func(manager IProviderManager) (any, error) {
-				return cg, nil
-			})
-			errs = append(errs, err)
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to load providers: %v", errs)
+	_, _, err = loadProviderManagersAtLocation(
+		managers,
+		ProviderLocationDefault().LocationServerShutdownAfter,
+		cg,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load post-shutdown providers: %w", err)
 	}
 
 	// 清理资源
