@@ -100,13 +100,20 @@ func (ta *TaskAsync) RegisterTaskDispatcherToContainer() {
 	if !ta.Ctx.GetConfig().Bool("application.task.enableServer") {
 		return
 	}
-	cacheIns, err := ta.Ctx.GetContainer().Get(ta.Ctx.GetStarterApp().GetApplication().GetRedisKey())
-	if err != nil {
-		panic(err.Error())
-	}
-	rdb := cacheIns.(cache.IRedisClient)
 	ta.Ctx.GetContainer().Register(ta.Ctx.GetStarterApp().GetApplication().GetTaskDispatcherKey(), func() (interface{}, error) {
+		redisKey := ta.Ctx.GetStarterApp().GetApplication().GetRedisKey()
+		cacheIns, err := ta.Ctx.GetContainer().Get(redisKey)
+		if err != nil {
+			return nil, fmt.Errorf("get redis instance %q for task dispatcher: %w", redisKey, err)
+		}
+		rdb, ok := cacheIns.(cache.IRedisClient)
+		if !ok || rdb == nil || rdb.GetRedisClient() == nil {
+			return nil, fmt.Errorf("invalid redis instance %q for task dispatcher", redisKey)
+		}
 		dispatcher := fiberhouse.NewTaskDispatcher(rdb.GetRedisClient())
+		if dispatcher == nil {
+			return nil, fmt.Errorf("construct task dispatcher from redis instance %q", redisKey)
+		}
 		return dispatcher, nil
 	})
 }
@@ -118,7 +125,7 @@ func (ta *TaskAsync) GetTaskDispatcher() (*fiberhouse.TaskDispatcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	if result, ok := instance.(*fiberhouse.TaskDispatcher); ok {
+	if result, ok := instance.(*fiberhouse.TaskDispatcher); ok && result != nil {
 		return result, nil
 	}
 	return nil, fmt.Errorf("assertion failure for type of '%s' instance", key)

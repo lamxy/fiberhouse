@@ -8,12 +8,22 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
+	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
 	"github.com/lamxy/fiberhouse/example_application/module/common-module/fields"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+type fakeExampleTaskDispatcher struct {
+	enqueueFn func(context.Context, *asynq.Task, ...asynq.Option) (*asynq.TaskInfo, error)
+}
+
+func (f fakeExampleTaskDispatcher) EnqueueContext(ctx context.Context, task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error) {
+	return f.enqueueFn(ctx, task, opts...)
+}
 
 type contextKey string
 
@@ -169,5 +179,113 @@ func TestListReturnsEmptyJSONArrayAndPropagatesErrors(t *testing.T) {
 	}
 	if _, err = service.Get(ctx, "id"); !errors.Is(err, sentinel) {
 		t.Fatalf("Get error = %v, want sentinel", err)
+	}
+}
+
+func TestListCacheUsesNormalizedKeyAndCallerContext(t *testing.T) {
+	ctx := context.WithValue(context.Background(), contextKey("request"), "same")
+	store := &fakeExampleStore{
+		listFn: func(got context.Context, opts repository.ListOptions) ([]entity.Example, int64, error) {
+			if got != ctx {
+				t.Fatal("cache loader replaced caller context")
+			}
+			if opts.Page != 1 || opts.PageSize != 20 {
+				t.Fatalf("options = %#v", opts)
+			}
+			return nil, 0, nil
+		},
+	}
+	service := &ExampleService{
+		Store: store,
+		listCached: func(got context.Context, key string, ttl time.Duration, loader exampleListLoader) (*responsevo.ExampleListRespVo, error) {
+			if got != ctx {
+				t.Fatal("cache did not receive caller context")
+			}
+			if key != "example:list:page:1:size:20:status:active" {
+				t.Fatalf("cache key = %q", key)
+			}
+			if ttl != exampleListCacheTTL {
+				t.Fatalf("ttl = %s", ttl)
+			}
+			return loader(got)
+		},
+	}
+
+	if _, err := service.List(ctx, requestvo.ListExamplesReqVo{Status: " active "}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDispatchExampleChangedUsesCallerContextAndStableOptions(t *testing.T) {
+	ctx := context.WithValue(context.Background(), contextKey("request"), "same")
+	service := &ExampleService{
+		getTaskDispatcher: func() (exampleTaskDispatcher, error) {
+			return fakeExampleTaskDispatcher{enqueueFn: func(got context.Context, task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error) {
+				if got != ctx {
+					t.Fatal("dispatcher did not receive caller context")
+				}
+				if task.Type() != "example:changed" {
+					t.Fatalf("task type = %q", task.Type())
+				}
+				if len(opts) != 2 || opts[0].Type() != asynq.QueueOpt || opts[0].Value() != "default" ||
+					opts[1].Type() != asynq.MaxRetryOpt || opts[1].Value() != 3 {
+					t.Fatalf("enqueue options = %#v", opts)
+				}
+				return &asynq.TaskInfo{ID: "task-id"}, nil
+			}}, nil
+		},
+	}
+
+	if err := service.dispatchExampleChanged(ctx, "507f1f77bcf86cd799439011", "update"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDispatchExampleChangedReturnsConstructionAndEnqueueErrorsWithoutNilDereference(t *testing.T) {
+	constructionErr := errors.New("dispatcher unavailable")
+	service := &ExampleService{
+		getTaskDispatcher: func() (exampleTaskDispatcher, error) {
+			return nil, constructionErr
+		},
+	}
+	if err := service.dispatchExampleChanged(context.Background(), "507f1f77bcf86cd799439011", "create"); !errors.Is(err, constructionErr) {
+		t.Fatalf("construction error = %v", err)
+	}
+
+	service.getTaskDispatcher = func() (exampleTaskDispatcher, error) { return nil, nil }
+	if err := service.dispatchExampleChanged(context.Background(), "507f1f77bcf86cd799439011", "create"); err == nil {
+		t.Fatal("nil dispatcher should return an error")
+	}
+
+	enqueueErr := errors.New("enqueue failed")
+	service.getTaskDispatcher = func() (exampleTaskDispatcher, error) {
+		return fakeExampleTaskDispatcher{enqueueFn: func(context.Context, *asynq.Task, ...asynq.Option) (*asynq.TaskInfo, error) {
+			return nil, enqueueErr
+		}}, nil
+	}
+	if err := service.dispatchExampleChanged(context.Background(), "507f1f77bcf86cd799439011", "create"); !errors.Is(err, enqueueErr) {
+		t.Fatalf("enqueue error = %v", err)
+	}
+}
+
+func TestCreateKeepsCanonicalCRUDSuccessWhenEventDispatchFails(t *testing.T) {
+	id := bson.NewObjectID()
+	store := &fakeExampleStore{createFn: func(_ context.Context, example *entity.Example) error {
+		example.ID = id
+		return nil
+	}}
+	service := &ExampleService{
+		Store: store,
+		getTaskDispatcher: func() (exampleTaskDispatcher, error) {
+			return nil, errors.New("redis unavailable")
+		},
+	}
+
+	got, err := service.Create(context.Background(), requestvo.CreateExampleReqVo{Name: "example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != id.Hex() {
+		t.Fatalf("id = %q", got.ID)
 	}
 }

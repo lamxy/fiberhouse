@@ -2,10 +2,14 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/component/cache"
 	"github.com/lamxy/fiberhouse/example_application/apivo/commonvo"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
@@ -13,7 +17,17 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/entity"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
+	exampletask "github.com/lamxy/fiberhouse/example_application/module/example-module/task"
 )
+
+const exampleListCacheTTL = 30 * time.Second
+
+type exampleListLoader func(context.Context) (*responsevo.ExampleListRespVo, error)
+type exampleListCache func(context.Context, string, time.Duration, exampleListLoader) (*responsevo.ExampleListRespVo, error)
+
+type exampleTaskDispatcher interface {
+	EnqueueContext(context.Context, *asynq.Task, ...asynq.Option) (*asynq.TaskInfo, error)
+}
 
 type ExampleUseCase interface {
 	Create(context.Context, requestvo.CreateExampleReqVo) (*responsevo.ExampleRespVo, error)
@@ -27,14 +41,25 @@ type ExampleService struct {
 	fiberhouse.ServiceLocator
 	Store repository.ExampleStore
 	now   func() time.Time
+
+	listCached        exampleListCache
+	getTaskDispatcher func() (exampleTaskDispatcher, error)
 }
 
 func NewExampleService(ctx fiberhouse.IApplicationContext, store repository.ExampleStore) *ExampleService {
-	return &ExampleService{
+	service := &ExampleService{
 		ServiceLocator: fiberhouse.NewService(ctx).SetName(GetKeyExampleService()),
 		Store:          store,
 		now:            time.Now,
 	}
+	service.listCached = service.readThroughList
+	service.getTaskDispatcher = func() (exampleTaskDispatcher, error) {
+		if ctx == nil || ctx.GetStarterApp() == nil || ctx.GetStarterApp().GetTask() == nil {
+			return nil, errors.New("task dispatcher is not configured")
+		}
+		return ctx.GetStarterApp().GetTask().GetTaskDispatcher()
+	}
+	return service
 }
 
 func GetKeyExampleService(ns ...string) string {
@@ -57,6 +82,7 @@ func (s *ExampleService) Create(ctx context.Context, req requestvo.CreateExample
 	if err := s.Store.Create(ctx, example); err != nil {
 		return nil, err
 	}
+	s.observeDispatchError(s.dispatchExampleChanged(ctx, example.ID.Hex(), "create"))
 	resp := toResponse(*example)
 	return &resp, nil
 }
@@ -72,6 +98,17 @@ func (s *ExampleService) Get(ctx context.Context, id string) (*responsevo.Exampl
 
 func (s *ExampleService) List(ctx context.Context, req requestvo.ListExamplesReqVo) (*responsevo.ExampleListRespVo, error) {
 	req = req.Normalize()
+	req.Status = strings.TrimSpace(req.Status)
+	loader := func(loaderCtx context.Context) (*responsevo.ExampleListRespVo, error) {
+		return s.listFromStore(loaderCtx, req)
+	}
+	if s.listCached == nil {
+		return loader(ctx)
+	}
+	return s.listCached(ctx, exampleListCacheKey(req), exampleListCacheTTL, loader)
+}
+
+func (s *ExampleService) listFromStore(ctx context.Context, req requestvo.ListExamplesReqVo) (*responsevo.ExampleListRespVo, error) {
 	examples, total, err := s.Store.List(ctx, repository.ListOptions{
 		Page: req.Page, PageSize: req.PageSize, Status: entity.ExampleStatus(req.Status),
 	})
@@ -108,12 +145,77 @@ func (s *ExampleService) Update(ctx context.Context, id string, req requestvo.Up
 	if err := s.Store.Update(ctx, id, example); err != nil {
 		return nil, err
 	}
+	s.observeDispatchError(s.dispatchExampleChanged(ctx, id, "update"))
 	resp := toResponse(*example)
 	return &resp, nil
 }
 
 func (s *ExampleService) Delete(ctx context.Context, id string) error {
-	return s.Store.Delete(ctx, id)
+	if err := s.Store.Delete(ctx, id); err != nil {
+		return err
+	}
+	s.observeDispatchError(s.dispatchExampleChanged(ctx, id, "delete"))
+	return nil
+}
+
+func exampleListCacheKey(req requestvo.ListExamplesReqVo) string {
+	return fmt.Sprintf("example:list:page:%d:size:%d:status:%s", req.Page, req.PageSize, req.Status)
+}
+
+func (s *ExampleService) readThroughList(ctx context.Context, key string, ttl time.Duration, loader exampleListLoader) (*responsevo.ExampleListRespVo, error) {
+	if s.ServiceLocator == nil {
+		return loader(ctx)
+	}
+	appCtx := s.GetContext()
+	if appCtx == nil {
+		return loader(ctx)
+	}
+	option := cache.OptionPoolGet(appCtx)
+	defer cache.OptionPoolPut(option)
+	option.Level2().
+		SetCacheKey(key).
+		SetLocalTTL(ttl).
+		SetRemoteTTL(ttl).
+		SetContextCtx(ctx).
+		SetSyncStrategyWriteRemoteOnly().
+		EnableSingleFlight()
+	return cache.GetCached[*responsevo.ExampleListRespVo](option, loader)
+}
+
+func (s *ExampleService) dispatchExampleChanged(ctx context.Context, id, operation string) error {
+	if s.getTaskDispatcher == nil {
+		return errors.New("task dispatcher is not configured")
+	}
+	dispatcher, err := s.getTaskDispatcher()
+	if err != nil {
+		return err
+	}
+	if dispatcher == nil {
+		return errors.New("task dispatcher is nil")
+	}
+	changedTask, err := exampletask.NewExampleChangedTask(s.applicationContext(), exampletask.ExampleChangedPayload{
+		ID: id, Operation: operation,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = dispatcher.EnqueueContext(ctx, changedTask, asynq.Queue("default"), asynq.MaxRetry(constant.TaskMaxRetryDefault))
+	return err
+}
+
+func (s *ExampleService) applicationContext() fiberhouse.IContext {
+	if s.ServiceLocator == nil {
+		return nil
+	}
+	return s.GetContext()
+}
+
+func (s *ExampleService) observeDispatchError(err error) {
+	if err == nil || s.ServiceLocator == nil || s.GetContext() == nil {
+		return
+	}
+	s.GetContext().GetLogger().WarnWith(s.GetContext().GetConfig().LogOriginTask()).
+		Err(err).Msg("example changed event was not enqueued")
 }
 
 func (s *ExampleService) currentTime() time.Time {

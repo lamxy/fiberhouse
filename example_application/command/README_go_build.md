@@ -1,23 +1,24 @@
-# build or run cmd command base on COMMAND directory
-- ### Configure based on the COMMAND directory or absolute path, otherwise the operation will panic
+# Build and run the example command
 
-### go run
-```shell
-cd commandline/   # command ROOT Directory
-go run /path/to/main.go
+Run from this directory because `main.go` resolves configuration at
+`../../example_config` relative to the working directory:
+
+```bash
+cd example_application/command
+go run . --help
+go run . example --help
 ```
 
-### go build
-```shell
-cd commandline/  # command ROOT Directory
-# windows环境构建产物保留.exe后缀，linux环境无需保留后缀
-go build -o ./target/cmdstarter.exe ./main.go 
+Build and execute:
+
+```bash
+go build -o ./target/fiberhouse-example-command .
+./target/fiberhouse-example-command example migrate
+./target/fiberhouse-example-command example list --page 1 --page-size 20
 ```
 
-### exec
-```shell
-cd command/    ## work dir is ~/command/, configure path base on it
-./target/cmdstarter.exe -h
-# or Linux、MacOS 环境
-./target/cmdstarter -h
-```
+Windows may use `./target/fiberhouse-example-command.exe`. MySQL must be
+available using `database.mysql.dsn` in the active
+`example_config/application_<env>.yml`. See
+[`../module/command-module/README.md`](../module/command-module/README.md) for
+the full CRUD command set and integration test.
