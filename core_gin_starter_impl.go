@@ -17,6 +17,7 @@ import (
 
 	ginJson "github.com/gin-gonic/gin/codec/json"
 	adaptorerrorhandler "github.com/lamxy/fiberhouse/adaptor/errorhandler"
+	adaptorlogging "github.com/lamxy/fiberhouse/adaptor/logging"
 	"github.com/lamxy/fiberhouse/appconfig"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,8 @@ type CoreWithGin struct {
 	OptionFuncList []gin.OptionFunc
 	coreApp        *gin.Engine
 	httpServer     *http.Server
+	ginLoggerLease *adaptorlogging.GinLoggerLease
+	initErr        error
 }
 
 // NewCoreWithGin 创建一个基于Gin的应用核心启动器对象
@@ -44,6 +47,23 @@ func NewCoreWithGin(ctx IApplicationContext, opts ...CoreStarterOption) CoreStar
 	}
 
 	return core
+}
+
+func resolveGinMode(cfg appconfig.IAppConfig) string {
+	if mode := cfg.String("application.plugins.engine.servers.gin.mode"); mode != "" {
+		return mode
+	}
+	return cfg.String("application.plugins.server.gin.mode", gin.ReleaseMode)
+}
+
+func (cg *CoreWithGin) releaseGinLogger() {
+	if cg.ginLoggerLease != nil {
+		cg.ginLoggerLease.Release()
+	}
+}
+
+func (cg *CoreWithGin) initializationFailed() bool {
+	return cg.initErr != nil
 }
 
 // InitCoreApp 初始化应用核心
@@ -73,12 +93,30 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 
 	cfg := cg.GetAppContext().GetConfig()
 
-	// 设置Gin运行模式
-	mode := cfg.String("application.plugins.server.gin.mode", gin.ReleaseMode)
-	if cfg.GetRecover().DebugMode {
-		mode = gin.DebugMode
+	adapter := adaptorlogging.NewGinLoggerAdapter(
+		cg.GetAppContext().GetLogger(),
+		cfg.LogOriginFrame(),
+	)
+	lease, err := adaptorlogging.InstallGinLogger(adapter)
+	if err != nil {
+		cg.initErr = fmt.Errorf("install Gin framework logger: %w", err)
+		cg.GetAppContext().GetLogger().
+			ErrorWith(cfg.LogOriginFrame()).
+			Err(cg.initErr).
+			Msg("InitCoreApp Gin logger bridge failed")
+		return
 	}
-	gin.SetMode(mode)
+	cg.ginLoggerLease = lease
+
+	initialized := false
+	defer func() {
+		if !initialized {
+			cg.releaseGinLogger()
+		}
+	}()
+
+	// 设置Gin运行模式
+	gin.SetMode(resolveGinMode(cfg))
 
 	// 创建Gin引擎
 	cg.coreApp = gin.New(cg.OptionFuncList...)
@@ -118,6 +156,10 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 
 	// 初始化HTTP Server
 	cg.initHttpServer(cfg)
+	if cg.httpServer.ErrorLog == nil {
+		cg.httpServer.ErrorLog = adapter.HTTPServerErrorLogger()
+	}
+	initialized = true
 }
 
 // initHttpServer 初始化HTTP服务器
@@ -212,6 +254,9 @@ func (cg *CoreWithGin) initHttpServer(cfg appconfig.IAppConfig) {
 
 // RegisterAppMiddleware 注册应用级的中间件
 func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProviderManager) {
+	if cg.initializationFailed() {
+		return
+	}
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -291,6 +336,7 @@ func (cg *CoreWithGin) loggerMiddleware() gin.HandlerFunc {
 		clientIP := c.ClientIP()
 
 		logEvent := cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginCoreHttp()).
+			Str("Component", "Gin").
 			Str("method", method).
 			Str("path", path).
 			Int("status", statusCode).
@@ -312,6 +358,9 @@ func (cg *CoreWithGin) loggerMiddleware() gin.HandlerFunc {
 
 // RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器等
 func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter, managers ...IProviderManager) {
+	if cg.initializationFailed() {
+		return
+	}
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -346,6 +395,9 @@ func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter, managers ...IPr
 
 // RegisterModuleSwagger 注册模块/子系统级的swagger
 func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter, managers ...IProviderManager) {
+	if cg.initializationFailed() {
+		return
+	}
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -376,6 +428,9 @@ func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter, managers ...IProvi
 
 // RegisterAppHooks 注册核心应用的生命周期钩子函数
 func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderManager) {
+	if cg.initializationFailed() {
+		return
+	}
 	if cg.GetAppContext().GetAppState() {
 		return
 	}
@@ -403,6 +458,11 @@ func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderMa
 
 // AppCoreRun 启动Gin应用并监听信号
 func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
+	if cg.initializationFailed() {
+		return cg.initErr
+	}
+	defer cg.releaseGinLogger()
+
 	if cg.GetAppContext().GetAppState() {
 		return nil
 	}
@@ -451,6 +511,8 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 
 // Shutdown 关闭应用
 func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
+	defer cg.releaseGinLogger()
+
 	if cg.GetAppContext().GetAppState() {
 		return nil
 	}
@@ -510,6 +572,8 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 		Str("applicationStarter", "GinApplication").
 		Msg("Gin server shutdown complete")
+
+	cg.releaseGinLogger()
 
 	// 关闭日志器
 	return cg.GetAppContext().GetLogger().Close()

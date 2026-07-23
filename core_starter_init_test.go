@@ -1,6 +1,7 @@
 package fiberhouse
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -8,12 +9,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -23,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 	ginJson "github.com/gin-gonic/gin/codec/json"
 	"github.com/gofiber/fiber/v2"
+	adaptorlogging "github.com/lamxy/fiberhouse/adaptor/logging"
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	jsoncodec "github.com/lamxy/fiberhouse/component/codec/json"
@@ -83,6 +88,7 @@ type task4LifecycleManager struct {
 	IProviderManager
 	typ       IProviderType
 	location  IProviderLocation
+	err       error
 	loadCalls int
 }
 
@@ -90,6 +96,9 @@ func (m *task4LifecycleManager) Type() IProviderType         { return m.typ }
 func (m *task4LifecycleManager) Location() IProviderLocation { return m.location }
 func (m *task4LifecycleManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
 	m.loadCalls++
+	if m.err != nil {
+		return nil, m.err
+	}
 	if len(loadFunc) > 0 {
 		return loadFunc[0](m)
 	}
@@ -105,6 +114,51 @@ func newTask4InternalAppContext(t *testing.T, values map[string]interface{}) IAp
 	cfg.Initialize()
 	logger := zerolog.Nop()
 	return NewAppContext(cfg, bootstrap.NewLoggerWrap(&logger))
+}
+
+func newTask4LoggingAppContext(
+	t *testing.T,
+	values map[string]interface{},
+) (IApplicationContext, *bytes.Buffer) {
+	t.Helper()
+	cfg := appconfig.NewAppConfig()
+	if values != nil {
+		cfg.LoadDefault(values)
+	}
+	cfg.Initialize()
+	var output bytes.Buffer
+	logger := zerolog.New(&output).Level(zerolog.DebugLevel)
+	return NewAppContext(cfg, bootstrap.NewLoggerWrap(&logger)), &output
+}
+
+func decodeTask4LogRecords(t *testing.T, output *bytes.Buffer) []map[string]any {
+	t.Helper()
+	lines := bytes.Split(bytes.TrimSpace(output.Bytes()), []byte("\n"))
+	records := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		var record map[string]any
+		require.NoError(t, json.Unmarshal(line, &record))
+		records = append(records, record)
+	}
+	return records
+}
+
+func task4LogRecordsWithMessage(
+	t *testing.T,
+	output *bytes.Buffer,
+	message string,
+) []map[string]any {
+	t.Helper()
+	var matched []map[string]any
+	for _, record := range decodeTask4LogRecords(t, output) {
+		if record["message"] == message {
+			matched = append(matched, record)
+		}
+	}
+	return matched
 }
 
 func task4GoodCodecManager() *task4CodecManager {
@@ -126,6 +180,58 @@ func preserveTask4GinMode(t *testing.T) {
 	t.Helper()
 	oldMode := gin.Mode()
 	t.Cleanup(func() { gin.SetMode(oldMode) })
+}
+
+func preserveTask4GinGlobals(t *testing.T) {
+	t.Helper()
+	previousDebugPrint := gin.DebugPrintFunc
+	previousDebugPrintRoute := gin.DebugPrintRouteFunc
+	previousWriter := gin.DefaultWriter
+	previousErrorWriter := gin.DefaultErrorWriter
+	t.Cleanup(func() {
+		gin.DebugPrintFunc = previousDebugPrint
+		gin.DebugPrintRouteFunc = previousDebugPrintRoute
+		gin.DefaultWriter = previousWriter
+		gin.DefaultErrorWriter = previousErrorWriter
+	})
+}
+
+func cleanupTask4GinCore(t *testing.T, core *CoreWithGin) {
+	t.Helper()
+	t.Cleanup(func() {
+		replacement := &task4LifecycleManager{
+			typ:      ProviderTypeDefault().GroupExtendReplace,
+			location: ProviderLocationDefault().LocationServerRun,
+		}
+		_ = core.AppCoreRun(replacement)
+	})
+}
+
+func installTask4GinLoggerProbe(t *testing.T) (*adaptorlogging.GinLoggerLease, error) {
+	t.Helper()
+	logger := zerolog.Nop()
+	adapter := adaptorlogging.NewGinLoggerAdapter(
+		bootstrap.NewLoggerWrap(&logger),
+		appconfig.LogOrigin("Frame"),
+	)
+	return adaptorlogging.InstallGinLogger(adapter)
+}
+
+func requireTask4GinLoggerActive(t *testing.T) {
+	t.Helper()
+	lease, err := installTask4GinLoggerProbe(t)
+	if lease != nil {
+		lease.Release()
+	}
+	require.ErrorIs(t, err, adaptorlogging.ErrGinLoggerAlreadyInstalled)
+}
+
+func requireTask4GinLoggerReleased(t *testing.T) {
+	t.Helper()
+	lease, err := installTask4GinLoggerProbe(t)
+	require.NoError(t, err)
+	require.NotNil(t, lease)
+	lease.Release()
 }
 
 func isolateTask4ErrorHandlerSingleton(t *testing.T) {
@@ -160,6 +266,7 @@ func TestCoreInit_CreatesFiberAndGinAppsUsingSelectedManager(t *testing.T) {
 	ginWrong, ginManager := task4WrongManager(), task4GoodCodecManager()
 	ginCore := NewCoreWithGin(ctx).(*CoreWithGin)
 	ginCore.InitCoreApp(frame, ginWrong, ginManager)
+	cleanupTask4GinCore(t, ginCore)
 	assert.NotNil(t, ginCore.coreApp)
 	assert.Same(t, ginCore.coreApp, ginCore.GetCoreApp())
 	assert.Zero(t, ginWrong.loadCalls)
@@ -193,6 +300,7 @@ func TestCoreInit_NoManagerUsesApplicationDefaultCodec(t *testing.T) {
 
 	ginCore := NewCoreWithGin(ctx).(*CoreWithGin)
 	ginCore.InitCoreApp(frame)
+	cleanupTask4GinCore(t, ginCore)
 	assert.NotNil(t, ginCore.coreApp)
 	assert.NotNil(t, ginCore.httpServer)
 	assert.Equal(t, 1, factoryCalls)
@@ -394,6 +502,7 @@ func TestCoreInit_GinServerUsesConfiguredAddressAndTimeouts(t *testing.T) {
 	})
 	core := NewCoreWithGin(ctx).(*CoreWithGin)
 	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	cleanupTask4GinCore(t, core)
 
 	require.NotNil(t, core.httpServer)
 	assert.Equal(t, "127.0.0.1:9099", core.httpServer.Addr)
@@ -405,6 +514,265 @@ func TestCoreInit_GinServerUsesConfiguredAddressAndTimeouts(t *testing.T) {
 	assert.Equal(t, 8*1024, core.httpServer.MaxHeaderBytes)
 	assert.NotNil(t, core.httpServer.BaseContext)
 	assert.IsType(t, http.Handler(core.coreApp), core.httpServer.Handler)
+}
+
+func TestCoreInit_GinModeResolution(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		values map[string]interface{}
+		want   string
+	}{
+		{
+			name: "canonical key wins",
+			values: map[string]interface{}{
+				"application.plugins.engine.servers.gin.mode": gin.TestMode,
+				"application.plugins.server.gin.mode":         gin.DebugMode,
+			},
+			want: gin.TestMode,
+		},
+		{
+			name: "legacy key remains supported",
+			values: map[string]interface{}{
+				"application.plugins.server.gin.mode": gin.DebugMode,
+			},
+			want: gin.DebugMode,
+		},
+		{
+			name: "missing keys default to release",
+			want: gin.ReleaseMode,
+		},
+		{
+			name: "recovery debug does not override Gin mode",
+			values: map[string]interface{}{
+				"application.plugins.engine.servers.gin.mode": gin.ReleaseMode,
+				"application.recover.debugMode":               true,
+			},
+			want: gin.ReleaseMode,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			preserveTask4GinGlobals(t)
+			preserveTask4GinMode(t)
+			ctx := newTask4InternalAppContext(t, testCase.values)
+			core := NewCoreWithGin(ctx).(*CoreWithGin)
+
+			core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+			cleanupTask4GinCore(t, core)
+
+			require.Equal(t, testCase.want, gin.Mode())
+		})
+	}
+}
+
+func TestCoreInit_GinLoggerCapturesStartupAndRouteDiagnostics(t *testing.T) {
+	preserveTask4GinGlobals(t)
+	preserveTask4GinMode(t)
+	ctx, output := newTask4LoggingAppContext(t, map[string]interface{}{
+		"application.plugins.engine.servers.gin.mode": gin.DebugMode,
+	})
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+
+	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	cleanupTask4GinCore(t, core)
+
+	var startupRecords []map[string]any
+	for _, record := range decodeTask4LogRecords(t, output) {
+		if record["level"] == "debug" &&
+			record["Component"] == "Gin" &&
+			record["Channel"] == "debug" {
+			startupRecords = append(startupRecords, record)
+		}
+	}
+	require.NotEmpty(t, startupRecords)
+
+	core.coreApp.GET("/gin-logger", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	routeRecords := task4LogRecordsWithMessage(t, output, "Gin route registered")
+	require.Len(t, routeRecords, 1)
+	require.Equal(t, "Gin", routeRecords[0]["Component"])
+	require.Equal(t, http.MethodGet, routeRecords[0]["method"])
+	require.Equal(t, "/gin-logger", routeRecords[0]["path"])
+}
+
+func TestCoreInit_GinHTTPErrorLoggerDefaultsAndPreservesCustom(t *testing.T) {
+	t.Run("default server logger", func(t *testing.T) {
+		preserveTask4GinGlobals(t)
+		preserveTask4GinMode(t)
+		ctx, output := newTask4LoggingAppContext(t, nil)
+		core := NewCoreWithGin(ctx).(*CoreWithGin)
+
+		core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+		cleanupTask4GinCore(t, core)
+
+		require.NotNil(t, core.httpServer.ErrorLog)
+		core.httpServer.ErrorLog.Print("accept failed")
+		records := task4LogRecordsWithMessage(t, output, "accept failed")
+		require.Len(t, records, 1)
+		require.Equal(t, "error", records[0]["level"])
+		require.Equal(t, "Gin", records[0]["Component"])
+		require.Equal(t, "server", records[0]["Channel"])
+	})
+
+	t.Run("custom server logger", func(t *testing.T) {
+		preserveTask4GinGlobals(t)
+		preserveTask4GinMode(t)
+		ctx := newTask4InternalAppContext(t, nil)
+		customOutput := &bytes.Buffer{}
+		customLogger := log.New(customOutput, "custom: ", 0)
+		core := &CoreWithGin{
+			ctx:        ctx,
+			httpServer: &http.Server{ErrorLog: customLogger},
+		}
+
+		core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+		cleanupTask4GinCore(t, core)
+
+		require.Same(t, customLogger, core.httpServer.ErrorLog)
+	})
+}
+
+func TestCoreInit_GinLoggerConflictDefersErrorAndGuardsRegistration(t *testing.T) {
+	preserveTask4GinGlobals(t)
+	preserveTask4GinMode(t)
+	isolateTask4ErrorHandlerSingleton(t)
+	externalLease, err := installTask4GinLoggerProbe(t)
+	require.NoError(t, err)
+	t.Cleanup(externalLease.Release)
+
+	ctx := newTask4InternalAppContext(t, nil)
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+	frame := &task4Frame{}
+	core.InitCoreApp(frame, task4GoodCodecManager())
+
+	assert.Nil(t, core.GetCoreApp())
+	if core.httpServer != nil {
+		core.httpServer.Addr = "bad address"
+	}
+	assert.ErrorIs(
+		t,
+		core.AppCoreRun(),
+		adaptorlogging.ErrGinLoggerAlreadyInstalled,
+	)
+	assert.NotPanics(t, func() {
+		core.RegisterAppMiddleware(frame)
+		core.RegisterModuleInitialize(frame)
+		core.RegisterModuleSwagger(frame)
+		core.RegisterAppHooks(frame)
+	})
+}
+
+func TestCoreInit_GinLoggerAccessRecordHasComponentWithoutDuplication(t *testing.T) {
+	preserveTask4GinGlobals(t)
+	preserveTask4GinMode(t)
+	ctx, output := newTask4LoggingAppContext(t, map[string]interface{}{
+		"application.middleware.coreHttp": true,
+	})
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	cleanupTask4GinCore(t, core)
+
+	core.coreApp.Use(core.loggerMiddleware())
+	core.coreApp.GET("/access", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	recorder := httptest.NewRecorder()
+	core.coreApp.ServeHTTP(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/access", nil),
+	)
+
+	records := task4LogRecordsWithMessage(t, output, "HTTP Request")
+	require.Len(t, records, 1)
+	require.Equal(t, "Gin", records[0]["Component"])
+	require.Equal(t, http.MethodGet, records[0]["method"])
+	require.Equal(t, "/access", records[0]["path"])
+}
+
+func TestCoreRun_GinLoggerReleasedOnListenerFailure(t *testing.T) {
+	preserveTask4GinGlobals(t)
+	preserveTask4GinMode(t)
+	ctx := newTask4InternalAppContext(t, nil)
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	cleanupTask4GinCore(t, core)
+	requireTask4GinLoggerActive(t)
+	core.httpServer.Addr = "bad address"
+
+	require.Error(t, core.AppCoreRun())
+
+	requireTask4GinLoggerReleased(t)
+}
+
+func TestCoreRun_GinLoggerReleasedOnNormalReturn(t *testing.T) {
+	preserveTask4GinGlobals(t)
+	preserveTask4GinMode(t)
+	ctx := newTask4InternalAppContext(t, nil)
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	cleanupTask4GinCore(t, core)
+	requireTask4GinLoggerActive(t)
+	require.NoError(t, core.httpServer.Close())
+
+	require.NoError(t, core.AppCoreRun())
+
+	requireTask4GinLoggerReleased(t)
+}
+
+func TestCoreShutdown_GinLoggerReleasedOnAllPaths(t *testing.T) {
+	shutdownProviderErr := errors.New("shutdown provider failed")
+	for _, testCase := range []struct {
+		name     string
+		managers func() []IProviderManager
+		wantErr  error
+	}{
+		{
+			name: "successful graceful shutdown",
+		},
+		{
+			name: "shutdown provider error",
+			managers: func() []IProviderManager {
+				return []IProviderManager{&task4LifecycleManager{
+					typ:      ProviderTypeDefault().GroupProviderAutoRun,
+					location: ProviderLocationDefault().LocationServerShutdown,
+					err:      shutdownProviderErr,
+				}}
+			},
+			wantErr: shutdownProviderErr,
+		},
+		{
+			name: "replacement shutdown provider",
+			managers: func() []IProviderManager {
+				return []IProviderManager{&task4LifecycleManager{
+					typ:      ProviderTypeDefault().GroupExtendReplace,
+					location: ProviderLocationDefault().LocationServerShutdown,
+				}}
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			preserveTask4GinGlobals(t)
+			preserveTask4GinMode(t)
+			ctx := newTask4InternalAppContext(t, nil)
+			core := NewCoreWithGin(ctx).(*CoreWithGin)
+			core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+			cleanupTask4GinCore(t, core)
+			requireTask4GinLoggerActive(t)
+			var managers []IProviderManager
+			if testCase.managers != nil {
+				managers = testCase.managers()
+			}
+
+			err := core.Shutdown(managers...)
+			if testCase.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, testCase.wantErr)
+			}
+
+			requireTask4GinLoggerReleased(t)
+		})
+	}
 }
 
 // generateTask4SelfSignedCert 生成一份临时的 ECDSA 自签名证书/私钥文件，
@@ -452,6 +820,7 @@ func TestCoreInit_GinTLSLoadsConfiguredCertificate(t *testing.T) {
 	require.NotPanics(t, func() {
 		core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
 	})
+	cleanupTask4GinCore(t, core)
 	require.NotNil(t, core.httpServer.TLSConfig)
 	require.Len(t, core.httpServer.TLSConfig.Certificates, 1)
 }
@@ -490,6 +859,7 @@ func TestCoreInit_GinLoopbackTLSHandshake(t *testing.T) {
 	})
 	core := NewCoreWithGin(ctx).(*CoreWithGin)
 	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	cleanupTask4GinCore(t, core)
 	require.NotNil(t, core.httpServer.TLSConfig)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
