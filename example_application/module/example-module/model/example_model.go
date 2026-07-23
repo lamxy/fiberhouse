@@ -75,9 +75,16 @@ func NewExampleModel(ctx fiberhouse.IApplicationContext) *ExampleModel {
 		SetDbName(constant.DbNameMongo).
 		SetTable(constant.CollExample).
 		SetName(GetKeyExampleModel()).(dbmongo.MongoLocator)
+	model := NewExampleModelWithCollection(locator.GetCollection(locator.GetColl()))
+	model.MongoLocator = locator
+	return model
+}
+
+// NewExampleModelWithCollection keeps production persistence behavior while
+// allowing callers to select an already configured MongoDB collection.
+func NewExampleModelWithCollection(collection *mongo.Collection) *ExampleModel {
 	return &ExampleModel{
-		MongoLocator: locator,
-		collection:   mongoCollection{collection: locator.GetCollection(locator.GetColl())},
+		collection: mongoCollection{collection: collection},
 	}
 }
 

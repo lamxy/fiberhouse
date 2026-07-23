@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
-	"github.com/lamxy/fiberhouse/example_application/module/example-module/entity"
+	"github.com/lamxy/fiberhouse/example_application/module/example-module/model"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/repository"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	"github.com/redis/go-redis/v9"
@@ -16,85 +16,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
-
-type integrationMongoStore struct {
-	collection *mongo.Collection
-}
-
-func (s integrationMongoStore) Create(ctx context.Context, example *entity.Example) error {
-	result, err := s.collection.InsertOne(ctx, example)
-	if err != nil {
-		return err
-	}
-	example.ID = result.InsertedID.(bson.ObjectID)
-	return nil
-}
-
-func (s integrationMongoStore) Get(ctx context.Context, id string) (*entity.Example, error) {
-	objectID, err := bson.ObjectIDFromHex(id)
-	if err != nil {
-		return nil, repository.ErrInvalidID
-	}
-	var example entity.Example
-	if err := s.collection.FindOne(ctx, bson.D{{Key: "_id", Value: objectID}}).Decode(&example); err != nil {
-		return nil, err
-	}
-	return &example, nil
-}
-
-func (s integrationMongoStore) List(ctx context.Context, list repository.ListOptions) ([]entity.Example, int64, error) {
-	filter := bson.D{}
-	if list.Status != "" {
-		filter = append(filter, bson.E{Key: "status", Value: list.Status})
-	}
-	total, err := s.collection.CountDocuments(ctx, filter)
-	if err != nil {
-		return nil, 0, err
-	}
-	cursor, err := s.collection.Find(ctx, filter, options.Find().
-		SetSkip(int64((list.Page-1)*list.PageSize)).
-		SetLimit(int64(list.PageSize)).
-		SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
-	if err != nil {
-		return nil, 0, err
-	}
-	defer cursor.Close(ctx)
-	var examples []entity.Example
-	if err := cursor.All(ctx, &examples); err != nil {
-		return nil, 0, err
-	}
-	return examples, total, nil
-}
-
-func (s integrationMongoStore) Update(ctx context.Context, id string, example *entity.Example) error {
-	objectID, err := bson.ObjectIDFromHex(id)
-	if err != nil {
-		return repository.ErrInvalidID
-	}
-	result, err := s.collection.ReplaceOne(ctx, bson.D{{Key: "_id", Value: objectID}}, example)
-	if err != nil {
-		return err
-	}
-	if result.ModifiedCount == 0 {
-		return repository.ErrUnchanged
-	}
-	return nil
-}
-
-func (s integrationMongoStore) Delete(ctx context.Context, id string) error {
-	objectID, err := bson.ObjectIDFromHex(id)
-	if err != nil {
-		return repository.ErrInvalidID
-	}
-	result, err := s.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: objectID}})
-	if err != nil {
-		return err
-	}
-	if result.DeletedCount == 0 {
-		return repository.ErrNotFound
-	}
-	return nil
-}
 
 func TestMongoCRUDAndRedisRoundTripIntegration(t *testing.T) {
 	requireIntegration(t)
@@ -112,15 +33,18 @@ func TestMongoCRUDAndRedisRoundTripIntegration(t *testing.T) {
 		t.Fatalf("MongoDB unavailable at FIBERHOUSE_MONGODB_URI: %v", err)
 	}
 
+	collectionName := envOr("FIBERHOUSE_MONGODB_COLLECTION", "example") + "_integration_" + runID
 	collection := mongoClient.Database(envOr("FIBERHOUSE_MONGODB_DATABASE", "test")).
-		Collection(envOr("FIBERHOUSE_MONGODB_COLLECTION", "example"))
-	store := integrationMongoStore{collection: collection}
-	app := &service.ExampleService{Store: store}
+		Collection(collectionName)
+	productionModel := model.NewExampleModelWithCollection(collection)
+	productionRepository := repository.NewExampleRepository(nil, productionModel)
+	app := service.NewExampleService(nil, productionRepository)
 	var createdID bson.ObjectID
 	t.Cleanup(func() {
 		if !createdID.IsZero() {
 			_, _ = collection.DeleteOne(context.Background(), bson.D{{Key: "_id", Value: createdID}})
 		}
+		_ = collection.Drop(context.Background())
 	})
 
 	created, err := app.Create(ctx, requestvo.CreateExampleReqVo{Name: "integration_" + runID, Status: "active"})
@@ -131,6 +55,25 @@ func TestMongoCRUDAndRedisRoundTripIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	indexCursor, err := collection.Indexes().List(ctx)
+	if err != nil {
+		t.Fatalf("list production indexes: %v", err)
+	}
+	var indexes []bson.M
+	if err := indexCursor.All(ctx, &indexes); err != nil {
+		t.Fatalf("decode production indexes: %v", err)
+	}
+	indexNames := make(map[string]bool, len(indexes))
+	for _, index := range indexes {
+		if name, ok := index["name"].(string); ok {
+			indexNames[name] = true
+		}
+	}
+	for _, name := range []string{"example_name_unique", "example_status_created_id"} {
+		if !indexNames[name] {
+			t.Fatalf("production index %q was not created: %#v", name, indexNames)
+		}
+	}
 	if _, err := app.Get(ctx, created.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -139,11 +82,18 @@ func TestMongoCRUDAndRedisRoundTripIntegration(t *testing.T) {
 		t.Fatalf("list result = %#v, err = %v", listed, err)
 	}
 	archived := "archived"
-	if _, err := app.Update(ctx, created.ID, requestvo.UpdateExampleReqVo{Status: &archived}); err != nil {
+	updated, err := app.Update(ctx, created.ID, requestvo.UpdateExampleReqVo{Status: &archived})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if updated.Status != archived {
+		t.Fatalf("updated status = %q, want %q", updated.Status, archived)
 	}
 	if err := app.Delete(ctx, created.ID); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := app.Get(ctx, created.ID); err == nil {
+		t.Fatal("Get() after Delete() error = nil, want not found")
 	}
 	createdID = bson.NilObjectID
 
