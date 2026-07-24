@@ -61,6 +61,18 @@ func (h *ExampleHandler) validateID(id, lang string) error {
 }
 
 // Create handles POST requests to create a new example resource.
+//
+// @Summary      Create an example
+// @Description  Create a new example resource with name, description, status and tags.
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        example  body      requestvo.CreateExampleReqVo  true  "Example to create"
+// @Success      201      {object}  response.RespInfo{data=responsevo.ExampleRespVo}
+// @Failure      400      {object}  response.RespInfo  "invalid input / validation error"
+// @Failure      500      {object}  response.RespInfo  "internal error"
+// @Router       /examples [post]
+// @ID           fiberCreateExample
 func (h *ExampleHandler) Create(c *fiber.Ctx) error {
 	var req requestvo.CreateExampleReqVo
 	if err := c.BodyParser(&req); err != nil {
@@ -80,6 +92,19 @@ func (h *ExampleHandler) Create(c *fiber.Ctx) error {
 }
 
 // Get handles GET requests to fetch a single example resource by id.
+//
+// @Summary      Get an example
+// @Description  Fetch a single example resource by id.
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Example id"
+// @Success      200  {object}  response.RespInfo{data=responsevo.ExampleRespVo}
+// @Failure      400  {object}  response.RespInfo  "invalid id"
+// @Failure      404  {object}  response.RespInfo  "example not found"
+// @Failure      500  {object}  response.RespInfo  "internal error"
+// @Router       /examples/{id} [get]
+// @ID           fiberGetExample
 func (h *ExampleHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	lang := c.Get(moduleconstant.XLanguageFlag, "en")
@@ -96,6 +121,20 @@ func (h *ExampleHandler) Get(c *fiber.Ctx) error {
 }
 
 // List handles GET requests to paginate example resources.
+//
+// @Summary      List examples
+// @Description  Paginate example resources, optionally filtered by status.
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        page       query     int     false  "page number (default 1)"
+// @Param        page_size  query     int     false  "page size, max 100 (default 20)"
+// @Param        status     query     string  false  "filter by status"  Enums(active, archived)
+// @Success      200        {object}  response.RespInfo{data=responsevo.ExampleListRespVo}
+// @Failure      400        {object}  response.RespInfo  "invalid query parameters"
+// @Failure      500        {object}  response.RespInfo  "internal error"
+// @Router       /examples [get]
+// @ID           fiberListExamples
 func (h *ExampleHandler) List(c *fiber.Ctx) error {
 	var req requestvo.ListExamplesReqVo
 	if err := c.QueryParser(&req); err != nil {
@@ -116,6 +155,21 @@ func (h *ExampleHandler) List(c *fiber.Ctx) error {
 
 // Update handles PATCH/PUT requests that partially update an example
 // resource by id. Only fields present in the request body are changed.
+//
+// @Summary      Update an example
+// @Description  Partially update an example resource by id. Only fields present in the request body are changed.
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                         true  "Example id"
+// @Param        example  body      requestvo.UpdateExampleReqVo   true  "Fields to update"
+// @Success      200      {object}  response.RespInfo{data=responsevo.ExampleRespVo}
+// @Failure      400      {object}  response.RespInfo  "invalid input / validation error"
+// @Failure      404      {object}  response.RespInfo  "example not found"
+// @Failure      409      {object}  response.RespInfo  "conflicting or unchanged update"
+// @Failure      500      {object}  response.RespInfo  "internal error"
+// @Router       /examples/{id} [put]
+// @ID           fiberUpdateExample
 func (h *ExampleHandler) Update(c *fiber.Ctx) error {
 	var req requestvo.UpdateExampleReqVo
 	if err := c.BodyParser(&req); err != nil {
@@ -139,6 +193,19 @@ func (h *ExampleHandler) Update(c *fiber.Ctx) error {
 }
 
 // Delete handles DELETE requests to remove an example resource by id.
+//
+// @Summary      Delete an example
+// @Description  Remove an example resource by id.
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        id   path  string  true  "Example id"
+// @Success      204  "no content"
+// @Failure      400  {object}  response.RespInfo  "invalid id"
+// @Failure      404  {object}  response.RespInfo  "example not found"
+// @Failure      500  {object}  response.RespInfo  "internal error"
+// @Router       /examples/{id} [delete]
+// @ID           fiberDeleteExample
 func (h *ExampleHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	lang := c.Get(moduleconstant.XLanguageFlag, "en")

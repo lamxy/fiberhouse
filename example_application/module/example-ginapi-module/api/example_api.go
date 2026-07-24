@@ -14,6 +14,15 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/transport"
 )
 
+// ExampleHandler is the Gin transport for the example resource. It exposes
+// the same CRUD contract as example-module/api.ExampleHandler (Fiber) at the
+// identical paths (POST/GET/PUT/DELETE /examples[/{id}]).
+//
+// Swaggo annotations are intentionally NOT duplicated here: swag init would
+// collide on identical @Router paths declared by both adapters. The Fiber
+// handlers in example_application/module/example-module/api/example_api.go
+// are the single annotated source of truth for the generated OpenAPI spec;
+// see example_application/docs/README.md for the documented rationale.
 type ExampleHandler struct {
 	fiberhouse.ApiLocator
 	UseCase service.ExampleUseCase
@@ -54,6 +63,8 @@ func (h *ExampleHandler) validateID(id, lang string) error {
 	return h.validate(&requestvo.ObjId{ID: id}, lang)
 }
 
+// Create handles POST /examples, mirroring the Fiber Create handler's
+// contract (see example-module/api.ExampleHandler.Create for the swaggo spec).
 func (h *ExampleHandler) Create(c *gin.Context) {
 	var req requestvo.CreateExampleReqVo
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -76,6 +87,8 @@ func (h *ExampleHandler) Create(c *gin.Context) {
 	}
 }
 
+// Get handles GET /examples/{id}, mirroring the Fiber Get handler's contract
+// (see example-module/api.ExampleHandler.Get for the swaggo spec).
 func (h *ExampleHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.validateID(id, h.language(c)); err != nil {
@@ -94,6 +107,8 @@ func (h *ExampleHandler) Get(c *gin.Context) {
 	}
 }
 
+// List handles GET /examples, mirroring the Fiber List handler's contract
+// (see example-module/api.ExampleHandler.List for the swaggo spec).
 func (h *ExampleHandler) List(c *gin.Context) {
 	var req requestvo.ListExamplesReqVo
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -116,6 +131,8 @@ func (h *ExampleHandler) List(c *gin.Context) {
 	}
 }
 
+// Update handles PUT /examples/{id}, mirroring the Fiber Update handler's
+// contract (see example-module/api.ExampleHandler.Update for the swaggo spec).
 func (h *ExampleHandler) Update(c *gin.Context) {
 	var req requestvo.UpdateExampleReqVo
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -144,6 +161,8 @@ func (h *ExampleHandler) Update(c *gin.Context) {
 	}
 }
 
+// Delete handles DELETE /examples/{id}, mirroring the Fiber Delete handler's
+// contract (see example-module/api.ExampleHandler.Delete for the swaggo spec).
 func (h *ExampleHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.validateID(id, h.language(c)); err != nil {
