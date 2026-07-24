@@ -43,8 +43,10 @@ func (s State) Name() string {
 
 // 定义提供者错误类型
 var (
-	ErrProviderAlreadyExists = &ProviderError{msg: "provider already exists"}
-	ErrProviderNotFound      = &ProviderError{msg: "provider not found"}
+	ErrProviderAlreadyExists      = &ProviderError{msg: "provider already exists"}
+	ErrProviderNotFound           = &ProviderError{msg: "provider not found"}
+	ErrProviderIsUnique           = &ProviderError{msg: "unique provider is already registered"}
+	ErrProviderSonManagerNotMount = &ProviderError{msg: "son manager is not mount"}
 )
 
 type ProviderError struct {

@@ -96,11 +96,11 @@ func (m *ProviderManager) GetContext() IContext {
 func (m *ProviderManager) Register(provider IProvider) error {
 	// 如果管理器处于唯一提供者模式,且已有提供者,则拒绝注册
 	if m.isUnique && len(m.providers) > 0 {
-		return fmt.Errorf("manager '%s' is in unique provider mode, cannot register another provider", m.name)
+		return fmt.Errorf("manager '%s' is in unique provider mode, cannot register another provider: %w", m.name, ErrProviderIsUnique)
 	}
 
 	if _, exists := m.providers[provider.Name()]; exists {
-		return fmt.Errorf("manager: '%s' Register provider '%s' already, error: '%s'", m.name, provider.Name(), ErrProviderAlreadyExists.Error())
+		return fmt.Errorf("manager: '%s' Register provider '%s' already: %w", m.name, provider.Name(), ErrProviderAlreadyExists)
 	}
 
 	m.providers[provider.Name()] = provider
@@ -110,7 +110,7 @@ func (m *ProviderManager) Register(provider IProvider) error {
 // Unregister 注销一个 provider
 func (m *ProviderManager) Unregister(name string) error {
 	if _, exists := m.providers[name]; !exists {
-		return fmt.Errorf("manager: '%s' Unregister provider '%s' does not exist: %s", m.name, name, ErrProviderNotFound.Error())
+		return fmt.Errorf("manager: '%s' Unregister provider '%s' does not exist: %w", m.name, name, ErrProviderNotFound)
 	}
 
 	delete(m.providers, name)
@@ -121,7 +121,7 @@ func (m *ProviderManager) Unregister(name string) error {
 func (m *ProviderManager) GetProvider(name string) (IProvider, error) {
 	provider, exists := m.providers[name]
 	if !exists {
-		return nil, fmt.Errorf("manager: '%s' get provider '%s' does not exist: %s", m.name, name, ErrProviderNotFound.Error())
+		return nil, fmt.Errorf("manager: '%s' get provider '%s' does not exist: %w", m.name, name, ErrProviderNotFound)
 	}
 
 	return provider, nil
@@ -146,7 +146,7 @@ func (m *ProviderManager) Map() map[string]IProvider {
 func (m *ProviderManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
 	m.Check()
 	if m.sonManager == nil {
-		return nil, fmt.Errorf("sonManager from base class '%s' is not set, need to call the MountToParent method of the subclass instance to attach the subclass instance to the parent class's sonManager field", m.name)
+		return nil, fmt.Errorf("sonManager from base class '%s' is not set, need to call the MountToParent method of the subclass instance to attach the subclass instance to the parent class's sonManager field: %w", m.name, ErrProviderSonManagerNotMount)
 	}
 	if m == m.sonManager {
 		return nil, fmt.Errorf("sonManager from base class '%s' cannot be the same as the parent manager instance", m.name)
