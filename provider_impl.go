@@ -107,35 +107,35 @@ func (p *Provider) Version() string {
 // Initialize 初始化提供者
 func (p *Provider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
 	if !p.Check() {
-		return p.ReturnDirectly()
+		return p.ReturnInitialized()
 	}
 	// 检查sonProvider字段是否存在
 	err := p.checkSonProvider()
 	if err != nil {
-		return p.SetAndReturnFailedInitialized(nil, err)
+		return p.ReturnAndSetFailInitialize(nil, err)
 		//return nil, err
 	}
 	return p.sonProvider.Initialize(ctx, initFunc...)
 }
 
-// SetAndReturnSucceededInitialized 设置并返回成功的初始化结果
-func (p *Provider) SetAndReturnSucceededInitialized(initInstance any, initErr error) (any, error) {
+// ReturnAndSetSuccessInitialize 设置并返回成功的初始化结果
+func (p *Provider) ReturnAndSetSuccessInitialize(initInstance any, initErr error) (any, error) {
 	p.setLifecycleStatus(StateLoaded)
 	p.initInstance = initInstance
 	p.initErr = initErr
 	return p.initInstance, p.initErr
 }
 
-// SetAndReturnFailedInitialized 设置并返回失败的初始化结果
-func (p *Provider) SetAndReturnFailedInitialized(initInstance any, initErr error) (any, error) {
+// ReturnAndSetFailInitialize 设置并返回失败的初始化结果
+func (p *Provider) ReturnAndSetFailInitialize(initInstance any, initErr error) (any, error) {
 	p.setLifecycleStatus(StateFailed)
 	p.initInstance = initInstance
 	p.initErr = initErr
 	return p.initInstance, p.initErr
 }
 
-// ReturnDirectly 依据状态直接返回
-func (p *Provider) ReturnDirectly() (any, error) {
+// ReturnInitialized 依据状态直接返回
+func (p *Provider) ReturnInitialized() (any, error) {
 	switch p.Status() {
 	case StateLoaded:
 		return p.initInstance, p.initErr

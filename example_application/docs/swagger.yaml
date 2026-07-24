@@ -1,0 +1,349 @@
+basePath: /
+consumes:
+- application/json
+definitions:
+  requestvo.CreateExampleReqVo:
+    properties:
+      description:
+        description: |-
+          Free-text description, up to 500 characters.
+          example: A short description of the example.
+        maxLength: 500
+        type: string
+      name:
+        description: |-
+          Display name of the example. Required, 2-80 characters.
+          example: My Example
+        maxLength: 80
+        minLength: 2
+        type: string
+      status:
+        description: |-
+          Lifecycle status; one of active/archived. Defaults are applied at the service layer.
+          example: active
+        enum:
+        - active
+        - archived
+        type: string
+      tags:
+        description: |-
+          Up to 10 free-form tags, each 1-30 characters.
+          example: ["demo","swagger"]
+        items:
+          type: string
+        maxItems: 10
+        type: array
+    required:
+    - name
+    type: object
+  requestvo.UpdateExampleReqVo:
+    properties:
+      description:
+        description: |-
+          New description, up to 500 characters. Omit to leave unchanged.
+          example: Updated description.
+        maxLength: 500
+        type: string
+      name:
+        description: |-
+          New display name, 2-80 characters. Omit to leave unchanged.
+          example: My Renamed Example
+        maxLength: 80
+        minLength: 2
+        type: string
+      status:
+        description: |-
+          New status; one of active/archived. Omit to leave unchanged.
+          example: archived
+        enum:
+        - active
+        - archived
+        type: string
+      tags:
+        description: |-
+          New tag set, up to 10 tags each 1-30 characters. Omit to leave unchanged.
+          example: ["demo"]
+        items:
+          type: string
+        maxItems: 10
+        type: array
+    type: object
+  response.RespInfo:
+    properties:
+      code:
+        type: integer
+      data: {}
+      msg:
+        type: string
+    type: object
+  responsevo.ExampleListRespVo:
+    properties:
+      items:
+        description: The examples on this page.
+        items:
+          $ref: '#/definitions/responsevo.ExampleRespVo'
+        type: array
+      page:
+        description: |-
+          Effective page number returned.
+          example: 1
+        type: integer
+      page_size:
+        description: |-
+          Effective page size returned.
+          example: 20
+        type: integer
+      total:
+        description: |-
+          Total number of examples matching the filter, across all pages.
+          example: 42
+        type: integer
+    type: object
+  responsevo.ExampleRespVo:
+    properties:
+      created_at:
+        type: string
+      description:
+        description: |-
+          Free-text description.
+          example: A short description of the example.
+        type: string
+      id:
+        description: |-
+          Unique identifier of the example.
+          example: 01f8h6z8k9q2p3r4s5t6u7v8w9
+        type: string
+      name:
+        description: |-
+          Display name of the example.
+          example: My Example
+        type: string
+      status:
+        description: |-
+          Lifecycle status; one of active/archived.
+          example: active
+        type: string
+      tags:
+        description: |-
+          Free-form tags associated with the example.
+          example: ["demo","swagger"]
+        items:
+          type: string
+        type: array
+      updated_at:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  license:
+    name: XXX copyright
+  title: XXX Service APIs
+  version: "1.0"
+paths:
+  /examples:
+    get:
+      consumes:
+      - application/json
+      description: Paginate example resources, optionally filtered by status.
+      operationId: fiberListExamples
+      parameters:
+      - description: page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: page size, max 100 (default 20)
+        in: query
+        name: page_size
+        type: integer
+      - description: filter by status
+        enum:
+        - active
+        - archived
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.RespInfo'
+            - properties:
+                data:
+                  $ref: '#/definitions/responsevo.ExampleListRespVo'
+              type: object
+        "400":
+          description: invalid query parameters
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "500":
+          description: internal error
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+      summary: List examples
+      tags:
+      - example
+    post:
+      consumes:
+      - application/json
+      description: Create a new example resource with name, description, status and
+        tags.
+      operationId: fiberCreateExample
+      parameters:
+      - description: Example to create
+        in: body
+        name: example
+        required: true
+        schema:
+          $ref: '#/definitions/requestvo.CreateExampleReqVo'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.RespInfo'
+            - properties:
+                data:
+                  $ref: '#/definitions/responsevo.ExampleRespVo'
+              type: object
+        "400":
+          description: invalid input / validation error
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "500":
+          description: internal error
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+      summary: Create an example
+      tags:
+      - example
+  /examples/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Remove an example resource by id.
+      operationId: fiberDeleteExample
+      parameters:
+      - description: Example id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: no content
+        "400":
+          description: invalid id
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "404":
+          description: example not found
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "500":
+          description: internal error
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+      summary: Delete an example
+      tags:
+      - example
+    get:
+      consumes:
+      - application/json
+      description: Fetch a single example resource by id.
+      operationId: fiberGetExample
+      parameters:
+      - description: Example id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.RespInfo'
+            - properties:
+                data:
+                  $ref: '#/definitions/responsevo.ExampleRespVo'
+              type: object
+        "400":
+          description: invalid id
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "404":
+          description: example not found
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "500":
+          description: internal error
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+      summary: Get an example
+      tags:
+      - example
+    put:
+      consumes:
+      - application/json
+      description: Partially update an example resource by id. Only fields present
+        in the request body are changed.
+      operationId: fiberUpdateExample
+      parameters:
+      - description: Example id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: example
+        required: true
+        schema:
+          $ref: '#/definitions/requestvo.UpdateExampleReqVo'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.RespInfo'
+            - properties:
+                data:
+                  $ref: '#/definitions/responsevo.ExampleRespVo'
+              type: object
+        "400":
+          description: invalid input / validation error
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "404":
+          description: example not found
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "409":
+          description: conflicting or unchanged update
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "500":
+          description: internal error
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+      summary: Update an example
+      tags:
+      - example
+produces:
+- application/json
+schemes:
+- http
+- https
+swagger: "2.0"

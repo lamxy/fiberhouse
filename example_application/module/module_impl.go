@@ -54,5 +54,5 @@ func (m *Module) RegisterModuleRouteHandlers(cs fiberhouse.CoreStarter) {
 
 // RegisterSwagger 注册swagger
 func (m *Module) RegisterSwagger(cs fiberhouse.CoreStarter) {
-	// swagger注册提供者，路由注册管理器已完成全部路由注册
+	// swagger注册提供者，路由注册管理器已完成全部路由注册，此处忽略
 }

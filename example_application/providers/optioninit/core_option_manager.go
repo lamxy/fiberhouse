@@ -2,6 +2,7 @@ package optioninit
 
 import (
 	"fmt"
+
 	"github.com/lamxy/fiberhouse"
 )
 
@@ -33,6 +34,7 @@ func (m *CoreOptionInitPManager) LoadProvider(loadFunc ...fiberhouse.ProviderLoa
 
 // MountToParent 重载挂载到父级提供者管理器
 func (m *CoreOptionInitPManager) MountToParent(son ...fiberhouse.IProviderManager) fiberhouse.IProviderManager {
+	m.Check()
 	if len(son) > 0 {
 		m.IProviderManager.MountToParent(son[0])
 		return m

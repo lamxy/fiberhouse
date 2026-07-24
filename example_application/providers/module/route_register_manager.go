@@ -22,6 +22,7 @@ func NewRouteRegisterPManager(ctx fiberhouse.IContext) *RouteRegisterPManager {
 }
 
 func (m *RouteRegisterPManager) LoadProvider(loadFunc ...fiberhouse.ProviderLoadFunc) (any, error) {
+	m.Check()
 	if len(loadFunc) == 0 {
 		return nil, fmt.Errorf("provider '%s': no provider loadFunc", m.Name())
 	}

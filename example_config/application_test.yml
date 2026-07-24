@@ -1,7 +1,7 @@
 application:
   appId: ""                                  # 应用ID，可选
   appName: "XYZ Tech APP"                    # 应用名称
-  version: "v0.1.0"                          # 应用版本
+  version: "v0.0.1"                          # 应用版本
   env: "test"                                # 当前环境，支持 dev、test、prod
   server:                                    # 默认服务配置：fiber引擎
     appServerHeader: "XYZ Tech Server"       # 服务标头
@@ -107,7 +107,7 @@ cache:
     metrics: true                            # 是否启用缓存指标
     IgnoreInternalCost: false                # 是否忽略内部开销
   redis:                                     # remote 远程缓存配置
-    host: 127.0.0.1                          # Redis 服务器地址
+    host: localhost                          # Redis 服务器地址
     port: 6379                               # Redis 服务器端口
     password: ""                             # Redis 服务器密码
     db: 0                                    # 使用的数据库编号
@@ -180,6 +180,6 @@ rpc:
 command:                                     # 命令行应用的配置
   name: XYZTechCmd
   usage: XYZTechCmd [command]
-  version: v0.1.0
+  version: v0.0.1
   sortFlagsByName: true
   sortCommandsByName: true

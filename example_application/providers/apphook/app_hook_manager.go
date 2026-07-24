@@ -22,6 +22,7 @@ func NewAppCoreHookPManager(ctx fiberhouse.IApplicationContext) *AppCoreHookPMan
 }
 
 func (m *AppCoreHookPManager) LoadProvider(loadFunc ...fiberhouse.ProviderLoadFunc) (any, error) {
+	m.Check()
 	if len(loadFunc) == 0 {
 		return nil, fmt.Errorf("provider loadFunc must not be empty")
 	}

@@ -1,0 +1,478 @@
+{
+    "consumes": [
+        "application/json"
+    ],
+    "produces": [
+        "application/json"
+    ],
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "title": "XXX Service APIs",
+        "contact": {},
+        "license": {
+            "name": "XXX copyright"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/examples": {
+            "get": {
+                "description": "Paginate example resources, optionally filtered by status.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "example"
+                ],
+                "summary": "List examples",
+                "operationId": "fiberListExamples",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size, max 100 (default 20)",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "active",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "description": "filter by status",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.RespInfo"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/responsevo.ExampleListRespVo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "invalid query parameters",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new example resource with name, description, status and tags.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "example"
+                ],
+                "summary": "Create an example",
+                "operationId": "fiberCreateExample",
+                "parameters": [
+                    {
+                        "description": "Example to create",
+                        "name": "example",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/requestvo.CreateExampleReqVo"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.RespInfo"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/responsevo.ExampleRespVo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "invalid input / validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    }
+                }
+            }
+        },
+        "/examples/{id}": {
+            "get": {
+                "description": "Fetch a single example resource by id.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "example"
+                ],
+                "summary": "Get an example",
+                "operationId": "fiberGetExample",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Example id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.RespInfo"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/responsevo.ExampleRespVo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "example not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Partially update an example resource by id. Only fields present in the request body are changed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "example"
+                ],
+                "summary": "Update an example",
+                "operationId": "fiberUpdateExample",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Example id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "example",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/requestvo.UpdateExampleReqVo"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.RespInfo"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/responsevo.ExampleRespVo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "invalid input / validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "example not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "409": {
+                        "description": "conflicting or unchanged update",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove an example resource by id.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "example"
+                ],
+                "summary": "Delete an example",
+                "operationId": "fiberDeleteExample",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Example id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "no content"
+                    },
+                    "400": {
+                        "description": "invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "example not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "requestvo.CreateExampleReqVo": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "description": "Free-text description, up to 500 characters.\nexample: A short description of the example.",
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "name": {
+                    "description": "Display name of the example. Required, 2-80 characters.\nexample: My Example",
+                    "type": "string",
+                    "maxLength": 80,
+                    "minLength": 2
+                },
+                "status": {
+                    "description": "Lifecycle status; one of active/archived. Defaults are applied at the service layer.\nexample: active",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "archived"
+                    ]
+                },
+                "tags": {
+                    "description": "Up to 10 free-form tags, each 1-30 characters.\nexample: [\"demo\",\"swagger\"]",
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "requestvo.UpdateExampleReqVo": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "description": "New description, up to 500 characters. Omit to leave unchanged.\nexample: Updated description.",
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "name": {
+                    "description": "New display name, 2-80 characters. Omit to leave unchanged.\nexample: My Renamed Example",
+                    "type": "string",
+                    "maxLength": 80,
+                    "minLength": 2
+                },
+                "status": {
+                    "description": "New status; one of active/archived. Omit to leave unchanged.\nexample: archived",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "archived"
+                    ]
+                },
+                "tags": {
+                    "description": "New tag set, up to 10 tags each 1-30 characters. Omit to leave unchanged.\nexample: [\"demo\"]",
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "response.RespInfo": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {},
+                "msg": {
+                    "type": "string"
+                }
+            }
+        },
+        "responsevo.ExampleListRespVo": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "The examples on this page.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/responsevo.ExampleRespVo"
+                    }
+                },
+                "page": {
+                    "description": "Effective page number returned.\nexample: 1",
+                    "type": "integer"
+                },
+                "page_size": {
+                    "description": "Effective page size returned.\nexample: 20",
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Total number of examples matching the filter, across all pages.\nexample: 42",
+                    "type": "integer"
+                }
+            }
+        },
+        "responsevo.ExampleRespVo": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "description": "Free-text description.\nexample: A short description of the example.",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "Unique identifier of the example.\nexample: 01f8h6z8k9q2p3r4s5t6u7v8w9",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Display name of the example.\nexample: My Example",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Lifecycle status; one of active/archived.\nexample: active",
+                    "type": "string"
+                },
+                "tags": {
+                    "description": "Free-form tags associated with the example.\nexample: [\"demo\",\"swagger\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

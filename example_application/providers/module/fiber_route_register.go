@@ -13,7 +13,8 @@ func RegisterFiberRouteHandlers(ctx fiberhouse.IApplicationContext, cs fiberhous
 	// 注册example模块的路由处理器
 	exampleApi.RegisterRouteHandlers(ctx, app)
 
-	// TODO 注册更多业务模块路由处理器 ...
+	// TODO 注册更多业务模块路由处理器
+	// ...
 
 }
 
@@ -24,7 +25,7 @@ func RegisterFiberSwagger(ctx fiberhouse.IApplicationContext, cs fiberhouse.Core
 	if registerOrNot {
 		app.Get("/swagger/*", swagger.HandlerDefault) //  Route: /{uuid}/swagger/*
 
-		// todo 设置安全访问配置
+		// TODO 设置安全访问配置
 
 	}
 }

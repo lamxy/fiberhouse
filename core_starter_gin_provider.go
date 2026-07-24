@@ -23,16 +23,13 @@ func NewCoreStarterGinProvider() *CoreStarterGinProvider {
 
 // Initialize 重载初始化核心Gin提供者
 func (p *CoreStarterGinProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	if !p.Check() {
-		return p.ReturnDirectly()
-	}
 	if len(initFunc) == 0 {
-		return p.SetAndReturnSucceededInitialized(NewCoreWithGin(ctx.(IApplicationContext)), nil)
+		return NewCoreWithGin(ctx.(IApplicationContext)), nil
 	}
 
 	anything, err := initFunc[0](p) // 匿名函数参数获取核心启动器初始化的选项参数切片
 	if err != nil {
-		return p.SetAndReturnFailedInitialized(nil, fmt.Errorf("CoreGinProvider initialize failed: %w", err))
+		return nil, fmt.Errorf("CoreGinProvider initialize failed: %w", err)
 	}
 
 	var (
@@ -41,8 +38,8 @@ func (p *CoreStarterGinProvider) Initialize(ctx IContext, initFunc ...ProviderIn
 	)
 
 	if coreStarterOptions, ok = anything.([]CoreStarterOption); ok {
-		return p.SetAndReturnSucceededInitialized(NewCoreWithGin(ctx.(IApplicationContext), coreStarterOptions...), nil)
+		return NewCoreWithGin(ctx.(IApplicationContext), coreStarterOptions...), nil
 	}
 
-	return p.SetAndReturnFailedInitialized(anything, err)
+	return anything, err
 }

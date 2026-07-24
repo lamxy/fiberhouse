@@ -16,7 +16,7 @@ func NewCoreOptionInitProvider() *CoreOptionInitProvider {
 }
 
 func (p *CoreOptionInitProvider) Initialize(ctx fiberhouse.IContext, initFunc ...fiberhouse.ProviderInitFunc) (any, error) {
-	// TODO 设置的创建CoreStarter所需的选项
+	// 设置的创建CoreStarter所需的选项，如有
 	coreOpts := []fiberhouse.CoreStarterOption{} // 空的选项
 	return coreOpts, nil
 }

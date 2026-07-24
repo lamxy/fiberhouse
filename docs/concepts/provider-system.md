@@ -125,7 +125,7 @@ func (p *WarmupProvider) Initialize(
 	initFuncs ...fh.ProviderInitFunc,
 ) (any, error) {
 	if !p.Check() {
-		return p.ReturnDirectly()
+		return p.ReturnInitialized()
 	}
 	// 只在启动期执行初始化；ctx 提供配置、日志与容器。
 	return nil, nil

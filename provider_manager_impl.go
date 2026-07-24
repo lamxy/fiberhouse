@@ -100,7 +100,7 @@ func (m *ProviderManager) Register(provider IProvider) error {
 	}
 
 	if _, exists := m.providers[provider.Name()]; exists {
-		return ErrProviderAlreadyExists
+		return fmt.Errorf("manager: '%s' Register provider '%s' already, error: '%s'", m.name, provider.Name(), ErrProviderAlreadyExists.Error())
 	}
 
 	m.providers[provider.Name()] = provider
@@ -110,7 +110,7 @@ func (m *ProviderManager) Register(provider IProvider) error {
 // Unregister 注销一个 provider
 func (m *ProviderManager) Unregister(name string) error {
 	if _, exists := m.providers[name]; !exists {
-		return ErrProviderNotFound
+		return fmt.Errorf("manager: '%s' Unregister provider '%s' does not exist: %s", m.name, name, ErrProviderNotFound.Error())
 	}
 
 	delete(m.providers, name)
@@ -121,7 +121,7 @@ func (m *ProviderManager) Unregister(name string) error {
 func (m *ProviderManager) GetProvider(name string) (IProvider, error) {
 	provider, exists := m.providers[name]
 	if !exists {
-		return nil, fmt.Errorf("provider '%s' does not exist: %s", name, ErrProviderNotFound.Error())
+		return nil, fmt.Errorf("manager: '%s' get provider '%s' does not exist: %s", m.name, name, ErrProviderNotFound.Error())
 	}
 
 	return provider, nil
@@ -157,20 +157,20 @@ func (m *ProviderManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 // InitializeProvider 统一执行提供者初始化，确保子类覆写 Initialize 时仍受状态和结果缓存约束
 func (m *ProviderManager) InitializeProvider(provider IProvider, initFunc ...ProviderInitFunc) (any, error) {
 	if provider == nil {
-		return nil, fmt.Errorf("provider is nil")
+		return nil, fmt.Errorf("manager '%s' InitializeProvider param provider is nil", m.name)
 	}
 	if !provider.Check() {
-		return provider.ReturnDirectly()
+		return provider.ReturnInitialized()
 	}
 
 	instance, err := provider.Initialize(m.GetContext(), initFunc...)
 	if err != nil {
-		return provider.SetAndReturnFailedInitialized(instance, err)
+		return provider.ReturnAndSetFailInitialize(instance, err)
 	}
 	if provider.Status() == StateSkipped {
-		return provider.ReturnDirectly()
+		return provider.ReturnInitialized()
 	}
-	return provider.SetAndReturnSucceededInitialized(instance, nil)
+	return provider.ReturnAndSetSuccessInitialize(instance, nil)
 }
 
 // IsUnique 返回管理器是否处于唯一提供者模式
@@ -266,7 +266,7 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 	bootCfg := m.GetContext().(IApplicationContext).GetBootConfig()
 
 	if len(m.List()) == 0 {
-		return nil, ErrProviderNotFound
+		return nil, fmt.Errorf("no providers registered in manager '%s'", m.Name())
 	}
 
 	var errs []error
