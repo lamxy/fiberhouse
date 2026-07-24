@@ -1,8 +1,9 @@
 package constant
 
 import (
-	"github.com/lamxy/fiberhouse/example_application"
 	"time"
+
+	"github.com/lamxy/fiberhouse/example_application"
 )
 
 // 业务相关的常量 module.CollXXX
@@ -25,10 +26,11 @@ const (
 	// MysqlInstanceKey Mysql实例key
 	MysqlInstanceKey = example_application.KEY_MYSQL
 
-	// 全局管理模块-服务-仓库-模型层级-模块顶级名称：Name[层级]Example
+	// NameModuleExample 全局管理模块-服务-仓库-模型层级-模块顶级名称：Name[层级]Example
 	NameModuleExample = "ExampleModule"
 
-	// mongodb 集合集中管理
+	// =========== mongodb 集合集中管理 ==================================
+
 	// CollExample mongodb 集合样例集合
 	CollExample = "example"
 )
