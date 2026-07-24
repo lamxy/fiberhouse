@@ -1,3 +1,8 @@
+// Package transport bridges the example module's stable domain errors
+// (defined in service and repository) to HTTP-framework error types. It
+// depends on service and repository only for their exported error
+// sentinels, keeping HTTP status-code mapping out of the business-logic
+// layers.
 package transport
 
 import (

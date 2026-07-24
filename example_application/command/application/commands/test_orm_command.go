@@ -1,3 +1,7 @@
+// Package commands hosts CLI command definitions for the example
+// application. Each command wires its own service/repository/model stack
+// (see NewExampleCommand) and translates CLI flags into service calls,
+// writing results as JSON to the command's writer.
 package commands
 
 import (
@@ -12,10 +16,14 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// exampleCommand implements fiberhouse.CommandGetter for the "example" CLI
+// command group, delegating all business logic to service.ExampleUseCase.
 type exampleCommand struct {
 	useCase service.ExampleUseCase
 }
 
+// NewExampleCommand wires the full command-module stack (model, repository,
+// service) from ctx and returns the resulting "example" CLI command.
 func NewExampleCommand(ctx fiberhouse.ICommandContext) fiberhouse.CommandGetter {
 	mysqlModel := model.NewExampleMysqlModel(ctx)
 	repo := repository.NewExampleRepository(mysqlModel)
@@ -23,10 +31,14 @@ func NewExampleCommand(ctx fiberhouse.ICommandContext) fiberhouse.CommandGetter 
 	return newExampleCommand(useCase)
 }
 
+// newExampleCommand builds an exampleCommand around an already-constructed
+// use case, letting tests inject a fake/mock without touching ctx wiring.
 func newExampleCommand(useCase service.ExampleUseCase) fiberhouse.CommandGetter {
 	return &exampleCommand{useCase: useCase}
 }
 
+// GetCommand returns the urfave/cli command tree for the "example" CLI
+// command group (migrate/create/get/list/update/delete subcommands).
 func (c *exampleCommand) GetCommand() interface{} {
 	return &cli.Command{
 		Name:  "example",
@@ -193,6 +205,7 @@ func (c *exampleCommand) deleteCommand() *cli.Command {
 	}
 }
 
+// positiveID reads the required --id flag and rejects the zero value.
 func positiveID(cliCtx *cli.Context) (uint64, error) {
 	id := cliCtx.Uint64("id")
 	if id == 0 {
@@ -201,10 +214,14 @@ func positiveID(cliCtx *cli.Context) (uint64, error) {
 	return id, nil
 }
 
+// validCLIStatus reports whether status is one of the two allowed values,
+// mirroring service.validStatus for CLI-side pre-validation.
 func validCLIStatus(status string) bool {
 	return status == "active" || status == "archived"
 }
 
+// writeJSON encodes value as JSON to writer without HTML-escaping, used for
+// all command output.
 func writeJSON(writer io.Writer, value any) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetEscapeHTML(false)

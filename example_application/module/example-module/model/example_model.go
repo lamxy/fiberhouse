@@ -1,3 +1,10 @@
+// Package model is the storage layer for the example module: it owns the
+// MongoDB collection, index definitions, and query/update document
+// construction, and returns driver-native errors and storage-facing types
+// (bson.ObjectID) untranslated. It depends only on the driver
+// (component/database/dbmongo, mongo-driver) and entity; callers in
+// repository are responsible for context handling and error translation —
+// this layer must not do its own context substitution.
 package model
 
 import (
@@ -13,6 +20,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
+// ExampleFilter carries the pagination and status-filter parameters for
+// ExampleModel.Find.
 type ExampleFilter struct {
 	Page     int
 	PageSize int
@@ -65,11 +74,18 @@ func (c mongoCollection) DeleteOne(ctx context.Context, filter any, opts ...opti
 	return c.collection.DeleteOne(ctx, filter, opts...)
 }
 
+// ExampleModel is the MongoDB-backed store for the example collection,
+// implementing repository.ExampleModelStore. Every method takes only the
+// context.Context passed in by its caller (repository) — it must never
+// substitute its own context (e.g. context.Background()), since that would
+// silently break cancellation/deadline/tracing propagation from the request.
 type ExampleModel struct {
 	dbmongo.MongoLocator
 	collection exampleCollection
 }
 
+// NewExampleModel builds an ExampleModel bound to the configured MongoDB
+// collection for the example module, resolved from ctx.
 func NewExampleModel(ctx fiberhouse.IApplicationContext) *ExampleModel {
 	locator := dbmongo.NewMongoModel(ctx, constant.MongoInstanceKey).
 		SetDbName(constant.DbNameMongo).
@@ -88,16 +104,24 @@ func NewExampleModelWithCollection(collection *mongo.Collection) *ExampleModel {
 	}
 }
 
+// GetKeyExampleModel returns the registry key used to locate the
+// ExampleModel instance, optionally namespaced by ns.
 func GetKeyExampleModel(ns ...string) string {
 	return fiberhouse.RegisterKeyName("ExampleModel", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
+// RegisterKeyExampleModel registers a lazy initializer that builds an
+// ExampleModel via NewExampleModel, and returns its registry key.
 func RegisterKeyExampleModel(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleModel(ns...), func() (interface{}, error) {
 		return NewExampleModel(ctx), nil
 	})
 }
 
+// EnsureIndexes creates the collection's required indexes: a unique index on
+// name (enforcing the ErrConflict semantics repository translates duplicate
+// key errors into) and a compound status/created_at/_id index supporting
+// List's deterministic sort order. It is safe to call repeatedly.
 func (m *ExampleModel) EnsureIndexes(ctx context.Context) error {
 	indexes := []mongo.IndexModel{
 		{
@@ -116,6 +140,9 @@ func (m *ExampleModel) EnsureIndexes(ctx context.Context) error {
 	return m.collection.CreateIndexes(ctx, indexes)
 }
 
+// Insert persists example and returns its generated ObjectID. It returns an
+// error if the write was not acknowledged or the inserted id is not the
+// expected type.
 func (m *ExampleModel) Insert(ctx context.Context, example *entity.Example) (bson.ObjectID, error) {
 	result, err := m.collection.InsertOne(ctx, example)
 	if err != nil {
@@ -131,6 +158,8 @@ func (m *ExampleModel) Insert(ctx context.Context, example *entity.Example) (bso
 	return id, nil
 }
 
+// FindByID fetches a single document by its ObjectID, returning
+// mongo.ErrNoDocuments (untranslated) if none matches.
 func (m *ExampleModel) FindByID(ctx context.Context, id bson.ObjectID) (*entity.Example, error) {
 	var example entity.Example
 	err := m.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&example)
@@ -140,6 +169,13 @@ func (m *ExampleModel) FindByID(ctx context.Context, id bson.ObjectID) (*entity.
 	return &example, nil
 }
 
+// Find returns a page of documents matching query plus the total matching
+// count, sorted deterministically by created_at desc then _id desc (see
+// buildFindQuery) so pagination is stable across calls.
+//
+// The cursor is opened before the deferred Close is registered so that a
+// Find error returns immediately without leaving a nil cursor to close;
+// only a successfully opened cursor is deferred-closed.
 func (m *ExampleModel) Find(ctx context.Context, query ExampleFilter) ([]entity.Example, int64, error) {
 	filter, skip, limit, sort := buildFindQuery(query)
 	cursor, err := m.collection.Find(ctx, filter, options.Find().SetSkip(skip).SetLimit(limit).SetSort(sort))
@@ -159,6 +195,11 @@ func (m *ExampleModel) Find(ctx context.Context, query ExampleFilter) ([]entity.
 	return examples, total, nil
 }
 
+// buildFindQuery normalizes page/pageSize (defaulting to page 1, size 20)
+// and builds the filter, skip, limit, and sort documents for Find. The sort
+// (created_at desc, _id desc) is the single source of truth for the
+// module's deterministic list ordering — any change here changes pagination
+// behavior end to end.
 func buildFindQuery(query ExampleFilter) (bson.D, int64, int64, bson.D) {
 	page, pageSize := query.Page, query.PageSize
 	if page < 1 {
@@ -175,6 +216,12 @@ func buildFindQuery(query ExampleFilter) (bson.D, int64, int64, bson.D) {
 	return filter, int64((page - 1) * pageSize), int64(pageSize), sort
 }
 
+// Replace overwrites the mutable fields of the document identified by id
+// (via buildUpdate) and reports whether the write actually modified a
+// document. It never touches created_at, so the original creation
+// timestamp is preserved across updates. A false result with a nil error
+// means the document exists but the write was a no-op, which repository
+// surfaces as ErrUnchanged.
 func (m *ExampleModel) Replace(ctx context.Context, id bson.ObjectID, example *entity.Example) (bool, error) {
 	result, err := m.collection.UpdateOne(
 		ctx,
@@ -187,6 +234,9 @@ func (m *ExampleModel) Replace(ctx context.Context, id bson.ObjectID, example *e
 	return result.ModifiedCount > 0, nil
 }
 
+// buildUpdate constructs the $set document for Replace. It intentionally
+// omits created_at so that update never overwrites the original creation
+// timestamp — only updated_at and the mutable content fields change.
 func buildUpdate(_ bson.ObjectID, example *entity.Example) bson.D {
 	return bson.D{{Key: "$set", Value: bson.D{
 		{Key: "name", Value: example.Name},
@@ -197,6 +247,8 @@ func buildUpdate(_ bson.ObjectID, example *entity.Example) bson.D {
 	}}}
 }
 
+// Delete removes the document identified by id and reports whether a
+// document was actually deleted.
 func (m *ExampleModel) Delete(ctx context.Context, id bson.ObjectID) (bool, error) {
 	result, err := m.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
 	if err != nil {

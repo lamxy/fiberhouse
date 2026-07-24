@@ -1,3 +1,7 @@
+// Package handler consumes asynq tasks produced by the example module's
+// service layer (see task.NewExampleChangedTask). Handlers are
+// read-only/observational with respect to the example domain: they log the
+// notification and must not perform a second write against the store.
 package handler
 
 import (
@@ -11,7 +15,11 @@ import (
 )
 
 // HandleExampleChangedTask consumes the mutation notification without
-// replacing the caller's context or performing a second write.
+// replacing the caller's context or performing a second write. It only
+// reads the fiberhouse.IApplicationContext already stored on ctx (via
+// fiberhouse.ContextKeyAppCtx) — it never constructs or substitutes its own
+// context, since asynq's worker context carries request-scoped values the
+// handler must respect.
 func HandleExampleChangedTask(ctx context.Context, t *asynq.Task) error {
 	if t == nil {
 		return errors.New("example changed task is required")

@@ -1,3 +1,8 @@
+// Package service is the business-logic layer for the example module: it
+// validates and normalizes input, orchestrates repository calls, applies
+// caching for reads, and dispatches async notifications for mutations. It
+// depends on repository (and the entity/apivo types it exchanges with
+// callers) but never talks to the model or driver layers directly.
 package service
 
 import (
@@ -23,15 +28,34 @@ import (
 
 const exampleListCacheTTL = 30 * time.Second
 
+// ErrInvalidInput is returned when request data fails business-rule
+// validation (as opposed to the transport-level struct-tag validation done
+// in the api layer). Wrap it with fmt.Errorf("%w: ...", ErrInvalidInput) to
+// add detail while preserving errors.Is matching.
 var ErrInvalidInput = errors.New("invalid example input")
 
 type exampleListLoader func(context.Context) (*responsevo.ExampleListRespVo, error)
 type exampleListCache func(context.Context, string, time.Duration, exampleListLoader) (*responsevo.ExampleListRespVo, error)
 
+// exampleTaskDispatcher is the minimal asynq surface ExampleService needs to
+// enqueue notifications, kept narrow so it can be stubbed in tests.
 type exampleTaskDispatcher interface {
 	EnqueueContext(context.Context, *asynq.Task, ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
+// ExampleUseCase is the service-layer contract consumed by the transport
+// layer. All methods take a caller-supplied context.Context that must be
+// propagated to the repository/store unchanged (no context.Background()
+// substitution). Errors are the stable sentinels defined in the repository
+// package (ErrInvalidID, ErrNotFound, ErrConflict, ErrUnchanged) plus
+// ErrInvalidInput for validation failures; callers should use errors.Is to
+// branch on them, notably via transport.MapDomainError.
+//
+// Update applies a partial patch (only non-nil fields on the request are
+// changed) and is not an upsert: calling Update with an id that does not
+// exist returns ErrNotFound rather than creating a record. List returns
+// results in a fixed, deterministic order (see ExampleModel.buildFindQuery)
+// so that pagination is stable across calls.
 type ExampleUseCase interface {
 	Create(context.Context, requestvo.CreateExampleReqVo) (*responsevo.ExampleRespVo, error)
 	Get(context.Context, string) (*responsevo.ExampleRespVo, error)
@@ -40,6 +64,10 @@ type ExampleUseCase interface {
 	Delete(context.Context, string) error
 }
 
+// ExampleService is the default ExampleUseCase implementation. It validates
+// and normalizes input, delegates persistence to Store, caches List results,
+// and best-effort dispatches an async "example changed" notification after
+// successful mutations.
 type ExampleService struct {
 	fiberhouse.ServiceLocator
 	Store repository.ExampleStore
@@ -49,6 +77,9 @@ type ExampleService struct {
 	getTaskDispatcher func() (exampleTaskDispatcher, error)
 }
 
+// NewExampleService builds an ExampleService bound to the given application
+// context and repository.ExampleStore, wiring the default read-through list
+// cache and asynq task dispatcher lookup.
 func NewExampleService(ctx fiberhouse.IApplicationContext, store repository.ExampleStore) *ExampleService {
 	service := &ExampleService{
 		ServiceLocator: fiberhouse.NewService(ctx).SetName(GetKeyExampleService()),
@@ -65,10 +96,15 @@ func NewExampleService(ctx fiberhouse.IApplicationContext, store repository.Exam
 	return service
 }
 
+// GetKeyExampleService returns the registry key used to locate the
+// ExampleService instance, optionally namespaced by ns.
 func GetKeyExampleService(ns ...string) string {
 	return fiberhouse.RegisterKeyName("ExampleService", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
 }
 
+// Create validates req, assigns creation timestamps, and persists a new
+// example via Store. On success it best-effort dispatches an async "create"
+// notification (dispatch failures are logged, not returned to the caller).
 func (s *ExampleService) Create(ctx context.Context, req requestvo.CreateExampleReqVo) (*responsevo.ExampleRespVo, error) {
 	now := s.currentTime()
 	name := strings.TrimSpace(req.Name)
@@ -96,6 +132,8 @@ func (s *ExampleService) Create(ctx context.Context, req requestvo.CreateExample
 	return &resp, nil
 }
 
+// Get fetches a single example by id, returning ErrInvalidID or ErrNotFound
+// (via the Store) as appropriate.
 func (s *ExampleService) Get(ctx context.Context, id string) (*responsevo.ExampleRespVo, error) {
 	example, err := s.Store.Get(ctx, id)
 	if err != nil {
@@ -105,6 +143,11 @@ func (s *ExampleService) Get(ctx context.Context, id string) (*responsevo.Exampl
 	return &resp, nil
 }
 
+// List returns a page of examples in deterministic order (see
+// ExampleModel.buildFindQuery for the sort). Results are served through a
+// short-lived read-through cache keyed by the normalized request
+// (exampleListCacheKey), so repeated identical queries within
+// exampleListCacheTTL avoid hitting the store.
 func (s *ExampleService) List(ctx context.Context, req requestvo.ListExamplesReqVo) (*responsevo.ExampleListRespVo, error) {
 	req = req.Normalize()
 	req.Status = strings.TrimSpace(req.Status)
@@ -117,6 +160,8 @@ func (s *ExampleService) List(ctx context.Context, req requestvo.ListExamplesReq
 	return s.listCached(ctx, exampleListCacheKey(req), exampleListCacheTTL, loader)
 }
 
+// listFromStore is the cache-miss loader for List: it queries Store directly
+// and maps the results to response DTOs.
 func (s *ExampleService) listFromStore(ctx context.Context, req requestvo.ListExamplesReqVo) (*responsevo.ExampleListRespVo, error) {
 	examples, total, err := s.Store.List(ctx, repository.ListOptions{
 		Page: req.Page, PageSize: req.PageSize, Status: entity.ExampleStatus(req.Status),
@@ -133,6 +178,10 @@ func (s *ExampleService) listFromStore(ctx context.Context, req requestvo.ListEx
 	}, nil
 }
 
+// Update applies a partial patch to an existing example: only fields set on
+// req are changed, all others (including CreatedAt) are left untouched. This
+// is intentionally not an upsert — if id does not resolve to an existing
+// example, Get below returns ErrNotFound and no record is created.
 func (s *ExampleService) Update(ctx context.Context, id string, req requestvo.UpdateExampleReqVo) (*responsevo.ExampleRespVo, error) {
 	if err := normalizeAndValidateUpdate(&req); err != nil {
 		return nil, err
@@ -162,6 +211,8 @@ func (s *ExampleService) Update(ctx context.Context, id string, req requestvo.Up
 	return &resp, nil
 }
 
+// Delete removes an example by id and, on success, best-effort dispatches an
+// async "delete" notification.
 func (s *ExampleService) Delete(ctx context.Context, id string) error {
 	if err := s.Store.Delete(ctx, id); err != nil {
 		return err
@@ -170,10 +221,16 @@ func (s *ExampleService) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// exampleListCacheKey derives a stable cache key from the normalized list
+// request so identical queries share a cache entry.
 func exampleListCacheKey(req requestvo.ListExamplesReqVo) string {
 	return fmt.Sprintf("example:list:page:%d:size:%d:status:%s", req.Page, req.PageSize, req.Status)
 }
 
+// readThroughList is the default exampleListCache implementation: it wraps
+// loader with a two-level (local + remote) single-flight cache, falling back
+// to calling loader directly if the service has no application context
+// (e.g. in lightweight unit tests).
 func (s *ExampleService) readThroughList(ctx context.Context, key string, ttl time.Duration, loader exampleListLoader) (*responsevo.ExampleListRespVo, error) {
 	if s.ServiceLocator == nil {
 		return loader(ctx)
@@ -195,6 +252,9 @@ func (s *ExampleService) readThroughList(ctx context.Context, key string, ttl ti
 	return cache.GetCached[*responsevo.ExampleListRespVo](option, loader)
 }
 
+// dispatchExampleChanged enqueues an asynq task notifying that an example
+// was created/updated/deleted. Errors are returned to the caller
+// (observeDispatchError decides whether to log-and-swallow them).
 func (s *ExampleService) dispatchExampleChanged(ctx context.Context, id, operation string) error {
 	if s.getTaskDispatcher == nil {
 		return errors.New("task dispatcher is not configured")
@@ -216,6 +276,8 @@ func (s *ExampleService) dispatchExampleChanged(ctx context.Context, id, operati
 	return err
 }
 
+// applicationContext returns the fiberhouse.IContext backing this service,
+// or nil if the service was constructed without one.
 func (s *ExampleService) applicationContext() fiberhouse.IContext {
 	if s.ServiceLocator == nil {
 		return nil
@@ -223,6 +285,9 @@ func (s *ExampleService) applicationContext() fiberhouse.IContext {
 	return s.GetContext()
 }
 
+// observeDispatchError logs a failed async dispatch as a warning without
+// propagating it: notification delivery is best-effort and must not fail
+// the mutation that already succeeded.
 func (s *ExampleService) observeDispatchError(err error) {
 	if err == nil || s.ServiceLocator == nil || s.GetContext() == nil {
 		return
@@ -231,6 +296,8 @@ func (s *ExampleService) observeDispatchError(err error) {
 		Err(err).Msg("example changed event was not enqueued")
 }
 
+// currentTime returns the current UTC time via the injectable now func,
+// falling back to time.Now when unset (e.g. zero-value ExampleService).
 func (s *ExampleService) currentTime() time.Time {
 	if s.now == nil {
 		return time.Now().UTC()
