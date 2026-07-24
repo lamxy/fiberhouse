@@ -1,0 +1,13 @@
+### example_application — API test index
+###
+### This is a convenience index, not a duplicate of the per-adapter test
+### files. Open the file for the adapter you're running:
+###
+###   Fiber: module/example-module/api/example_api.http
+###   Gin:   module/example-ginapi-module/api/example_api.http
+###
+### Both cover the same 5 example-resource CRUD endpoints (identical routes,
+### request VOs, and response envelope) against whichever core engine is
+### currently running on http://localhost:8080 (see
+### example_config/application_dev.yml). Fiber and Gin are alternate core
+### engines for the same app — run one at a time.

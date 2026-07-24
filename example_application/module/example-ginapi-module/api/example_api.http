@@ -1,0 +1,76 @@
+### example-ginapi-module (Gin) — Example resource CRUD
+###
+### Manual API test file for VS Code REST Client / JetBrains HTTP Client.
+### Same contract as the Fiber adapter (example-module/api/example_api.http),
+### registered at the app root (no prefix) by registerExampleRoutes in
+### register_api_router.go:
+###   POST   /examples
+###   GET    /examples/:id
+###   GET    /examples
+###   PUT    /examples/:id
+###   DELETE /examples/:id
+###
+### Response envelope (response.RespInfo): {"code": int, "msg": string, "data": ...}
+### -> the created resource's id is at JSON path `data.id`.
+###
+### The X-language-flag header selects the validation-error locale
+### (moduleconstant.XLanguageFlag, read via ExampleHandler.language);
+### defaults to "en" when absent.
+###
+### Run requests top to bottom: `create` populates {{create.response.body.$.data.id}}
+### which the Get/Update/Delete requests below reuse.
+###
+### Note: the Fiber and Gin adapters are alternate core engines for the same
+### app (selected at startup, both default to port 8080 per
+### example_config/application_dev.yml) — run one adapter's server at a time.
+
+@baseUrl = http://localhost:8080
+@language = en
+
+### Create — POST /examples
+# Creates a new example resource from CreateExampleReqVo (name required;
+# description/status/tags optional). Returns 201 with the created
+# ExampleRespVo in `data`.
+# @name create
+POST {{baseUrl}}/examples
+Content-Type: application/json
+X-language-flag: {{language}}
+
+{
+  "name": "My Example",
+  "description": "A short description of the example.",
+  "status": "active",
+  "tags": ["demo", "swagger"]
+}
+
+### Get — GET /examples/:id
+# Fetches the example created above by id. Returns 200 with ExampleRespVo
+# in `data`, or 404 if the id does not exist.
+GET {{baseUrl}}/examples/{{create.response.body.$.data.id}}
+X-language-flag: {{language}}
+
+### List — GET /examples
+# Lists examples with pagination and an optional status filter, bound from
+# ListExamplesReqVo query params (page, page_size, status). Returns 200
+# with an ExampleListRespVo (items/page/page_size/total) in `data`.
+GET {{baseUrl}}/examples?page=1&page_size=20&status=active
+X-language-flag: {{language}}
+
+### Update — PUT /examples/:id
+# Partially updates the example created above using UpdateExampleReqVo
+# (all fields optional/pointer — omitted fields are left unchanged).
+# Returns 200 with the updated ExampleRespVo in `data`.
+PUT {{baseUrl}}/examples/{{create.response.body.$.data.id}}
+Content-Type: application/json
+X-language-flag: {{language}}
+
+{
+  "status": "archived",
+  "tags": ["demo"]
+}
+
+### Delete — DELETE /examples/:id
+# Deletes the example created above. Returns 204 No Content on success,
+# or 404 if the id does not exist.
+DELETE {{baseUrl}}/examples/{{create.response.body.$.data.id}}
+X-language-flag: {{language}}
