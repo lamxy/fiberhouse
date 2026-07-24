@@ -1,25 +1,22 @@
 #!/usr/bin/env bash
 #
-# generate_swagger.sh — regenerate example_application/docs from swaggo
-# annotations. NOT executed as part of any build/test/CI step in this repo;
-# run it manually, on purpose, when you want to refresh the generated
-# OpenAPI spec.
+# generate_swagger.sh —— 从 swaggo 注解重新生成 example_application/docs。
+# 不作为本仓库任何 build/test/CI 步骤执行；当你想刷新生成的 OpenAPI 规范时，
+# 手动、有意地运行它。
 #
-# Prerequisite (not installed by this script):
+# 前置条件（本脚本不安装）：
 #   go install github.com/swaggo/swag/cmd/swag@latest
 #
-# See example_application/docs/README.md for the full rationale behind the
-# flags below (why -g points at example_main/main.go, why only the Fiber
-# handlers are annotated, and what doc.go looks like before/after this
-# runs).
+# 下方各标志背后的完整理由见 example_application/docs/README.md（为何 -g 指向
+# example_main/main.go、为何只注解 Fiber handler，以及 doc.go 在运行前后是什么样）。
 
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 if ! command -v swag >/dev/null 2>&1; then
-  echo "error: swag CLI not found on PATH." >&2
-  echo "install it with: go install github.com/swaggo/swag/cmd/swag@latest" >&2
+  echo "错误：PATH 中未找到 swag CLI。" >&2
+  echo "请用以下命令安装：go install github.com/swaggo/swag/cmd/swag@latest" >&2
   exit 1
 fi
 
@@ -31,4 +28,4 @@ swag init \
   --parseInternal \
   --parseDepth 2
 
-echo "Generated example_application/docs from swaggo annotations."
+echo "已从 swaggo 注解生成 example_application/docs。"

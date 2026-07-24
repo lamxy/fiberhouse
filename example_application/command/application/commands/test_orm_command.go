@@ -1,7 +1,6 @@
-// Package commands hosts CLI command definitions for the example
-// application. Each command wires its own service/repository/model stack
-// (see NewExampleCommand) and translates CLI flags into service calls,
-// writing results as JSON to the command's writer.
+// Package commands 承载 example 应用的 CLI 命令定义。每个命令自行接线其
+// service/repository/model 栈（见 NewExampleCommand），把 CLI 标志转换为 service
+// 调用，并将结果以 JSON 写入命令的 writer。
 package commands
 
 import (
@@ -16,14 +15,14 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// exampleCommand implements fiberhouse.CommandGetter for the "example" CLI
-// command group, delegating all business logic to service.ExampleUseCase.
+// exampleCommand 为「example」CLI 命令组实现 fiberhouse.CommandGetter，
+// 将全部业务逻辑委托给 service.ExampleUseCase。
 type exampleCommand struct {
 	useCase service.ExampleUseCase
 }
 
-// NewExampleCommand wires the full command-module stack (model, repository,
-// service) from ctx and returns the resulting "example" CLI command.
+// NewExampleCommand 从 ctx 接线完整的 command-module 栈（model、repository、
+// service），并返回构建出的「example」CLI 命令。
 func NewExampleCommand(ctx fiberhouse.ICommandContext) fiberhouse.CommandGetter {
 	mysqlModel := model.NewExampleMysqlModel(ctx)
 	repo := repository.NewExampleRepository(mysqlModel)
@@ -31,14 +30,14 @@ func NewExampleCommand(ctx fiberhouse.ICommandContext) fiberhouse.CommandGetter 
 	return newExampleCommand(useCase)
 }
 
-// newExampleCommand builds an exampleCommand around an already-constructed
-// use case, letting tests inject a fake/mock without touching ctx wiring.
+// newExampleCommand 围绕一个已构造好的 use case 构建 exampleCommand，
+// 使测试可以注入 fake/mock 而无需触碰 ctx 接线。
 func newExampleCommand(useCase service.ExampleUseCase) fiberhouse.CommandGetter {
 	return &exampleCommand{useCase: useCase}
 }
 
-// GetCommand returns the urfave/cli command tree for the "example" CLI
-// command group (migrate/create/get/list/update/delete subcommands).
+// GetCommand 返回「example」CLI 命令组的 urfave/cli 命令树
+// （migrate/create/get/list/update/delete 子命令）。
 func (c *exampleCommand) GetCommand() interface{} {
 	return &cli.Command{
 		Name:  "example",
@@ -205,7 +204,7 @@ func (c *exampleCommand) deleteCommand() *cli.Command {
 	}
 }
 
-// positiveID reads the required --id flag and rejects the zero value.
+// positiveID 读取必填的 --id 标志并拒绝零值。
 func positiveID(cliCtx *cli.Context) (uint64, error) {
 	id := cliCtx.Uint64("id")
 	if id == 0 {
@@ -214,14 +213,13 @@ func positiveID(cliCtx *cli.Context) (uint64, error) {
 	return id, nil
 }
 
-// validCLIStatus reports whether status is one of the two allowed values,
-// mirroring service.validStatus for CLI-side pre-validation.
+// validCLIStatus 报告 status 是否为两个允许值之一，与 service.validStatus 保持
+// 一致，用于 CLI 侧的预校验。
 func validCLIStatus(status string) bool {
 	return status == "active" || status == "archived"
 }
 
-// writeJSON encodes value as JSON to writer without HTML-escaping, used for
-// all command output.
+// writeJSON 将 value 以 JSON 编码写入 writer（不做 HTML 转义），用于所有命令输出。
 func writeJSON(writer io.Writer, value any) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetEscapeHTML(false)

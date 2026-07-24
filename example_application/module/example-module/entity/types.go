@@ -1,8 +1,7 @@
-// Package entity defines the storage-facing domain types for the example
-// module: the MongoDB document shape (Example) and its status enum. These
-// types are shared by model and repository; they carry both json and bson
-// tags because the same struct is serialized to the driver and (via
-// service's mapping to responsevo) indirectly reflected in API responses.
+// Package entity 定义 example 模块面向存储的领域类型：MongoDB 文档结构
+// （Example）及其状态枚举。这些类型由 model 与 repository 共享；同时携带 json
+// 与 bson 两种 tag，因为同一结构体既会序列化给驱动，也会（经 service 映射到
+// responsevo）间接反映在 API 响应中。
 package entity
 
 import (
@@ -10,19 +9,19 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// ExampleStatus enumerates the valid lifecycle states of an Example.
+// ExampleStatus 枚举 Example 的合法生命周期状态。
 type ExampleStatus string
 
 const (
-	// ExampleStatusActive marks an example as currently in use.
+	// ExampleStatusActive 表示该 example 当前正在使用。
 	ExampleStatusActive ExampleStatus = "active"
-	// ExampleStatusArchived marks an example as retired but retained.
+	// ExampleStatusArchived 表示该 example 已归档但仍予保留。
 	ExampleStatusArchived ExampleStatus = "archived"
 )
 
-// Example is the MongoDB document for the example collection. ID is
-// populated by the store on Create/Insert; Timestamps embeds CreatedAt (set
-// once, preserved across updates) and UpdatedAt (refreshed on every write).
+// Example 是 example 集合对应的 MongoDB 文档。ID 由存储层在 Create/Insert 时
+// 填充；Timestamps 内嵌 CreatedAt（仅设置一次，更新时保持不变）与 UpdatedAt
+// （每次写入时刷新）。
 type Example struct {
 	ID                bson.ObjectID `json:"id" bson:"_id,omitempty"`
 	Name              string        `json:"name" bson:"name"`

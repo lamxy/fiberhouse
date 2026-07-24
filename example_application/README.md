@@ -1,117 +1,90 @@
 # example_application
 
-`example_application` is a copy-paste, production-oriented reference
-template for building on FiberHouse. It is not a toy "hello world" — it
-exercises the layering FiberHouse expects an application to own itself
-(the framework does not generate or enforce business directories) with a
-real CRUD resource, two interchangeable HTTP adapters, an independent CLI
-tool, Swagger docs, and both unit and opt-in integration tests.
+`example_application` 是一个可复制、面向生产的 FiberHouse 参考模板。它不是玩具式的
+"hello world"——而是用一个真实的 CRUD 资源、两个可互换的 HTTP 适配器、一个独立的
+CLI 工具、Swagger 文档，以及单元测试与可选的集成测试，演练 FiberHouse 期望应用自身
+拥有的分层（框架不生成也不强制业务目录）。
 
-Use it as a starting point: copy the directory, rename the module, and
-delete what you don't need.
+把它当作起点：复制该目录、重命名 module、删掉你不需要的部分即可。
 
-## What this template demonstrates
+## 本模板演示了什么
 
-- **Transport-independent business logic.** One canonical MongoDB-backed
-  `Example` use case is served identically by Fiber and Gin adapters —
-  proof that FiberHouse's core-swap story (`fiber` \| `gin`) doesn't
-  require duplicating business rules per framework.
-- **A second, deliberately separate MySQL slice** driven entirely from a
-  `urfave/cli` command, showing that persistence/service stacks are
-  per-module, not global.
-- **Strict layering** (see below) with dependencies pointing one direction
-  only: transport → service → repository → model.
-- **Swagger/OpenAPI generation** from source annotations, gated by config.
-- **`.http` files** for manual, tool-assisted endpoint testing.
-- **Unit tests everywhere, real-service integration tests opt-in.**
+- **与传输层无关的业务逻辑。** 同一个规范的、基于 MongoDB 的 `Example` 用例被 Fiber
+  与 Gin 适配器以完全一致的方式提供——证明 FiberHouse 的核心切换能力（`fiber` \| `gin`）
+  无需为每种框架重复业务规则。
+- **第二个、刻意独立的 MySQL 切片**，完全由一个 `urfave/cli` 命令驱动，表明持久化/服务
+  栈是按模块划分的，而非全局共享。
+- **严格分层**（见下文），依赖只指向一个方向：transport → service → repository → model。
+- **Swagger/OpenAPI 生成**，源自源码注解，由配置控制开关。
+- **`.http` 文件**，用于手动的、工具辅助的接口测试。
+- **处处覆盖单元测试，真实服务的集成测试可选启用。**
 
-## Layering and dependency direction
+## 分层与依赖方向
 
-Every module in this template follows the same inward-pointing dependency
-chain:
+本模板中的每个模块都遵循同一条向内的依赖链：
 
 ```text
 transport (HTTP handler / CLI command) -> service -> repository -> model
 ```
 
-Handlers/commands never touch a repository or model directly, and
-repositories never reach back into a service or transport package. This is
-documented in depth, per module, in:
+handler/command 绝不直接触碰 repository 或 model，repository 也绝不反向触及 service
+或 transport 包。这一点在各模块的 README 中有深入说明：
 
-- [`module/README.md`](module/README.md) — overview of how the three
-  modules relate (shared canonical module vs. Gin adapter vs. independent
-  MySQL module) and the top-level local-verification commands.
-- [`module/example-module/README.md`](module/example-module/README.md) —
-  the canonical, transport-independent MongoDB CRUD slice
-  (`Fiber/Gin handler -> ExampleUseCase -> ExampleStore -> ExampleModel ->
-  MongoDB`), including routes, request examples, caching behavior, and
-  error-mapping rules.
-- [`module/example-ginapi-module/README.md`](module/example-ginapi-module/README.md) —
-  the Gin transport adapter that reuses the canonical service instead of
-  reimplementing it.
-- [`module/command-module/README.md`](module/command-module/README.md) —
-  the independent MySQL CLI slice
-  (`urfave/cli command -> ExampleMysqlService -> ExampleRepository -> GORM
-  -> MySQL`).
+- [`module/README.md`](module/README.md) —— 三个模块如何关联（共享的规范模块 vs. Gin
+  适配器 vs. 独立的 MySQL 模块）以及顶层的本地验证命令概览。
+- [`module/example-module/README.md`](module/example-module/README.md) —— 规范的、
+  与传输层无关的 MongoDB CRUD 切片
+  （`Fiber/Gin handler -> ExampleUseCase -> ExampleStore -> ExampleModel -> MongoDB`），
+  包含路由、请求示例、缓存行为与错误映射规则。
+- [`module/example-ginapi-module/README.md`](module/example-ginapi-module/README.md) ——
+  复用规范 service 而非重新实现的 Gin 传输适配器。
+- [`module/command-module/README.md`](module/command-module/README.md) —— 独立的
+  MySQL CLI 切片
+  （`urfave/cli command -> ExampleMysqlService -> ExampleRepository -> GORM -> MySQL`）。
 
-This README is the entry point; it links to those module READMEs rather
-than duplicating their content.
+本 README 是入口；它链接到那些模块 README，而不重复其内容。
 
-## Why Gin reuses the canonical Example service
+## 为什么 Gin 复用规范的 Example service
 
-`module/example-ginapi-module` is intentionally **not** a second business
-module — it is a thin Gin transport adapter over the same
-`service.ExampleUseCase`, repository, entity, and MongoDB model that the
-Fiber adapter (`module/example-module`) uses. The Gin handler binds and
-validates Gin-specific request types, forwards `c.Request.Context()` into
-the shared use case, and maps the same domain errors to HTTP responses.
+`module/example-ginapi-module` 刻意**不是**第二个业务模块——它只是覆盖在同一个
+`service.ExampleUseCase`、repository、entity 与 MongoDB model（Fiber 适配器
+`module/example-module` 所用的那套）之上的一个轻量 Gin 传输适配器。Gin handler 绑定并
+校验 Gin 特有的请求类型，把 `c.Request.Context()` 转发进共享用例，并把相同的领域错误
+映射为 HTTP 响应。
 
-The lesson: when FiberHouse lets you swap or add a core HTTP engine, only
-the framework-facing edge (request binding, response writing, error
-translation) should change per engine. Field validation rules, status
-semantics, pagination, cache behavior, and task dispatch stay in one place.
-Duplicating the service per adapter would let the two engines' behavior
-drift silently; sharing it guarantees Fiber and Gin are contractually
-identical at the HTTP boundary. See
-[`module/example-ginapi-module/README.md`](module/example-ginapi-module/README.md)
-for the full explanation.
+其中的启示：当 FiberHouse 允许你切换或新增核心 HTTP 引擎时，只有面向框架的边缘
+（请求绑定、响应写出、错误翻译）才应随引擎变化。字段校验规则、状态语义、分页、缓存
+行为与任务派发都留在同一处。为每个适配器复制一份 service 会让两个引擎的行为悄然漂移；
+共享它则保证 Fiber 与 Gin 在 HTTP 边界上契约完全一致。完整解释见
+[`module/example-ginapi-module/README.md`](module/example-ginapi-module/README.md)。
 
-## Required local services
+## 所需的本地服务
 
-Running the HTTP CRUD endpoints or the CLI's `example` commands against
-real backends requires:
+针对真实后端运行 HTTP CRUD 接口或 CLI 的 `example` 命令需要：
 
-- **MySQL** — used only by the CLI's `command-module`.
-- **MongoDB** — used by the canonical `example-module` (both HTTP
-  adapters).
-- **Redis** — used as the level-two read-through cache for list queries in
-  `example-module`.
+- **MySQL** —— 仅由 CLI 的 `command-module` 使用。
+- **MongoDB** —— 由规范的 `example-module`（两个 HTTP 适配器）使用。
+- **Redis** —— 作为 `example-module` 中列表查询的二级 read-through 缓存。
 
-A ready-to-use Compose file with matching defaults lives at
+一份带匹配默认值、开箱即用的 Compose 文件位于
 [`../docs/docker_compose_db_redis_yaml/docker-compose.yml`](../docs/docker_compose_db_redis_yaml/docker-compose.yml)
-(MongoDB on host port `27037`, Redis on `6379`, MySQL on `3306` with root
-password `root`). It is intended as a local dev convenience, not a
-production configuration.
+（MongoDB 映射到宿主端口 `27037`、Redis `6379`、MySQL `3306`，root 密码 `root`）。
+它仅供本地开发便利，并非生产配置。
 
-### Where config is loaded from
+### 配置从何处加载
 
-Both runnable entry points load configuration from the repo-root
-`example_config/` directory (**not** a directory inside
-`example_application/`):
+两个可运行入口都从仓库根目录的 `example_config/` 目录加载配置（**而非**
+`example_application/` 内部的目录）：
 
-- The HTTP server entry point, `example_main/main.go`, sets
-  `ConfigPath: "./example_config"` (relative to the repo root, where that
-  binary is run from) in its `fiberhouse.BootConfig`.
-- The CLI entry point, `example_application/command/main.go`, calls
-  `bootstrap.NewConfigOnce("./../../example_config")` (relative to
-  `example_application/command/`, which also resolves to the repo-root
-  `example_config/`).
+- HTTP 服务入口 `example_main/main.go` 在其 `fiberhouse.BootConfig` 中设置
+  `ConfigPath: "./example_config"`（相对于运行该二进制的仓库根目录）。
+- CLI 入口 `example_application/command/main.go` 调用
+  `bootstrap.NewConfigOnce("./../../example_config")`（相对于
+  `example_application/command/`，同样解析到仓库根目录的 `example_config/`）。
 
-`example_config/` selects `application_{test,dev,prod}.yml` based on the
-`application.env` setting (see
-[`../example_config/README.md`](../example_config/README.md) for the env
-var override scheme). The relevant keys and their defaults, matching the
-Compose file above, are:
+`example_config/` 根据 `application.env` 设置选择 `application_{test,dev,prod}.yml`
+（环境变量覆盖方案见 [`../example_config/README.md`](../example_config/README.md)）。
+与上文 Compose 文件匹配的相关键及其默认值为：
 
 ```yaml
 database:
@@ -125,16 +98,14 @@ cache:
     port: 6379
 ```
 
-Module-level test defaults and their environment-variable overrides
-(`FIBERHOUSE_MONGODB_URI`, `FIBERHOUSE_MYSQL_DSN`, `FIBERHOUSE_REDIS_ADDR`,
-etc.) are documented per module in the READMEs linked above.
+模块级的测试默认值及其环境变量覆盖（`FIBERHOUSE_MONGODB_URI`、`FIBERHOUSE_MYSQL_DSN`、
+`FIBERHOUSE_REDIS_ADDR` 等）在上文链接的各模块 README 中说明。
 
-## HTTP CRUD routes
+## HTTP CRUD 路由
 
-Both the Fiber adapter (`module/example-module`) and the Gin adapter
-(`module/example-ginapi-module`) register the identical route set at the
-application root, with no path prefix (verified in each module's
-`api/register_api_router.go`):
+Fiber 适配器（`module/example-module`）与 Gin 适配器（`module/example-ginapi-module`）
+都在应用根路径上注册完全相同的路由集，无路径前缀（已在各模块的
+`api/register_api_router.go` 中核实）：
 
 ```text
 POST   /examples
@@ -144,11 +115,10 @@ PUT    /examples/:id
 DELETE /examples/:id
 ```
 
-Only one core engine runs at a time — `CoreType` is selected in
-`example_main/main.go`'s `fiberhouse.BootConfig` (`fiber` or `gin`).
-Whichever engine is active, the contract above is identical: same request
-VOs, same `response.RespInfo{code,msg,data}` envelope, same validation and
-error-status mapping. Example requests:
+同一时刻只运行一个核心引擎——`CoreType` 在 `example_main/main.go` 的
+`fiberhouse.BootConfig` 中选择（`fiber` 或 `gin`）。无论哪个引擎在运行，上述契约都完全
+一致：相同的请求 VO、相同的 `response.RespInfo{code,msg,data}` 信封、相同的校验与
+错误状态码映射。请求示例：
 
 ```bash
 curl -X POST http://127.0.0.1:8080/examples \
@@ -161,22 +131,20 @@ curl -X PUT http://127.0.0.1:8080/examples/OBJECT_ID \
 curl -X DELETE http://127.0.0.1:8080/examples/OBJECT_ID
 ```
 
-For interactive/manual testing, use the `.http` files (VS Code REST
-Client / JetBrains HTTP Client format) instead of hand-writing curl:
+进行交互式/手动测试时，使用 `.http` 文件（VS Code REST Client / JetBrains HTTP Client
+格式）而非手写 curl：
 
-- [`module/example-module/api/example_api.http`](module/example-module/api/example_api.http) —
-  Fiber adapter.
-- [`module/example-ginapi-module/api/example_api.http`](module/example-ginapi-module/api/example_api.http) —
-  Gin adapter.
-- [`api-tests.http`](api-tests.http) — a convenience index pointing at the
-  two files above (both cover the same 5 endpoints; run one adapter at a
-  time against `http://localhost:8080`).
+- [`module/example-module/api/example_api.http`](module/example-module/api/example_api.http) ——
+  Fiber 适配器。
+- [`module/example-ginapi-module/api/example_api.http`](module/example-ginapi-module/api/example_api.http) ——
+  Gin 适配器。
+- [`api-tests.http`](api-tests.http) —— 指向上述两个文件的便捷索引（二者覆盖相同的 5 个
+  接口；针对 `http://localhost:8080` 一次运行一个适配器）。
 
-## MySQL CLI (`example` command)
+## MySQL CLI（`example` 命令）
 
-The CLI is independent of the HTTP layer and talks to MySQL through its
-own `ExampleMysqlService -> ExampleRepository -> GORM` stack. It is run
-from `example_application/command/`, where the CLI's `main.go` lives:
+CLI 独立于 HTTP 层，通过自己的 `ExampleMysqlService -> ExampleRepository -> GORM` 栈与
+MySQL 交互。它从 `example_application/command/` 运行，CLI 的 `main.go` 就在那里：
 
 ```bash
 cd example_application/command
@@ -188,63 +156,52 @@ go run . example update --id 1 --status archived
 go run . example delete --id 1
 ```
 
-These six subcommands (`migrate`, `create`, `get`, `list`, `update`,
-`delete`) are registered in
-`example_application/command/application/commands/test_orm_command.go`'s
-`NewExampleCommand`/`exampleCommand.GetCommand`, and wired into the CLI app
-via `commands.NewExampleCommand(app.Ctx)` in
-`example_application/command/application/application.go`. All commands
-write their result as JSON to stdout. Run `migrate` once before any other
-subcommand — it creates/updates the `example_records` table. See
-[`module/command-module/README.md`](module/command-module/README.md) for
-the table schema, integration-test defaults, and DSN override
-(`FIBERHOUSE_MYSQL_DSN`).
+这六个子命令（`migrate`、`create`、`get`、`list`、`update`、`delete`）注册于
+`example_application/command/application/commands/test_orm_command.go` 的
+`NewExampleCommand`/`exampleCommand.GetCommand`，并经
+`example_application/command/application/application.go` 中的
+`commands.NewExampleCommand(app.Ctx)` 接入 CLI 应用。所有命令都把结果以 JSON 写到
+stdout。在任何其他子命令之前先运行一次 `migrate`——它会创建/更新 `example_records` 表。
+表结构、集成测试默认值与 DSN 覆盖（`FIBERHOUSE_MYSQL_DSN`）见
+[`module/command-module/README.md`](module/command-module/README.md)。
 
-## Swagger / OpenAPI docs
+## Swagger / OpenAPI 文档
 
-Swagger UI is gated by config, not always on. To enable it, set
-`application.swagger.enable: true` in the active `example_config/
-application_{env}.yml` (checked in
-`providers/module/fiber_route_register.go`'s `RegisterFiberSwagger` and
-`providers/module/gin_route_register.go`'s `RegisterGinSwagger`, both of
-which read `ctx.GetConfig().Bool("application.swagger.enable")`). When
-enabled, the UI is served at:
+Swagger UI 由配置控制，并非始终开启。要启用它，在生效的 `example_config/
+application_{env}.yml` 中设置 `application.swagger.enable: true`（在
+`providers/module/fiber_route_register.go` 的 `RegisterFiberSwagger` 与
+`providers/module/gin_route_register.go` 的 `RegisterGinSwagger` 中检查，二者都读取
+`ctx.GetConfig().Bool("application.swagger.enable")`）。启用后，UI 服务于：
 
 ```text
 GET /swagger/*
 ```
 
-The checked-in `docs/doc.go` is a compile-safe **placeholder** with an
-empty `paths` document — it is not the real generated spec. To regenerate
-real docs from the swaggo annotations on the Fiber handlers (only Fiber
-carries the annotations; Gin is documented as behaviorally identical — see
-rationale below), install `swag` and run the provided script from the repo
-root:
+检入的 `docs/doc.go` 是一个可编译的**占位符**，带一个空的 `paths` 文档——它不是真正
+生成的规范。要从 Fiber handler 上的 swaggo 注解重新生成真实文档（只有 Fiber 带注解；
+Gin 被记录为行为一致——见下方原因），安装 `swag` 并从仓库根目录运行所提供的脚本：
 
 ```bash
 go install github.com/swaggo/swag/cmd/swag@latest
 bash example_application/generate_swagger.sh
 ```
 
-Full rationale for why only Fiber is annotated, why `doc.go` is a
-placeholder, and how the general Swagger annotations
-(`@title`/`@host`/`@BasePath`, sourced from `example_main/main.go`) fit
-together is in [`docs/README.md`](docs/README.md) — read it before
-regenerating.
+关于为何只注解 Fiber、为何 `doc.go` 是占位符，以及通用 Swagger 注解
+（`@title`/`@host`/`@BasePath`，来源于 `example_main/main.go`）如何配合的完整原因，见
+[`docs/README.md`](docs/README.md)——重新生成前请先阅读它。
 
-## Running tests
+## 运行测试
 
-Unit tests (no external services required):
+单元测试（无需外部服务）：
 
 ```bash
 go test ./example_application/... -count=1
 ```
 
-Integration tests are opt-in and require the real local services above.
-They are skipped by default and only run when `FIBERHOUSE_INTEGRATION=1`
-is set (checked directly in each module's `integration_test.go`, e.g.
-`module/example-module/integration_test.go` and
-`module/command-module/integration_test.go`):
+集成测试为可选启用，需要上文的真实本地服务。它们默认被跳过，仅当设置
+`FIBERHOUSE_INTEGRATION=1` 时才运行（直接在各模块的 `integration_test.go` 中检查，
+例如 `module/example-module/integration_test.go` 与
+`module/command-module/integration_test.go`）：
 
 ```bash
 FIBERHOUSE_INTEGRATION=1 go test \
@@ -252,8 +209,6 @@ FIBERHOUSE_INTEGRATION=1 go test \
   ./example_application/module/command-module -count=1
 ```
 
-Integration tests create uniquely named/timestamped data and clean up only
-what they created. Per-module environment overrides for connection
-targets (`FIBERHOUSE_MONGODB_URI`, `FIBERHOUSE_MYSQL_DSN`,
-`FIBERHOUSE_REDIS_ADDR`, etc.) are documented in the module READMEs linked
-above.
+集成测试会创建唯一命名/带时间戳的数据，并只清理自己创建的部分。连接目标的按模块环境
+变量覆盖（`FIBERHOUSE_MONGODB_URI`、`FIBERHOUSE_MYSQL_DSN`、`FIBERHOUSE_REDIS_ADDR`
+等）在上文链接的模块 README 中说明。

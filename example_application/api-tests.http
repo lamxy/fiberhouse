@@ -1,13 +1,12 @@
-### example_application — API test index
+### example_application —— API 测试索引
 ###
-### This is a convenience index, not a duplicate of the per-adapter test
-### files. Open the file for the adapter you're running:
+### 这是一个便捷索引，而非各适配器测试文件的副本。打开你正在运行的适配器对应的
+### 文件：
 ###
 ###   Fiber: module/example-module/api/example_api.http
 ###   Gin:   module/example-ginapi-module/api/example_api.http
 ###
-### Both cover the same 5 example-resource CRUD endpoints (identical routes,
-### request VOs, and response envelope) against whichever core engine is
-### currently running on http://localhost:8080 (see
-### example_config/application_dev.yml). Fiber and Gin are alternate core
-### engines for the same app — run one at a time.
+### 两者覆盖相同的 5 个 example 资源 CRUD 接口（相同的路由、请求 VO 与响应信封），
+### 针对当前运行在 http://localhost:8080 上的核心引擎（见
+### example_config/application_dev.yml）。Fiber 与 Gin 是同一应用的可替换核心引擎
+### —— 一次运行一个。

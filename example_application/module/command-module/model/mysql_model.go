@@ -1,8 +1,7 @@
-// Package model is the driver-access layer for the command-module's
-// MySQL-backed example CLI: it owns the *gorm.DB handle resolved from the
-// application/command context. It depends only on the driver
-// (component/database/dbmysql, gorm); callers in repository build queries
-// against the *gorm.DB this layer exposes.
+// Package model 是 command-module 中基于 MySQL 的 example CLI 的驱动访问层：
+// 负责持有从应用/命令上下文解析出的 *gorm.DB 句柄。它仅依赖驱动
+// （component/database/dbmysql、gorm）；repository 中的调用方基于本层暴露的
+// *gorm.DB 构建查询。
 package model
 
 import (
@@ -12,27 +11,26 @@ import (
 	"gorm.io/gorm"
 )
 
-// ExampleMysqlModel owns the GORM dependency for the command-module slice.
-// Keeping it small makes the repository independently testable.
+// ExampleMysqlModel 持有 command-module 切片的 GORM 依赖。保持其精简使
+// repository 可独立测试。
 type ExampleMysqlModel struct {
 	db *gorm.DB
 }
 
-// NewExampleMysqlModel resolves the configured MySQL instance from ctx and
-// builds an ExampleMysqlModel around its GORM client.
+// NewExampleMysqlModel 从 ctx 解析出配置的 MySQL 实例，并围绕其 GORM 客户端
+// 构建一个 ExampleMysqlModel。
 func NewExampleMysqlModel(ctx fiberhouse.ICommandContext) *ExampleMysqlModel {
 	mysqlModel := dbmysql.NewMysqlModel(ctx, constant.MysqlInstanceKey)
 	return NewExampleMysqlModelWithDB(mysqlModel.GetDB().Client)
 }
 
-// NewExampleMysqlModelWithDB builds an ExampleMysqlModel around an
-// already-configured *gorm.DB, allowing callers (e.g. tests) to supply their
-// own connection.
+// NewExampleMysqlModelWithDB 围绕一个已配置的 *gorm.DB 构建 ExampleMysqlModel，
+// 允许调用方（例如测试）提供自己的连接。
 func NewExampleMysqlModelWithDB(db *gorm.DB) *ExampleMysqlModel {
 	return &ExampleMysqlModel{db: db}
 }
 
-// DB returns the underlying *gorm.DB handle for use by the repository layer.
+// DB 返回底层的 *gorm.DB 句柄，供 repository 层使用。
 func (m *ExampleMysqlModel) DB() *gorm.DB {
 	return m.db
 }

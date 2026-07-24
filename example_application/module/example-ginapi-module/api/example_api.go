@@ -14,15 +14,14 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/transport"
 )
 
-// ExampleHandler is the Gin transport for the example resource. It exposes
-// the same CRUD contract as example-module/api.ExampleHandler (Fiber) at the
-// identical paths (POST/GET/PUT/DELETE /examples[/{id}]).
+// ExampleHandler 是 example 资源的 Gin 传输层。它在完全相同的路径
+// （POST/GET/PUT/DELETE /examples[/{id}]）上，暴露与 example-module/api.ExampleHandler
+// （Fiber）一致的 CRUD 契约。
 //
-// Swaggo annotations are intentionally NOT duplicated here: swag init would
-// collide on identical @Router paths declared by both adapters. The Fiber
-// handlers in example_application/module/example-module/api/example_api.go
-// are the single annotated source of truth for the generated OpenAPI spec;
-// see example_application/docs/README.md for the documented rationale.
+// 此处刻意不重复编写 swaggo 注解：两个适配器声明相同的 @Router 路径会导致
+// swag init 冲突。example_application/module/example-module/api/example_api.go
+// 中的 Fiber 处理器是生成 OpenAPI 规范时唯一带注解的权威来源；
+// 具体原因见 example_application/docs/README.md。
 type ExampleHandler struct {
 	fiberhouse.ApiLocator
 	UseCase service.ExampleUseCase
@@ -63,8 +62,8 @@ func (h *ExampleHandler) validateID(id, lang string) error {
 	return h.validate(&requestvo.ObjId{ID: id}, lang)
 }
 
-// Create handles POST /examples, mirroring the Fiber Create handler's
-// contract (see example-module/api.ExampleHandler.Create for the swaggo spec).
+// Create 处理 POST /examples，与 Fiber 的 Create 处理器契约一致
+// （swaggo 规范见 example-module/api.ExampleHandler.Create）。
 func (h *ExampleHandler) Create(c *gin.Context) {
 	var req requestvo.CreateExampleReqVo
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -87,8 +86,8 @@ func (h *ExampleHandler) Create(c *gin.Context) {
 	}
 }
 
-// Get handles GET /examples/{id}, mirroring the Fiber Get handler's contract
-// (see example-module/api.ExampleHandler.Get for the swaggo spec).
+// Get 处理 GET /examples/{id}，与 Fiber 的 Get 处理器契约一致
+// （swaggo 规范见 example-module/api.ExampleHandler.Get）。
 func (h *ExampleHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.validateID(id, h.language(c)); err != nil {
@@ -107,8 +106,8 @@ func (h *ExampleHandler) Get(c *gin.Context) {
 	}
 }
 
-// List handles GET /examples, mirroring the Fiber List handler's contract
-// (see example-module/api.ExampleHandler.List for the swaggo spec).
+// List 处理 GET /examples，与 Fiber 的 List 处理器契约一致
+// （swaggo 规范见 example-module/api.ExampleHandler.List）。
 func (h *ExampleHandler) List(c *gin.Context) {
 	var req requestvo.ListExamplesReqVo
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -131,8 +130,8 @@ func (h *ExampleHandler) List(c *gin.Context) {
 	}
 }
 
-// Update handles PUT /examples/{id}, mirroring the Fiber Update handler's
-// contract (see example-module/api.ExampleHandler.Update for the swaggo spec).
+// Update 处理 PUT /examples/{id}，与 Fiber 的 Update 处理器契约一致
+// （swaggo 规范见 example-module/api.ExampleHandler.Update）。
 func (h *ExampleHandler) Update(c *gin.Context) {
 	var req requestvo.UpdateExampleReqVo
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -161,8 +160,8 @@ func (h *ExampleHandler) Update(c *gin.Context) {
 	}
 }
 
-// Delete handles DELETE /examples/{id}, mirroring the Fiber Delete handler's
-// contract (see example-module/api.ExampleHandler.Delete for the swaggo spec).
+// Delete 处理 DELETE /examples/{id}，与 Fiber 的 Delete 处理器契约一致
+// （swaggo 规范见 example-module/api.ExampleHandler.Delete）。
 func (h *ExampleHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.validateID(id, h.language(c)); err != nil {

@@ -1,8 +1,6 @@
-// Package transport bridges the example module's stable domain errors
-// (defined in service and repository) to HTTP-framework error types. It
-// depends on service and repository only for their exported error
-// sentinels, keeping HTTP status-code mapping out of the business-logic
-// layers.
+// Package transport 将 example 模块稳定的领域错误（定义于 service 与 repository）
+// 桥接为 HTTP 框架的错误类型。它仅依赖 service 与 repository 导出的错误哨兵值，
+// 从而把 HTTP 状态码映射隔离在业务逻辑层之外。
 package transport
 
 import (
@@ -14,8 +12,8 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 )
 
-// MapDomainError converts stable use-case failures into the HTTP errors
-// understood by both Fiber and Gin error-handler adapters.
+// MapDomainError 将稳定的用例失败转换为 Fiber 与 Gin 错误处理适配器都能识别的
+// HTTP 错误。
 func MapDomainError(err error) error {
 	switch {
 	case errors.Is(err, service.ErrInvalidInput):

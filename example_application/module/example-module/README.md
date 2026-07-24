@@ -1,20 +1,18 @@
-# Canonical example module
+# 规范 example 模块
 
-This is the transport-independent MongoDB CRUD slice used by both HTTP
-adapters. Dependencies point inward:
+这是两个 HTTP 适配器共用的、与传输层无关的 MongoDB CRUD 切片。依赖指向内部：
 
 ```text
 Fiber/Gin handler -> ExampleUseCase -> ExampleStore -> ExampleModel -> MongoDB
 ```
 
-The entity stores a MongoDB `ObjectID`, `name` (unique), optional
-`description`, `status` (`active` or `archived`), string `tags`, and UTC
-`created_at`/`updated_at` fields. HTTP DTOs keep BSON types out of the public
-JSON contract.
+entity 存储一个 MongoDB `ObjectID`、`name`（唯一）、可选的 `description`、
+`status`（`active` 或 `archived`）、字符串 `tags`，以及 UTC 的
+`created_at`/`updated_at` 字段。HTTP DTO 把 BSON 类型隔离在对外的 JSON 契约之外。
 
-## Routes
+## 路由
 
-Both engines expose the same contract:
+两个引擎暴露相同的契约：
 
 ```text
 POST   /examples
@@ -35,31 +33,27 @@ curl -X PUT http://127.0.0.1:8080/examples/OBJECT_ID \
 curl -X DELETE http://127.0.0.1:8080/examples/OBJECT_ID
 ```
 
-List reads use normalized page, page-size, and status values in the cache key.
-The level-two cache is read-through with a 30-second TTL and the caller's
-context. Mutations emit a best-effort `example:changed` task only after the
-database write succeeds. There is no prefix invalidation; freshness is bounded
-by TTL expiry.
+列表读取在缓存键中使用规范化后的 page、page-size 与 status 值。二级缓存为
+read-through，TTL 为 30 秒，并使用调用方的上下文。写操作仅在数据库写入成功后才尽力
+（best-effort）发出一个 `example:changed` 任务。没有前缀失效机制；数据新鲜度由 TTL
+到期界定。
 
-Both HTTP adapters map canonical domain failures identically: invalid input or
-IDs return 400, missing examples return 404, and conflicts or unchanged updates
-return 409. Unknown errors retain the framework's existing 500 envelope.
+两个 HTTP 适配器对规范领域失败的映射完全一致：输入或 ID 非法返回 400，example 不存在
+返回 404，冲突或内容未变化的更新返回 409。未知错误保留框架既有的 500 信封。
 
-## Local services and tests
+## 本地服务与测试
 
-Defaults match the repository's Docker Compose services:
+默认值与仓库的 Docker Compose 服务匹配：
 
 - MongoDB: `mongodb://admin:admin@127.0.0.1:27037/?authSource=admin`
 - Redis: `127.0.0.1:6379`
 
-Override them with `FIBERHOUSE_MONGODB_URI`,
-`FIBERHOUSE_MONGODB_DATABASE`, `FIBERHOUSE_MONGODB_COLLECTION`, and
-`FIBERHOUSE_REDIS_ADDR`.
+用 `FIBERHOUSE_MONGODB_URI`、`FIBERHOUSE_MONGODB_DATABASE`、
+`FIBERHOUSE_MONGODB_COLLECTION` 与 `FIBERHOUSE_REDIS_ADDR` 覆盖它们。
 
 ```bash
 go test ./example_application/module/example-module/... -count=1
 FIBERHOUSE_INTEGRATION=1 go test ./example_application/module/example-module -count=1
 ```
 
-Integration data and Redis keys contain a timestamp and process ID. Cleanup
-targets only the document and key created by the test.
+集成测试数据与 Redis 键包含时间戳与进程 ID。清理只针对测试所创建的文档与键。

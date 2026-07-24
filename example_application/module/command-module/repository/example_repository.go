@@ -1,8 +1,7 @@
-// Package repository is the persistence layer for the command-module's
-// MySQL-backed example CLI: it wraps GORM calls, normalizes pagination
-// defaults, and translates driver/GORM errors into the stable sentinels
-// defined below. It depends on model (for the *gorm.DB handle) and entity,
-// but exposes no GORM types to service.
+// Package repository 是 command-module 中基于 MySQL 的 example CLI 的持久化层：
+// 负责包裹 GORM 调用、规范化分页默认值，并把驱动/GORM 错误翻译为下方定义的
+// 稳定哨兵错误。它依赖 model（获取 *gorm.DB 句柄）与 entity，但不向 service
+// 暴露任何 GORM 类型。
 package repository
 
 import (
@@ -16,44 +15,38 @@ import (
 	"gorm.io/gorm"
 )
 
-// Stable domain errors returned by ExampleRepository implementations.
-// Callers (service) must use errors.Is against these sentinels rather than
-// matching on error strings.
+// ExampleRepository 实现返回的稳定领域错误。调用方（service）必须用 errors.Is
+// 与这些哨兵值比较，而非匹配错误字符串。
 var (
-	// ErrNotFound is returned when a lookup, update, or delete targets an id
-	// that does not exist.
+	// ErrNotFound 在查询、更新或删除针对一个不存在的 id 时返回。
 	ErrNotFound = errors.New("example record not found")
-	// ErrDuplicate is returned when a create/update violates the unique
-	// index on name.
+	// ErrDuplicate 在创建/更新违反 name 上的唯一索引时返回。
 	ErrDuplicate = errors.New("example record name already exists")
 )
 
-// ListOptions carries pagination and status-filter parameters for
-// ExampleRepository.List.
+// ListOptions 承载 ExampleRepository.List 的分页与状态过滤参数。
 type ListOptions struct {
 	Page     int
 	PageSize int
 	Status   string
 }
 
-// UpdateInput is the partial patch for ExampleRepository.Update. A nil
-// field is left unchanged; a non-nil field replaces the current value.
+// UpdateInput 是 ExampleRepository.Update 的部分 patch。nil 字段保持不变；
+// 非 nil 字段替换当前值。
 type UpdateInput struct {
 	Name        *string
 	Description *string
 	Status      *string
 }
 
-// ExampleRepository is the persistence contract consumed by service. All
-// methods accept the caller's context.Context and propagate it unchanged to
-// GORM via WithContext. Errors are the stable sentinels above (ErrNotFound,
-// ErrDuplicate); callers should use errors.Is.
+// ExampleRepository 是由 service 消费的持久化契约。所有方法都接收调用方的
+// context.Context，并经 WithContext 原样传播到 GORM。错误为上文的稳定哨兵值
+// （ErrNotFound、ErrDuplicate）；调用方应使用 errors.Is。
 //
-// Update applies a partial patch (only non-nil UpdateInput fields change)
-// and is not an upsert: an id that does not resolve to an existing record
-// returns ErrNotFound. It never sets created_at, so the original creation
-// timestamp is preserved across updates. List returns items and the total
-// matching count in deterministic order (created_at desc, id desc).
+// Update 应用部分 patch（仅更改非 nil 的 UpdateInput 字段），且不是 upsert：
+// 未解析到已有记录的 id 返回 ErrNotFound。它绝不设置 created_at，因此原始创建
+// 时间在更新间得以保留。List 以确定性顺序（created_at 降序、id 降序）返回条目
+// 与匹配总数。
 type ExampleRepository interface {
 	Migrate(context.Context) error
 	Create(context.Context, *entity.ExampleRecord) error
@@ -63,20 +56,18 @@ type ExampleRepository interface {
 	Delete(context.Context, uint64) error
 }
 
-// exampleRepository is the default ExampleRepository implementation, backed
-// directly by a *gorm.DB.
+// exampleRepository 是默认的 ExampleRepository 实现，直接由 *gorm.DB 支撑。
 type exampleRepository struct {
 	db *gorm.DB
 }
 
-// NewExampleRepository builds an ExampleRepository using the *gorm.DB owned
-// by m.
+// NewExampleRepository 使用 m 持有的 *gorm.DB 构建一个 ExampleRepository。
 func NewExampleRepository(m *model.ExampleMysqlModel) ExampleRepository {
 	return &exampleRepository{db: m.DB()}
 }
 
-// Migrate runs GORM's AutoMigrate for entity.ExampleRecord, creating or
-// updating the example_records table schema.
+// Migrate 对 entity.ExampleRecord 运行 GORM 的 AutoMigrate，创建或更新
+// example_records 表结构。
 func (r *exampleRepository) Migrate(ctx context.Context) error {
 	if err := r.db.WithContext(ctx).AutoMigrate(&entity.ExampleRecord{}); err != nil {
 		return fmt.Errorf("migrate example records: %w", err)
@@ -84,8 +75,7 @@ func (r *exampleRepository) Migrate(ctx context.Context) error {
 	return nil
 }
 
-// Create inserts record, returning ErrDuplicate if its name collides with
-// the unique index.
+// Create 插入 record；若其 name 与唯一索引冲突，返回 ErrDuplicate。
 func (r *exampleRepository) Create(ctx context.Context, record *entity.ExampleRecord) error {
 	if err := r.db.WithContext(ctx).Create(record).Error; err != nil {
 		return translateError("create example record", err)
@@ -93,7 +83,7 @@ func (r *exampleRepository) Create(ctx context.Context, record *entity.ExampleRe
 	return nil
 }
 
-// Get fetches a single record by id, returning ErrNotFound if none exists.
+// Get 按 id 获取单条记录；若不存在，返回 ErrNotFound。
 func (r *exampleRepository) Get(ctx context.Context, id uint64) (*entity.ExampleRecord, error) {
 	var record entity.ExampleRecord
 	if err := r.db.WithContext(ctx).First(&record, id).Error; err != nil {
@@ -102,9 +92,8 @@ func (r *exampleRepository) Get(ctx context.Context, id uint64) (*entity.Example
 	return &record, nil
 }
 
-// List returns a page of records matching options.Status (or all statuses
-// if empty) plus the total matching count, ordered deterministically by
-// created_at desc then id desc.
+// List 以确定性顺序（created_at 降序、再按 id 降序）返回匹配 options.Status
+// （为空则匹配所有状态）的一页记录以及匹配总数。
 func (r *exampleRepository) List(ctx context.Context, options ListOptions) ([]entity.ExampleRecord, int64, error) {
 	options = normalizeListOptions(options)
 	query := func() *gorm.DB {
@@ -132,12 +121,10 @@ func (r *exampleRepository) List(ctx context.Context, options ListOptions) ([]en
 	return records, total, nil
 }
 
-// Update applies a partial patch to the record identified by id (only
-// non-nil input fields change) and returns the record's current state
-// afterward. This is not an upsert: if id does not exist, the trailing Get
-// returns ErrNotFound. Unlike the example-module's Mongo repository, a
-// no-op write (RowsAffected == 0 on an existing row) is not treated as an
-// error here — it simply falls through to re-reading the unchanged record.
+// Update 对由 id 标识的记录应用部分 patch（仅更改非 nil 的 input 字段），并在
+// 之后返回该记录的当前状态。这不是 upsert：若 id 不存在，末尾的 Get 会返回
+// ErrNotFound。与 example-module 的 Mongo repository 不同，这里空操作写入
+// （已有行上 RowsAffected == 0）不被视为错误——它只是继续去重新读取未变化的记录。
 func (r *exampleRepository) Update(ctx context.Context, id uint64, input UpdateInput) (*entity.ExampleRecord, error) {
 	fields := make(map[string]any, 3)
 	if input.Name != nil {
@@ -163,8 +150,8 @@ func (r *exampleRepository) Update(ctx context.Context, id uint64, input UpdateI
 	return r.Get(ctx, id)
 }
 
-// Delete hard-deletes the record identified by id (bypassing any soft-delete
-// hook via Unscoped), returning ErrNotFound if no row was deleted.
+// Delete 硬删除由 id 标识的记录（通过 Unscoped 绕过任何软删除钩子）；
+// 若未删除任何行，返回 ErrNotFound。
 func (r *exampleRepository) Delete(ctx context.Context, id uint64) error {
 	result := r.db.WithContext(ctx).Unscoped().Delete(&entity.ExampleRecord{}, id)
 	if result.Error != nil {
@@ -176,7 +163,7 @@ func (r *exampleRepository) Delete(ctx context.Context, id uint64) error {
 	return nil
 }
 
-// normalizeListOptions defaults Page to 1 and PageSize to 20 when unset.
+// normalizeListOptions 在未设置时将 Page 默认为 1、PageSize 默认为 20。
 func normalizeListOptions(options ListOptions) ListOptions {
 	if options.Page < 1 {
 		options.Page = 1
@@ -187,9 +174,9 @@ func normalizeListOptions(options ListOptions) ListOptions {
 	return options
 }
 
-// translateError maps GORM/MySQL-native errors onto the stable sentinels
-// (ErrNotFound, ErrDuplicate), wrapping operation and the original error for
-// context; anything else is wrapped but left otherwise untranslated.
+// translateError 将 GORM/MySQL 原生错误映射为稳定的哨兵错误（ErrNotFound、
+// ErrDuplicate），并包装 operation 与原始错误以提供上下文；其余错误仅作包装、
+// 不做翻译。
 func translateError(operation string, err error) error {
 	var mysqlError *gomysql.MySQLError
 	switch {
