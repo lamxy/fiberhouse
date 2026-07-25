@@ -61,7 +61,9 @@ jobs:
       - name: Fetch all refs
         run: |
           set -e
-          git fetch origin --prune --tags "+refs/heads/*:refs/remotes/origin/*"
+          # --force 不可省略: tag 事件下 actions/checkout 已带入被推送的 tag，
+          # 再次 fetch 会以 "would clobber existing tag" 失败。
+          git fetch origin --force --prune --prune-tags --tags "+refs/heads/*:refs/remotes/origin/*"
           # origin/HEAD 是符号引用，按 refspec 展开会得到无效的分支名 HEAD
           git remote set-head origin --delete || true
 
