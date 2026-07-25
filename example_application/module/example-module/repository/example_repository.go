@@ -73,8 +73,8 @@ type ExampleStore interface {
 // 它在首次使用时惰性确保索引存在，并把 model 层错误翻译为稳定的
 // ExampleStore 哨兵错误。
 type ExampleRepository struct {
-	fiberhouse.RepositoryLocator
-	Model ExampleModelStore
+	fiberhouse.RepositoryLocator // 继承 repository 定位层接口
+	Model                        ExampleModelStore
 
 	readyMu     sync.Mutex
 	initialized bool

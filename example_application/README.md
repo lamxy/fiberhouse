@@ -1,6 +1,6 @@
 # example_application
 
-`example_application` 是一个可复制、面向生产的 FiberHouse 参考模板。它不是玩具式的
+`example_application` 是一个可复制、面向生产方向的 FiberHouse 参考模板。它不是玩具式的
 "hello world"——而是用一个真实的 CRUD 资源、两个可互换的 HTTP 适配器、一个独立的
 CLI 工具、Swagger 文档，以及单元测试与可选的集成测试，演练 FiberHouse 期望应用自身
 拥有的分层（框架不生成也不强制业务目录）。

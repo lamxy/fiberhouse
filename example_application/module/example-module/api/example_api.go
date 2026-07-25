@@ -15,13 +15,14 @@ import (
 	moduleconstant "github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/transport"
+	"github.com/lamxy/fiberhouse/response"
 )
 
 // ExampleHandler 是 example 资源的 Fiber 传输层。它只负责解析/校验请求，
 // 并将全部业务逻辑委托给 UseCase。
 type ExampleHandler struct {
-	fiberhouse.ApiLocator
-	UseCase service.ExampleUseCase
+	fiberhouse.ApiLocator // 继承 api 定位层接口
+	UseCase               service.ExampleUseCase
 }
 
 // NewExampleHandler 构建一个绑定到指定应用上下文与用例的 ExampleHandler，
@@ -83,9 +84,12 @@ func (h *ExampleHandler) Create(c *fiber.Ctx) error {
 	if err != nil {
 		return transport.MapDomainError(err)
 	}
+	// fiberhouse.Response() 是一个响应构建器，提供了链式调用的方式来构建响应
+	// SendWithCtx() 对系统支持的协议自动识别和响应。
+	// 其他协议的响应，也可以直接调用 fiberhouse.RespProto().xxx 、 fiberhouse.RespMsgpack().xxx
 	return fiberhouse.Response().
 		SuccessWithData(resp).
-		JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusCreated)
+		SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusCreated)
 }
 
 // Get 处理按 id 获取单个 example 资源的 GET 请求。
@@ -112,6 +116,7 @@ func (h *ExampleHandler) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return transport.MapDomainError(err)
 	}
+	// JsonWithCtx() json 响应
 	return fiberhouse.Response().
 		SuccessWithData(resp).
 		JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
@@ -145,6 +150,7 @@ func (h *ExampleHandler) List(c *fiber.Ctx) error {
 	if err != nil {
 		return transport.MapDomainError(err)
 	}
+	// JsonWithCtx() json 响应
 	return fiberhouse.Response().
 		SuccessWithData(resp).
 		JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
@@ -184,6 +190,7 @@ func (h *ExampleHandler) Update(c *fiber.Ctx) error {
 	if err != nil {
 		return transport.MapDomainError(err)
 	}
+	// JsonWithCtx() json 响应
 	return fiberhouse.Response().
 		SuccessWithData(resp).
 		JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
@@ -212,5 +219,6 @@ func (h *ExampleHandler) Delete(c *fiber.Ctx) error {
 	if err := h.UseCase.Delete(c.UserContext(), id); err != nil {
 		return transport.MapDomainError(err)
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	// 直接使用 response 包进行响应，默认仅支持 json 协议进行响应
+	return response.SuccessWithData().JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusNoContent)
 }

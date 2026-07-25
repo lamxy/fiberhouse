@@ -61,9 +61,9 @@ type ExampleUseCase interface {
 // 委托给 Store，缓存 List 结果，并在写操作成功后尽力（best-effort）派发一条
 // 「example changed」异步通知。
 type ExampleService struct {
-	fiberhouse.ServiceLocator
-	Store repository.ExampleStore
-	now   func() time.Time
+	fiberhouse.ServiceLocator // 继承 service 定位层接口
+	Store                     repository.ExampleStore
+	now                       func() time.Time
 
 	listCached        exampleListCache
 	getTaskDispatcher func() (exampleTaskDispatcher, error)

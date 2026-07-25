@@ -11,10 +11,10 @@ import (
 // CommonHandler 示例公共处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
 type CommonHandler struct {
 	fiberhouse.ApiLocator        // 继承fiberhouse.ApiLocator
-	KeyTestService        string // 定义依赖组件的全局管理器的实例key。通过key即可由 h.GetInstance(key) 方法获取实例，或由 fiberhouse.GetMustInstance[T](key) 泛型方法获取实例，无需wire或其他依赖注入工具
+	KeyTestService        string // 定义获取依赖组件的全局管理器的实例key。通过key即可由 h.GetInstance(key) 方法获取实例，或由 fiberhouse.GetMustInstance[T](key) 泛型方法获取实例，无需wire或其他依赖注入工具
 }
 
-// NewCommonHandler 直接New，无需依赖注入(Wire) TestService对象，内部依赖走全局管理器延迟获取依赖组件
+// NewCommonHandler 直接New，无需依赖注入 (Wire) TestService对象，内部依赖走全局管理器延迟获取依赖组件
 func NewCommonHandler(ctx fiberhouse.IApplicationContext) *CommonHandler {
 	return &CommonHandler{
 		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyCommonHandler()),
@@ -31,7 +31,7 @@ func GetKeyCommonHandler(ns ...string) string {
 func (h *CommonHandler) TestGetInstance(c *fiber.Ctx) error {
 	t := c.Query("t", "test")
 
-	// 通过 h.GetInstance(key) 方法获取注册实例
+	// 通过 h.GetInstance(key) 方法获取已注册进全局管理器的延迟初始化对象（单例）
 	testService, err := h.GetInstance(h.KeyTestService)
 	if err != nil {
 		return err

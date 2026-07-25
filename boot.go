@@ -16,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/constant"
 	"github.com/lamxy/fiberhouse/globalmanager"
@@ -307,9 +308,100 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		}
 	}
 
-	// 收集提供者并注册到同类型组的管理器，解決管理器加載提供者執行初始化
+	// 收集提供者并注册到同类型组的管理器中，管理器加載提供者并執行提供者的初始化逻辑
 	fh.resolveManagerWithProviders(manager...)
 
+	// 框架启动器选项初始化位置点，获取创建框架启动器所需的选项参数列表
+	fso := fh.resolveFrameStarterOpts()
+
+	// 核心启动器选项初始化位置点，获取创建核心启动器所需的选项参数列表
+	cso := fh.resolveCoreStarterOpts()
+
+	// 框架启动器创建位置点，加载并获取框架启动器对象
+	frameStarter := fh.resolveAndReturnFrameStarter(fso)
+
+	// 核心启动器创建位置点，加载并获取核心启动器对象
+	coreStarter := fh.resolveAndReturnCoreStarter(cso)
+
+	// 创建应用启动器
+	appStarter := &WebApplication{
+		FrameStarter: frameStarter,
+		CoreStarter:  coreStarter,
+	}
+
+	// ======== 应用启动流程，保持执行顺序 =========
+
+	// 将应用启动器注册到全局应用上下文
+	appStarter.RegisterToCtx(appStarter)
+
+	// 注册全局应用对象执行位置点，完成应用自定义全局对象注册和必要的对象初始化
+	appStarter.RegisterApplicationGlobals(ProviderLocationDefault().LocationGlobalInit.GetManagers()...)
+
+	// engine初始化位置点 & json编解码初始化位置点，返回合并管理器列表，完成核心引擎和编解码初始化
+	initCoreManagers := fh.resolverAndReturnInitCoreManagers()
+
+	// 初始化核心应用执行位置点，完成核心应用监听服务前的配置初始化
+	appStarter.InitCoreApp(appStarter.GetFrameApp(), initCoreManagers...)
+
+	// 应用钩子函数注册执行位置点，完成注册核心应用的声明周期钩子函数注册
+	appStarter.RegisterAppHooks(appStarter.GetFrameApp(), ProviderLocationDefault().LocationCoreHookInit.GetManagers()...)
+
+	// 应用中间件注册执行位置点，完成应用级的中间件注册
+	appStarter.RegisterAppMiddleware(appStarter.GetFrameApp(), ProviderLocationDefault().LocationAppMiddlewareInit.GetManagers()...)
+
+	// 模块初始化执行位置点，完成模块级中间件和应用路由的注册
+	appStarter.RegisterModuleInitialize(appStarter.GetFrameApp(), fh.resolveAndReturnModuleInitManagers()...)
+
+	// Swagger模块初始化执行位置点，完成注册 swagger 组件
+	appStarter.RegisterModuleSwagger(appStarter.GetFrameApp(), ProviderLocationDefault().LocationModuleSwaggerInit.GetManagers()...)
+
+	// 异步任务服务器注册执行位置点，完成异步任务注册
+	appStarter.RegisterTaskServer(ProviderLocationDefault().LocationTaskServerInit.GetManagers()...)
+
+	// 全局对象保活注册执行位置点，完成全局对象探测和保活机制
+	appStarter.RegisterGlobalsKeepalive(ProviderLocationDefault().LocationGlobalKeepaliveInit.GetManagers()...)
+
+	// 运行前执行位置点，完成核心应用服务器监听前的必要逻辑（如有）
+	runBeforeManagers := ProviderLocationDefault().LocationServerRunBefore.GetManagers()
+	if len(runBeforeManagers) > 0 {
+		for _, m := range runBeforeManagers {
+			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
+				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
+					return appStarter, nil // 向当前管理器加载提供者函数中注入当前执行位点的应用启动器实例
+				})
+				break
+			}
+		}
+	}
+
+	// 监听系统信号，处理应用优雅关闭逻辑
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// 应用核心运行时执行位置点和关机执行位置点，完成核心应用监听套接字时的附加逻辑和注册关机后的清理逻辑
+	runManagers, allShutdownManagers := fh.resolveRunAndShutdownManagers()
+
+	// 启动应用服务监听套接字
+	// select 监听中断信号和错误信号
+	// 等待程序优雅退出
+	runErr, shutdownErr, shutdownRequested := coordinateServerRun(appStarter, runManagers, allShutdownManagers, stopCh)
+
+	// 应用正常退出，关闭系统信号通道
+	signal.Stop(stopCh)
+
+	if runErr != nil {
+		fmt.Printf("Application run server error: %v\n", runErr)
+	}
+
+	if shutdownRequested {
+		fmt.Printf("Application shutdown gracefully: %v\n", shutdownErr)
+	}
+
+	fmt.Println("Application RunServer exited")
+}
+
+// resolveGlobalTools 获取全局应用上下文、全局配置器和全局日志器
+func (fh *FiberHouse) resolveGlobalTools() (IApplicationContext, appconfig.IAppConfig, bootstrap.LoggerWrapper) {
 	// 全局应用上下文
 	appContext := fh.AppCtx
 	// 全局配置器
@@ -317,7 +409,49 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	// 全局日志器
 	logger := appContext.GetLogger()
 
-	// 获取创建框架启动器选项参数列表
+	return appContext, cfg, logger
+}
+
+// resolveAndReturnModuleInitManagers 获取模块级中间件和路由注册的提供者管理器列表
+func (fh *FiberHouse) resolveAndReturnModuleInitManagers() []IProviderManager {
+	moduleMS := ProviderLocationDefault().LocationModuleMiddlewareInit.GetManagers()
+	routeMS := ProviderLocationDefault().LocationRouteRegisterInit.GetManagers()
+	ms := make([]IProviderManager, 0, len(moduleMS)+len(routeMS))
+	ms = append(ms, moduleMS...)
+	ms = append(ms, routeMS...)
+	return ms
+}
+
+// resolverAndReturnInitCoreManagers 获取初始化核心的提供者管理器列表
+func (fh *FiberHouse) resolverAndReturnInitCoreManagers() []IProviderManager {
+	engineInitManagers := ProviderLocationDefault().LocationCoreEngineInit.GetManagers()
+	engineCodecManagers := ProviderLocationDefault().LocationCoreCodecInit.GetManagers()
+	initCoreManagers := make([]IProviderManager, 0, len(engineInitManagers)+len(engineCodecManagers))
+	initCoreManagers = append(initCoreManagers, engineInitManagers...)
+	initCoreManagers = append(initCoreManagers, engineCodecManagers...)
+	return initCoreManagers
+}
+
+// resolveRunAndShutdownManagers 获取运行时和关闭时的提供者管理器列表
+func (fh *FiberHouse) resolveRunAndShutdownManagers() ([]IProviderManager, []IProviderManager) {
+	runManagers := ProviderLocationDefault().LocationServerRun.GetManagers()
+	shutdownBeforeManagers := ProviderLocationDefault().LocationServerShutdownBefore.GetManagers()
+	shutdownManagers := ProviderLocationDefault().LocationServerShutdown.GetManagers()
+	shutdownAfterManagers := ProviderLocationDefault().LocationServerShutdownAfter.GetManagers()
+	allShutdownManagers := make(
+		[]IProviderManager,
+		0,
+		len(shutdownBeforeManagers)+len(shutdownManagers)+len(shutdownAfterManagers),
+	)
+	allShutdownManagers = append(allShutdownManagers, shutdownBeforeManagers...)
+	allShutdownManagers = append(allShutdownManagers, shutdownManagers...)
+	allShutdownManagers = append(allShutdownManagers, shutdownAfterManagers...)
+	return runManagers, allShutdownManagers
+}
+
+// resolveFrameStarterOpts 创建并返回框架启动器选项参数
+func (fh *FiberHouse) resolveFrameStarterOpts() []FrameStarterOption {
+	_, cfg, logger := fh.resolveGlobalTools()
 	if len(fh.frameStarterOpts) == 0 {
 		logger.WarnWith(cfg.LogOriginFrame()).Msg("FiberHouse: frameStarterOpts not set, loading from FrameStarterOptionInit location point")
 		// 配置项未设置，从框架启动器选项位置点加载
@@ -337,35 +471,16 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 			fh.frameStarterOpts = opts
 		}
 	}
-	// 创建框架启动器位置点加载获取框架启动器对象
-	ms = ProviderLocationDefault().LocationFrameStarterCreate.GetManagers()
-	if len(ms) == 0 {
-		msg := "Location point:LocationFrameStarterCreate， no FrameStarterCreate provider manager found"
-		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-		panic(errors.New(msg))
-	}
-	// 通过提供者加载回调函数(ProviderLoadFunc)参数注入框架启动器选项
-	anyStarter, err := ms[0].LoadProvider(func(manager IProviderManager) (any, error) {
-		return fh.frameStarterOpts, nil
-	})
-	if err != nil {
-		msg := "FrameStarterCreate provider load failed"
-		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg(msg)
-		panic(errors.New(msg))
-	}
-	// 初始化框架启动器
-	frameStarter, ok := anyStarter.(FrameStarter)
-	if !ok {
-		msg := "loaded FrameStarterCreate provider is not FrameStarter type"
-		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-		panic(errors.New(msg))
-	}
+	return fh.frameStarterOpts
+}
 
-	// 获取创建核心启动器选项参数列表
+// resolveCoreStarterOpts 创建并返回核心启动器选项参数
+func (fh *FiberHouse) resolveCoreStarterOpts() []CoreStarterOption {
+	_, cfg, logger := fh.resolveGlobalTools()
 	if len(fh.coreStarterOpts) == 0 {
 		logger.WarnWith(cfg.LogOriginFrame()).Msg("FiberHouse: coreStarterOpts not set, loading from CoreStarterOptionInit location point")
 		// 配置项未设置，从核心启动器选项位置点加载
-		ms = ProviderLocationDefault().LocationCoreStarterOptionInit.GetManagers()
+		ms := ProviderLocationDefault().LocationCoreStarterOptionInit.GetManagers()
 		if len(ms) > 0 {
 			anyCoreOpts, err := ms[0].LoadProvider()
 			if err != nil {
@@ -382,8 +497,46 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 			fh.coreStarterOpts = opts
 		}
 	}
-	// 创建核心启动器位置点
-	ms = ProviderLocationDefault().LocationCoreStarterCreate.GetManagers()
+	return fh.coreStarterOpts
+}
+
+// resolveAndReturnFrameStarter 创建并返回框架启动器
+func (fh *FiberHouse) resolveAndReturnFrameStarter(fs []FrameStarterOption) FrameStarter {
+	_, cfg, logger := fh.resolveGlobalTools()
+
+	// 通过框架启动器创建位置点加载获取框架启动器对象
+	ms := ProviderLocationDefault().LocationFrameStarterCreate.GetManagers()
+	if len(ms) == 0 {
+		msg := "Location point:LocationFrameStarterCreate， no FrameStarterCreate provider manager found"
+		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
+		panic(errors.New(msg))
+	}
+	// 通过提供者加载回调函数(ProviderLoadFunc)参数注入框架启动器选项
+	anyStarter, err := ms[0].LoadProvider(func(manager IProviderManager) (any, error) {
+		return fs, nil
+	})
+	if err != nil {
+		msg := "FrameStarterCreate provider load failed"
+		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg(msg)
+		panic(errors.New(msg))
+	}
+	// 初始化框架启动器
+	frameStarter, ok := anyStarter.(FrameStarter)
+	if !ok {
+		msg := "loaded FrameStarterCreate provider is not FrameStarter type"
+		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
+		panic(errors.New(msg))
+	}
+
+	return frameStarter
+}
+
+// resolveAndReturnCoreStarter 创建并返回核心启动器
+func (fh *FiberHouse) resolveAndReturnCoreStarter(cs []CoreStarterOption) CoreStarter {
+	_, cfg, logger := fh.resolveGlobalTools()
+
+	// 通过核心启动器创建位置点加载获取核心启动器对象
+	ms := ProviderLocationDefault().LocationCoreStarterCreate.GetManagers()
 	if len(ms) == 0 {
 		msg := "Location point: LocationCoreStarterCreate, no CoreStarterCreate provider manager found"
 		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
@@ -391,7 +544,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	}
 	// 通过提供者加载回调函数(ProviderLoadFunc)参数注入核心启动器选项
 	anyCoreStarter, err := ms[0].LoadProvider(func(manager IProviderManager) (any, error) {
-		return fh.coreStarterOpts, nil
+		return cs, nil
 	})
 	if err != nil {
 		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg("CoreStarterCreate provider load failed")
@@ -404,100 +557,13 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
 		panic(errors.New(msg))
 	}
-
-	// 创建应用启动器
-	appStarter := &WebApplication{
-		FrameStarter: frameStarter,
-		CoreStarter:  coreStarter,
-	}
-
-	// 应用启动流程，保持执行顺序
-	appStarter.RegisterToCtx(appStarter)
-	// 注册全局应用对象执行位置点
-	appStarter.RegisterApplicationGlobals(ProviderLocationDefault().LocationGlobalInit.GetManagers()...)
-	// 初始化应用核心执行位置点&json编解码初始化位置点
-	engineInitManagers := ProviderLocationDefault().LocationCoreEngineInit.GetManagers()
-	engineCodecManagers := ProviderLocationDefault().LocationCoreCodecInit.GetManagers()
-	initCoreManagers := make([]IProviderManager, 0, len(engineInitManagers)+len(engineCodecManagers))
-	initCoreManagers = append(initCoreManagers, engineInitManagers...)
-	initCoreManagers = append(initCoreManagers, engineCodecManagers...)
-	appStarter.InitCoreApp(appStarter.GetFrameApp(), initCoreManagers...)
-	// 应用钩子函数注册执行位置点
-	appStarter.RegisterAppHooks(appStarter.GetFrameApp(), ProviderLocationDefault().LocationCoreHookInit.GetManagers()...)
-	// 应用中间件注册执行位置点
-	appStarter.RegisterAppMiddleware(appStarter.GetFrameApp(), ProviderLocationDefault().LocationAppMiddlewareInit.GetManagers()...)
-
-	// 模块初始化执行位置点，合并模块中间件初始化和路由注册位置点的管理器列表
-	moduleMS := ProviderLocationDefault().LocationModuleMiddlewareInit.GetManagers()
-	routeMS := ProviderLocationDefault().LocationRouteRegisterInit.GetManagers()
-	ms = make([]IProviderManager, 0, len(moduleMS)+len(routeMS))
-	ms = append(ms, moduleMS...)
-	ms = append(ms, routeMS...)
-	appStarter.RegisterModuleInitialize(appStarter.GetFrameApp(), ms...)
-
-	// Swagger模块初始化执行位置点
-	appStarter.RegisterModuleSwagger(appStarter.GetFrameApp(), ProviderLocationDefault().LocationModuleSwaggerInit.GetManagers()...)
-	// 异步任务服务器注册执行位置点
-	appStarter.RegisterTaskServer(ProviderLocationDefault().LocationTaskServerInit.GetManagers()...)
-	// 全局对象保活注册执行位置点
-	appStarter.RegisterGlobalsKeepalive(ProviderLocationDefault().LocationGlobalKeepaliveInit.GetManagers()...)
-
-	// 运行前执行位置点
-	runBeforeManagers := ProviderLocationDefault().LocationServerRunBefore.GetManagers()
-	if len(runBeforeManagers) > 0 {
-		for _, m := range runBeforeManagers {
-			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
-				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
-					return appStarter, nil // 向当前管理器加载提供者函数中注入当前执行位点的应用启动器实例
-				})
-				break
-			}
-		}
-	}
-
-	// 监听信号，优雅关闭应用
-	stopCh := make(chan os.Signal, 1)
-	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
-
-	// 应用核心运行时执行位置点
-	runManagers := ProviderLocationDefault().LocationServerRun.GetManagers()
-	shutdownBeforeManagers := ProviderLocationDefault().LocationServerShutdownBefore.GetManagers()
-	shutdownManagers := ProviderLocationDefault().LocationServerShutdown.GetManagers()
-	shutdownAfterManagers := ProviderLocationDefault().LocationServerShutdownAfter.GetManagers()
-	allShutdownManagers := make(
-		[]IProviderManager,
-		0,
-		len(shutdownBeforeManagers)+len(shutdownManagers)+len(shutdownAfterManagers),
-	)
-	allShutdownManagers = append(allShutdownManagers, shutdownBeforeManagers...)
-	allShutdownManagers = append(allShutdownManagers, shutdownManagers...)
-	allShutdownManagers = append(allShutdownManagers, shutdownAfterManagers...)
-
-	// select 监听中断信号和错误信号，等待程序优雅退出
-	runErr, shutdownErr, shutdownRequested := coordinateServerRun(
-		appStarter,
-		runManagers,
-		allShutdownManagers,
-		stopCh,
-	)
-
-	signal.Stop(stopCh)
-
-	if runErr != nil {
-		fmt.Printf("Application run server error: %v\n", runErr)
-	}
-	if shutdownRequested {
-		fmt.Printf("Application shutdown gracefully: %v\n", shutdownErr)
-	}
-
-	fmt.Println("Application RunServer exited")
+	return coreStarter
 }
 
 // resolveManagerWithProviders 收集提供者并注册到同类型组的管理器中，加載 providers 執行 initialize 初始化
 // 排除已绑定到特定位置点的管理器，这些管理器将在后续对应位置点被单独加载，不在此处解决
 func (fh *FiberHouse) resolveManagerWithProviders(manager ...IProviderManager) {
-	// 全局应用上下文
-	appContext := fh.AppCtx
+	appContext, cfg, logger := fh.resolveGlobalTools()
 
 	var defaultManager IProviderManager
 	if len(manager) == 0 {
@@ -517,7 +583,7 @@ func (fh *FiberHouse) resolveManagerWithProviders(manager ...IProviderManager) {
 				err := mgr.Register(pdr) // 注册子类提供者实例
 				if err != nil {
 					// 注册失败（如已注册同名提供者）记录日志即可，不影响匹配状态
-					appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
+					logger.Error(cfg.LogOriginFrame()).
 						Err(err).
 						Msgf("provider %s register failed", pdr.Type().GetTypeName())
 				}
@@ -535,7 +601,7 @@ func (fh *FiberHouse) resolveManagerWithProviders(manager ...IProviderManager) {
 		//err := pdr.RegisterTo(defaultManager)
 		err := defaultManager.Register(pdr)
 		if err != nil {
-			appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
+			logger.Error(cfg.LogOriginFrame()).
 				Err(err).
 				Msgf("provider %s register to default manager failed", pdr.Type().GetTypeName())
 		}
@@ -548,7 +614,7 @@ func (fh *FiberHouse) resolveManagerWithProviders(manager ...IProviderManager) {
 			if mgr.Location().GetLocationID() == ProviderLocationDefault().ZeroLocation.GetLocationID() {
 				_, err := mgr.LoadProvider()
 				if err != nil {
-					appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).Err(err).Msg("manager load provider failed")
+					logger.Error(cfg.LogOriginFrame()).Err(err).Msg("manager load provider failed")
 				}
 			}
 		}
@@ -558,7 +624,7 @@ func (fh *FiberHouse) resolveManagerWithProviders(manager ...IProviderManager) {
 	if len(defaultManager.List()) > 0 {
 		_, err := defaultManager.LoadProvider()
 		if err != nil {
-			appContext.GetLogger().Error(appContext.GetConfig().LogOriginFrame()).
+			logger.Error(cfg.LogOriginFrame()).
 				Err(err).
 				Msgf("default manager load provider failed")
 		}

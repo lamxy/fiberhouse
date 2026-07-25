@@ -10,12 +10,7 @@ func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, app gin.IRouter) 
 	registerExampleRoutes(app, exampleAPI)
 
 	commonAPI := NewCommonHandler(ctx)
-	commonGroup := app.Group("/gin/common")
-	{
-		commonGroup.GET("/test/get-instance", commonAPI.TestGetInstance)
-		commonGroup.GET("/test/get-must-instance", commonAPI.TestGetMustInstance)
-		commonGroup.GET("/test/get-must-instance-failed", commonAPI.TestGetMustInstanceFailed)
-	}
+	registerCommonRoutes(app, commonAPI)
 }
 
 func registerExampleRoutes(router gin.IRouter, handler *ExampleHandler) {
@@ -24,4 +19,13 @@ func registerExampleRoutes(router gin.IRouter, handler *ExampleHandler) {
 	router.GET("/examples", handler.List)
 	router.PUT("/examples/:id", handler.Update)
 	router.DELETE("/examples/:id", handler.Delete)
+}
+
+func registerCommonRoutes(router gin.IRouter, handler *CommonHandler) {
+	commonGroup := router.Group("/common")
+	{
+		commonGroup.GET("/test/get-instance", handler.TestGetInstance)
+		commonGroup.GET("/test/get-must-instance", handler.TestGetMustInstance)
+		commonGroup.GET("/test/get-must-instance-failed", handler.TestGetMustInstanceFailed)
+	}
 }

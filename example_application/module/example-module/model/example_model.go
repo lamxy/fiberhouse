@@ -76,8 +76,8 @@ func (c mongoCollection) DeleteOne(ctx context.Context, filter any, opts ...opti
 // context.Context——绝不能替换为自己的上下文（如 context.Background()），
 // 否则会悄然破坏请求的取消/超时/链路追踪传播。
 type ExampleModel struct {
-	dbmongo.MongoLocator
-	collection exampleCollection
+	dbmongo.MongoLocator // 继承 model 定位层接口
+	collection           exampleCollection
 }
 
 // NewExampleModel 构建一个 ExampleModel，绑定到从 ctx 解析出的、为 example
