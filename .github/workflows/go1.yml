@@ -121,7 +121,7 @@ jobs:
           echo $! > "$RUNNER_TEMP/${{ env.TARGET_NAME }}.pid"
 
       - name: Check HTTP path
-        run: curl --fail --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/example/hello/world
+        run: curl --fail --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/health/livez
 
       - name: Run live integration tests
         timeout-minutes: 2
