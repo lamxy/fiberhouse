@@ -48,12 +48,15 @@ type IProvider interface {
 	BindToUniqueManagerIfSingleton(IProviderManager) IProvider
 	// MountToParent 将当前提供者挂载到父级提供者中
 	MountToParent(son ...IProvider) IProvider
-	// SetAndReturnSucceededInitialized 设置并返回成功的初始化结果
-	SetAndReturnSucceededInitialized(any, error) (any, error)
-	// SetAndReturnFailedInitialized 设置并返回失败的初始化结果
-	SetAndReturnFailedInitialized(any, error) (any, error)
-	// ReturnDirectly 依据状态直接返回
-	ReturnDirectly() (any, error)
+	// ReturnAndSetSuccessInitialize 设置提供者状态并返回成功的初始化结果
+	// 用于子类重载 initialize 方法内调用
+	ReturnAndSetSuccessInitialize(any, error) (any, error)
+	// ReturnAndSetFailInitialize 设置提供者状态并返回失败的初始化结果
+	// 用于子类重载 initialize 方法内调用
+	ReturnAndSetFailInitialize(any, error) (any, error)
+	// ReturnInitialized 依据状态识别直接返回已缓存的初始化结果
+	// 用于子类重载 initialize 方法内调用
+	ReturnInitialized() (any, error)
 }
 
 // IProviderManager 提供者管理器接口

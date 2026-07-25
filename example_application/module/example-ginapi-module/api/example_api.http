@@ -1,0 +1,71 @@
+### example-ginapi-module (Gin) —— Example 资源 CRUD
+###
+### 供 VS Code REST Client / JetBrains HTTP Client 使用的手动 API 测试文件。
+### 与 Fiber 适配器（example-module/api/example_api.http）契约相同，由
+### register_api_router.go 中的 registerExampleRoutes 注册在应用根路径（无前缀）：
+###   POST   /examples
+###   GET    /examples/:id
+###   GET    /examples
+###   PUT    /examples/:id
+###   DELETE /examples/:id
+###
+### 响应信封（response.RespInfo）：{"code": int, "msg": string, "data": ...}
+### -> 新建资源的 id 位于 JSON 路径 `data.id`。
+###
+### X-language-flag 头选择校验错误的语言区域（moduleconstant.XLanguageFlag，
+### 经 ExampleHandler.language 读取）；缺省时默认为 "en"。
+###
+### 请自上而下运行：`create` 会填充 {{create.response.body.$.data.id}}，
+### 供下方的 Get/Update/Delete 请求复用。
+###
+### 注意：Fiber 与 Gin 适配器是同一应用的可替换核心引擎（启动时选择，按
+### example_config/application_dev.yml 两者都默认端口 8080）—— 一次运行一个
+### 适配器的服务。
+
+@baseUrl = http://localhost:8080
+@language = en
+
+### Create —— POST /examples
+# 从 CreateExampleReqVo 创建一个新的 example 资源（name 必填；
+# description/status/tags 可选）。返回 201，`data` 中为新建的 ExampleRespVo。
+# @name create
+POST {{baseUrl}}/examples
+Content-Type: application/json
+X-language-flag: {{language}}
+
+{
+  "name": "My Example",
+  "description": "A short description of the example.",
+  "status": "active",
+  "tags": ["demo", "swagger"]
+}
+
+### Get —— GET /examples/:id
+# 按 id 获取上面创建的 example。返回 200，`data` 中为 ExampleRespVo；
+# 若 id 不存在，返回 404。
+GET {{baseUrl}}/examples/{{create.response.body.$.data.id}}
+X-language-flag: {{language}}
+
+### List —— GET /examples
+# 分页列出 example，并可按 status 过滤，参数从 ListExamplesReqVo 查询参数
+#（page、page_size、status）绑定。返回 200，`data` 中为 ExampleListRespVo
+#（items/page/page_size/total）。
+GET {{baseUrl}}/examples?page=1&page_size=20&status=active
+X-language-flag: {{language}}
+
+### Update —— PUT /examples/:id
+# 使用 UpdateExampleReqVo 部分更新上面创建的 example（所有字段可选/指针——
+# 省略的字段保持不变）。返回 200，`data` 中为更新后的 ExampleRespVo。
+PUT {{baseUrl}}/examples/{{create.response.body.$.data.id}}
+Content-Type: application/json
+X-language-flag: {{language}}
+
+{
+  "status": "archived",
+  "tags": ["demo"]
+}
+
+### Delete —— DELETE /examples/:id
+# 删除上面创建的 example。成功返回 204 No Content；若 id 不存在，返回 404。
+DELETE {{baseUrl}}/examples/{{create.response.body.$.data.id}}
+X-language-flag: {{language}}

@@ -7,7 +7,6 @@
 package fiberhouse
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -46,7 +45,7 @@ func (m *CoreStarterPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, e
 	)
 
 	if coreStarterOpts, ok = anything.([]CoreStarterOption); !ok {
-		return nil, errors.New("load function must return []CoreStarterOption")
+		return nil, fmt.Errorf("manager '%s' LoadProvider load function must return []CoreStarterOption, got %T", m.Name(), anything)
 	}
 
 	bootCfg := m.GetContext().(IApplicationContext).GetBootConfig()
@@ -62,7 +61,7 @@ func (m *CoreStarterPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, e
 			})
 		}
 	}
-	return nil, errors.New("no matching core starter provider found")
+	return nil, fmt.Errorf("manager %s : no core starter provider found", m.Name())
 }
 
 // MountToParent 重载挂载到父级提供者管理器

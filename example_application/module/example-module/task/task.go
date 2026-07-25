@@ -1,33 +1,42 @@
+// Package task 定义 service 在 example 写操作成功后派发的异步通知契约，并构造
+// 承载它的 asynq 任务。配套的消费方位于 task/handler。
 package task
 
 import (
+	"errors"
+	"strings"
+
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
-	"time"
 )
 
-/*
-Task payload list 任务负载列表
-*/
+// TypeExampleChanged 是 example 写操作通知的 asynq 任务类型名，由
+// NewExampleChangedTask（生产方）与 handler.HandleExampleChangedTask（消费方）共享。
+const TypeExampleChanged = "example:changed"
 
-// PayloadExampleCreate 样例创建负载的数据
-type PayloadExampleCreate struct {
-	fiberhouse.PayloadBase // 继承基础负载结构体，自动具备获取json编解码器的方法
-	/**
-	负载的数据
-	*/
-	Age int8
+// ExampleChangedPayload 是规范的 example 写操作成功后发出的稳定传输契约。
+type ExampleChangedPayload struct {
+	ID        string `json:"id"`
+	Operation string `json:"operation"`
 }
 
-// NewExampleCreateTask 生成一个 ExampleCreate 任务，从调用处获取相关参数，并返回任务
-func NewExampleCreateTask(ctx fiberhouse.IContext, age int8) (*asynq.Task, error) {
-	vo := PayloadExampleCreate{
-		Age: age,
+// NewExampleChangedTask 校验 payload（ID 与 Operation 去除首尾空白后必须非空），
+// 并使用 ctx 配置的 JSON 处理器将其编码为一个 TypeExampleChanged 类型的
+// asynq.Task。
+func NewExampleChangedTask(ctx fiberhouse.IContext, payload ExampleChangedPayload) (*asynq.Task, error) {
+	payload.ID = strings.TrimSpace(payload.ID)
+	payload.Operation = strings.TrimSpace(payload.Operation)
+	if payload.ID == "" {
+		return nil, errors.New("example changed payload id is required")
 	}
-	// 获取json编解码器，将负载数据编码为json格式的字节切片
-	payload, err := vo.GetMustJsonHandler(ctx).Marshal(&vo)
+	if payload.Operation == "" {
+		return nil, errors.New("example changed payload operation is required")
+	}
+
+	codec := fiberhouse.NewPayloadBase().GetMustJsonHandler(ctx)
+	encoded, err := codec.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
-	return asynq.NewTask(TypeExampleCreate, payload, asynq.Retention(24*time.Hour), asynq.MaxRetry(3), asynq.ProcessIn(1*time.Minute)), nil
+	return asynq.NewTask(TypeExampleChanged, encoded), nil
 }

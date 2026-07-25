@@ -1,45 +1,45 @@
+// Package handler 消费由 example 模块 service 层生产的 asynq 任务
+// （见 task.NewExampleChangedTask）。就 example 领域而言，处理器是只读/观测性的：
+// 它们记录通知日志，绝不能对存储发起第二次写入。
 package handler
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"strings"
+
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
-	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/task"
-	"time"
 )
 
-// todo start monitor: podman run --rm --name asynqmon -p 8181:8181 --env "PORT=8181" --env "REDIS_ADDR=10.89.1.8:6379" --env "ENABLE_METRICS_EXPORTER=true" hibiken/asynqmon
-
-// HandleExampleCreateTask 样例任务创建处理器
-func HandleExampleCreateTask(ctx context.Context, t *asynq.Task) error {
-	// 从 context 中获取 appCtx 全局应用上下文，获取包括配置、日志、注册实例等组件
-	appCtx, _ := ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.IApplicationContext)
-
-	// 声明任务负载对象
-	var p task.PayloadExampleCreate
-
-	// 解析任务负载
-	if err := p.GetMustJsonHandler(appCtx).Unmarshal(t.Payload(), &p); err != nil {
-		appCtx.GetLogger().Error(appCtx.GetConfig().LogOriginWeb()).Str("From", "HandleStatisticsUserTradeCancelCountTask").Err(err).Msg("[Asynq]: Unmarshal error")
-		return err
+// HandleExampleChangedTask 消费写操作通知，不替换调用方的上下文，也不执行第二次
+// 写入。它只读取已存放在 ctx 上的 fiberhouse.IApplicationContext（通过
+// fiberhouse.ContextKeyAppCtx）——绝不构造或替换自己的上下文，因为 asynq 的
+// worker 上下文携带着处理器必须尊重的请求作用域值。
+func HandleExampleChangedTask(ctx context.Context, t *asynq.Task) error {
+	if t == nil {
+		return errors.New("example changed task is required")
 	}
 
-	// 获取处理任务的实例
-	instance, err := fiberhouse.GetInstance[*service.TestService](service.GetKeyTestService())
-	if err != nil {
+	var appCtx fiberhouse.IApplicationContext
+	if ctx != nil {
+		appCtx, _ = ctx.Value(fiberhouse.ContextKeyAppCtx).(fiberhouse.IApplicationContext)
+	}
+	var payload task.ExampleChangedPayload
+	if err := fiberhouse.NewPayloadBase().GetMustJsonHandler(appCtx).Unmarshal(t.Payload(), &payload); err != nil {
 		return err
 	}
-
-	// 将负参数传入实例的处理函数
-	result, err := instance.DoAgeDoubleCreateForTaskHandle(p.Age)
-	if err != nil {
-		return err
+	payload.ID = strings.TrimSpace(payload.ID)
+	payload.Operation = strings.TrimSpace(payload.Operation)
+	if payload.ID == "" || payload.Operation == "" {
+		return errors.New("invalid example changed payload")
 	}
-
-	// 记录结果
-	fmt.Println("======> Task: ", t.Type(), "result: ", result, "time: ", time.Now())
-	appCtx.GetLogger().InfoWith(appCtx.GetConfig().LogOriginTask()).Msgf("HandleExampleCountTask 执行成功，结果 Age double: %d", result)
+	if appCtx != nil {
+		appCtx.GetLogger().InfoWith(appCtx.GetConfig().LogOriginTask()).
+			Str("example_id", payload.ID).
+			Str("operation", payload.Operation).
+			Msg("example change observed")
+	}
 	return nil
 }

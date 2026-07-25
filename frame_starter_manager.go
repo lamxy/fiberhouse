@@ -1,8 +1,8 @@
 package fiberhouse
 
 import (
-	"errors"
 	"fmt"
+
 	"github.com/lamxy/fiberhouse/constant"
 )
 
@@ -27,8 +27,9 @@ func NewFrameDefaultPManager(appCtx IApplicationContext) *FrameDefaultPManager {
 func (m *FrameDefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
 	m.Check()
 	if len(loadFunc) == 0 {
-		return nil, errors.New("load function is required")
+		return nil, fmt.Errorf("manager '%s' LoadProvider param loadFunc is empty", m.Name())
 	}
+
 	anything, err := loadFunc[0](m)
 	if err != nil {
 		return nil, err
@@ -40,7 +41,7 @@ func (m *FrameDefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, 
 	)
 
 	if frameStarterOpts, ok = anything.([]FrameStarterOption); !ok {
-		return nil, errors.New("load function must return []FrameStarterOption")
+		return nil, fmt.Errorf("manager '%s' LoadProvider load function must return []FrameStarterOption, got %T", m.Name(), anything)
 	}
 
 	bootCfg := m.GetContext().(IApplicationContext).GetBootConfig()
@@ -56,7 +57,7 @@ func (m *FrameDefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, 
 			})
 		}
 	}
-	return nil, fmt.Errorf("no matching frame starter's target '%s' provider found", defaultFrame)
+	return nil, fmt.Errorf("manager '%s': no matching frame starter's target '%s' provider found", m.Name(), defaultFrame)
 }
 
 // MountToParent 重载挂载到父级提供者管理器

@@ -7,5 +7,5 @@ var (
 )
 
 func GetExampleModelWireSet() wire.ProviderSet {
-	return wire.NewSet(NewExampleModel)
+	return ExampleModelWireSet
 }

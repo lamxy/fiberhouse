@@ -2,6 +2,7 @@ package apphook
 
 import (
 	"fmt"
+
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/constant"
 )
@@ -41,8 +42,6 @@ func (p *FiberAppHookProvider) Initialize(ctx fiberhouse.IContext, initFunc ...f
 	}
 
 	RegisterFiberAppCoreHook(ctx.(fiberhouse.IApplicationContext), cs)
-
-	p.SetStatus(fiberhouse.StateLoaded)
 
 	return nil, nil
 }

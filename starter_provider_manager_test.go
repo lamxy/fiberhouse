@@ -153,7 +153,7 @@ func TestFrameDefaultProvider_ValidatesCallbackAndBuildsFrame(t *testing.T) {
 	assert.Equal(t, constant.FrameTypeWithDefaultFrameStarter, provider.Target())
 
 	_, err := provider.Initialize(ctx)
-	assert.ErrorContains(t, err, "no initFunc")
+	assert.ErrorContains(t, err, "invalid initFunc")
 
 	provider = NewFrameDefaultProvider()
 	sentinel := errors.New("frame options failed")
@@ -181,7 +181,7 @@ func TestStarterManagers_ValidatePayloadSelectTargetAndReportMissing(t *testing.
 		ctx.GetBootConfig().FrameType = "custom-frame"
 		manager := NewFrameDefaultPManager(ctx)
 		_, err := manager.LoadProvider()
-		assert.ErrorContains(t, err, "load function is required")
+		assert.ErrorContains(t, err, "loadFunc is empty")
 		_, err = manager.LoadProvider(func(IProviderManager) (any, error) { return "wrong", nil })
 		assert.ErrorContains(t, err, "[]FrameStarterOption")
 		sentinel := errors.New("frame load failed")
@@ -221,7 +221,7 @@ func TestStarterManagers_ValidatePayloadSelectTargetAndReportMissing(t *testing.
 		_, err = manager.LoadProvider(func(IProviderManager) (any, error) {
 			return []CoreStarterOption{}, nil
 		})
-		assert.ErrorContains(t, err, "no matching core starter")
+		assert.ErrorContains(t, err, "no core starter provider found")
 
 		provider := newTask2Provider("fiber-provider", "fiber", ProviderTypeDefault().GroupCoreStarterChoose)
 		provider.result = "core-result"

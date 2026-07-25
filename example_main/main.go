@@ -3,11 +3,11 @@ package main
 import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/constant"
+	_ "github.com/lamxy/fiberhouse/example_application/docs" // swagger docs
 	"github.com/lamxy/fiberhouse/example_application/providers/apphook"
 	"github.com/lamxy/fiberhouse/example_application/providers/middleware"
 	"github.com/lamxy/fiberhouse/example_application/providers/module"
 	"github.com/lamxy/fiberhouse/example_application/providers/optioninit"
-	_ "github.com/lamxy/fiberhouse/example_main/docs" // swagger docs
 )
 
 // Version 版本信息，通过编译时 ldflags 注入
@@ -58,7 +58,7 @@ func main() {
 		AppName:                     "Default FiberHouse Application",          // 应用名称
 		Version:                     Version,                                   // 应用版本
 		FrameType:                   constant.FrameTypeWithDefaultFrameStarter, // 默认提供的框架启动器标识: DefaultFrameStarter
-		CoreType:                    constant.CoreTypeWithGin,                  // fiber | gin | ... // 如果需要切换核心框架，只需修改此处；如果框架支持设置编译标签，编译时指定了核心，那么此处必须跟标签核心一致
+		CoreType:                    constant.CoreTypeWithFiber,                // fiber | gin | ... // 如果需要切换核心框架，只需修改此处；如果框架支持设置编译标签，编译时指定了核心，那么此处必须跟标签核心一致
 		TrafficCodec:                constant.TrafficCodecWithSonic,            // 传输流量的编解码器: sonic_json_codec|std_json_codec|go_json_codec|pb...
 		EnableBinaryProtocolSupport: true,                                      // 是否启用二进制协议支持，如Protobuf等
 		ConfigPath:                  "./example_config",                        // 应用全局配置路径

@@ -24,12 +24,11 @@ func NewJsonJCodecGinProvider() *JsonJCodecGinProvider {
 
 // Initialize 重载初始化 JSON 编解码提供者
 func (j *JsonJCodecGinProvider) Initialize(ctx IContext, fn ...ProviderInitFunc) (any, error) {
-	j.Check()
 	if j.Status() == StateLoaded {
 		return j.jcodec, nil
 	}
 	jcodec := jsoncodec.StdJsonDefault()
 	ginJson.API = jcodec
 	j.jcodec = jcodec
-	return j.SetAndReturnSucceededInitialized(jcodec, nil)
+	return j.jcodec, nil
 }

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/constant"
 )
@@ -26,8 +27,6 @@ func NewFiberAppMiddlewareProvider() *FiberAppMiddlewareProvider {
 
 // Initialize 初始化应用级中间件
 func (p *FiberAppMiddlewareProvider) Initialize(ctx fiberhouse.IContext, initFunc ...fiberhouse.ProviderInitFunc) (any, error) {
-	p.Check()
-
 	if len(initFunc) == 0 {
 		return nil, fmt.Errorf("Provider '%s': initFunc must not be empty", p.Name())
 	}
@@ -47,9 +46,6 @@ func (p *FiberAppMiddlewareProvider) Initialize(ctx fiberhouse.IContext, initFun
 
 	// 注册应用全局中间件
 	RegisterAppMiddleware(ctx.(fiberhouse.IApplicationContext), cs)
-
-	// 设置提供者状态为已加载
-	p.SetStatus(fiberhouse.StateLoaded)
 
 	return nil, nil
 }

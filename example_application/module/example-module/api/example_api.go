@@ -1,255 +1,224 @@
+// Package api 是 example 模块的传输层：暴露 HTTP 处理器，负责解析并校验请求、
+// 将请求转换为服务调用，并把服务层错误映射为 HTTP 响应。它依赖 service
+// （并通过 transport 间接依赖 repository），但不得越过 service 层直接触达
+// repository 或 model。
 package api
 
 import (
 	"errors"
-	"fmt"
-	"strconv"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/lamxy/fiberhouse"
 	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
 	"github.com/lamxy/fiberhouse/example_application/apivo/example/requestvo"
-	"github.com/lamxy/fiberhouse/example_application/apivo/example/responsevo"
-	"github.com/lamxy/fiberhouse/example_application/module/constant"
+	moduleconstant "github.com/lamxy/fiberhouse/example_application/module/constant"
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/service"
+	"github.com/lamxy/fiberhouse/example_application/module/example-module/transport"
+	"github.com/lamxy/fiberhouse/response"
 )
 
-// ExampleHandler 示例处理器，继承自 fiberhouse.ApiLocator，具备获取上下文、配置、日志、注册实例等功能
+// ExampleHandler 是 example 资源的 Fiber 传输层。它只负责解析/校验请求，
+// 并将全部业务逻辑委托给 UseCase。
 type ExampleHandler struct {
-	fiberhouse.ApiLocator
-	Service        *service.ExampleService // 直接定义依赖的组件指针类型成员变量，由wire注入，无需注册到全局管理器
-	KeyTestService string                  // 定义依赖组件的全局管理器的实例key。通过key即可由 h.GetInstance(key) 方法获取实例，或由 fiberhouse.GetMustInstance[T](key) 泛型方法获取实例，无需wire或其他依赖注入工具
+	fiberhouse.ApiLocator // 继承 api 定位层接口
+	UseCase               service.ExampleUseCase
 }
 
-func NewExampleHandler(ctx fiberhouse.IApplicationContext, es *service.ExampleService) *ExampleHandler {
+// NewExampleHandler 构建一个绑定到指定应用上下文与用例的 ExampleHandler，
+// 并以 GetKeyExampleHandler 作为键进行注册。
+func NewExampleHandler(ctx fiberhouse.IApplicationContext, useCase service.ExampleUseCase) *ExampleHandler {
 	return &ExampleHandler{
-		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyExampleHandler()),
-		Service:        es,
-		KeyTestService: service.RegisterKeyTestService(ctx), // 注册依赖的测试服务实例初始化器并返回注册实例key，通过 h.GetInstance(key) 方法获取实例
+		ApiLocator: fiberhouse.NewApi(ctx).SetName(GetKeyExampleHandler()),
+		UseCase:    useCase,
 	}
 }
 
-/**
-// namespace前缀规则:
-// 1. 命名空间作为注册实例key前缀的一部分，起于模块（子系统）名字路径，表明对象属于其所在的模块（子系统），如"common-module."，表示common-module的模块名（子系统名），模块内地目录继续用"."拼接;
-// 2. 比如：模块内model目录下的ExampleModel对象要注册进全局管理器，最终组合的key名称为: example-module.model.ExampleModel;
-
-// 注意：
-// 1. 框架提供的 fiberhouse.RegisterKeyName() 方法会自动帮你组合命名空间前缀和组件名称，生成完整的注册key名称；其中fiberhouse.GetNamespace()方法会帮你组合命名空间前缀部分，接受一个名字空间的切片，内部自动
-// 按"."拼接名字空间后作为默认值，但当参数"ns"存在值时，由ns作为的命名空间前缀。
-// 2. 组件注册到全局管理器的key名称，应符合标识符命名规范，注册名需要保证唯一，否则会注册失败。
-*/
-
-// GetKeyExampleHandler 定义和获取 ExampleHandler 注册到全局管理器的实例key
+// GetKeyExampleHandler 返回用于定位 ExampleHandler 实例的注册键，
+// 可通过 ns 追加命名空间。
 func GetKeyExampleHandler(ns ...string) string {
-	return fiberhouse.RegisterKeyName("ExampleHandler", fiberhouse.GetNamespace([]string{constant.NameModuleExample}, ns...)...)
+	return fiberhouse.RegisterKeyName("ExampleHandler", fiberhouse.GetNamespace([]string{moduleconstant.NameModuleExample}, ns...)...)
 }
 
-// HelloWorld 测试接口，通过 h.GetInstance(key) 方法获取TestService注册实例，无需编译阶段的wire依赖注入
-func (h *ExampleHandler) HelloWorld(c *fiber.Ctx) error {
-	// 通过Key即时获取注册在全局管理器的TestService实例单例
-	ts, err := h.GetInstance(h.KeyTestService)
-
-	if err != nil {
-		return err
-	}
-
-	// 获取TestService服务实例
-	if tss, ok := ts.(*service.TestService); ok {
-		// 成功的响应
-		return fiberhouse.Response().SuccessWithData(tss.HelloWorld()).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
-	}
-
-	// 类型断言失败响应
-	return fmt.Errorf("type assert failed for TestService: %v", ts)
-}
-
-/**
-CURD test Api & Dispatcher Task
-*/
-
-// GetExample godoc
-//
-//	@Summary		get A Example
-//	@Description	get Example Object by ID
-//	@Tags			example
-//	@Accept			json
-//	@Produce		json
-//	@Param			id	path		string	true	"Example ID"
-//	@Success		200	{object}	response.RespInfo
-//	@Failure		400	{object}	response.RespInfo
-//	@Failure		404	{object}	response.RespInfo
-//	@Failure		500	{object}	response.RespInfo
-//	@Router			/example/get/{id} [get]
-func (h *ExampleHandler) GetExample(c *fiber.Ctx) error {
-	// 获取语言
-	var lang = c.Get(constant.XLanguageFlag, "en")
-
-	id := c.Params("id")
-
-	// 构造需要验证的结构体
-	var objId = &requestvo.ObjId{
-		ID: id,
-	}
-	// 获取验证包装器对象
+// validate 使用请求语言对 value 执行结构体校验，以返回本地化的错误信息。
+func (h *ExampleHandler) validate(value interface{}, lang string) error {
 	vw := h.GetContext().GetValidateWrap()
-
-	// 获取指定语言的验证器，并对结构体进行验证
-	if errVw := vw.GetValidate(lang).Struct(objId); errVw != nil {
-		var errs validator.ValidationErrors
-		if errors.As(errVw, &errs) {
-			return vw.Errors(errs, lang, true)
+	if err := vw.GetValidate(lang).Struct(value); err != nil {
+		var validationErrors validator.ValidationErrors
+		if errors.As(err, &validationErrors) {
+			return vw.Errors(validationErrors, lang, true)
 		}
-	}
-
-	// 从服务层获取数据
-	resp, err := h.Service.GetExample(id)
-	if err != nil {
 		return err
 	}
-
-	// 返回成功响应
-	//return response.SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)  // json协议 响应
-	//return response.GetRespInfoMsgPack().SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK) // msgpack 协议响应
-	return fiberhouse.Response().SuccessWithData(resp).SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK) // 自动处理响应
+	return nil
 }
 
-// GetExampleWithTaskDispatcher godoc
-//
-//	@Summary		get A Example with Dispatcher Task
-//	@Description	get Example Object by ID, on Dispatcher a task to do something
-//	@Tags			example
-//	@Accept			json
-//	@Produce		json
-//	@Param			id	path		string	true	"Example ID"
-//	@Success		200	{object}	response.RespInfo
-//	@Failure		400	{object}	response.RespInfo
-//	@Failure		404	{object}	response.RespInfo
-//	@Failure		500	{object}	response.RespInfo
-//	@Router			/example/on-async-task/get/{id} [get]
-func (h *ExampleHandler) GetExampleWithTaskDispatcher(c *fiber.Ctx) error {
-	// 获取语言
-	var lang = c.Get(constant.XLanguageFlag, "en")
-
-	id := c.Params("id")
-
-	// 构造需要验证的结构体
-	var objId = &requestvo.ObjId{
-		ID: id,
-	}
-	// 获取验证包装器对象
-	vw := h.GetContext().GetValidateWrap()
-
-	// 获取指定语言的验证器，并对结构体进行验证
-	if errVw := vw.GetValidate(lang).Struct(objId); errVw != nil {
-		var errs validator.ValidationErrors
-		if errors.As(errVw, &errs) {
-			return vw.Errors(errs, lang, true)
-		}
-	}
-
-	// 从服务层获取数据
-	resp, err := h.Service.GetExampleWithTaskDispatcher(id)
-	if err != nil {
-		return err
-	}
-
-	// 返回成功响应
-	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(adaptorctx.WithFiberContext(c))
+// validateID 按照 requestvo.ObjId 的规则校验路径/查询中的 id 参数。
+func (h *ExampleHandler) validateID(id, lang string) error {
+	return h.validate(&requestvo.ObjId{ID: id}, lang)
 }
 
-// CreateExample godoc
+// Create 处理创建新 example 资源的 POST 请求。
 //
-//	@Summary		create A Example
-//	@Description	create a new Example Object
-//	@Tags			example
-//	@Accept			json
-//	@Produce		json
-//	@Param			example	body		requestvo.ExampleReqVo	true	"Example Request"
-//	@Success		200		{object}	response.RespInfo
-//	@Failure		400		{object}	response.RespInfo
-//	@Failure		422		{object}	response.RespInfo
-//	@Failure		500		{object}	response.RespInfo
-//	@Router			/create [post]
-func (h *ExampleHandler) CreateExample(c *fiber.Ctx) error {
-	var req requestvo.ExampleReqVo
+// @Summary      创建 example
+// @Description  使用 name、description、status 和 tags 创建一个新的 example 资源。
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        example  body      requestvo.CreateExampleReqVo  true  "待创建的 example"
+// @Success      201      {object}  response.RespInfo{data=responsevo.ExampleRespVo}
+// @Failure      400      {object}  response.RespInfo  "输入非法 / 校验错误"
+// @Failure      500      {object}  response.RespInfo  "内部错误"
+// @Router       /examples [post]
+// @ID           fiberCreateExample
+func (h *ExampleHandler) Create(c *fiber.Ctx) error {
+	var req requestvo.CreateExampleReqVo
 	if err := c.BodyParser(&req); err != nil {
 		return err
 	}
-	// 获取验证包装器对象
-	vw := h.GetContext().GetValidateWrap()
-
-	// 获取指定语言的验证器，并对结构体进行验证
-	var lang = c.Get(constant.XLanguageFlag, "en")
-
-	if errVw := vw.GetValidate(lang).Struct(&req); errVw != nil {
-		var errs validator.ValidationErrors
-		if errors.As(errVw, &errs) {
-			return vw.Errors(errs, lang, true)
-		}
-	}
-
-	// 从服务层获取数据
-	id, err := h.Service.CreateExample(&req)
-	if err != nil {
+	lang := c.Get(moduleconstant.XLanguageFlag, "en")
+	if err := h.validate(&req, lang); err != nil {
 		return err
 	}
-
-	resp := &responsevo.ExampleIdRespVo{
-		ID: id,
+	resp, err := h.UseCase.Create(c.UserContext(), req)
+	if err != nil {
+		return transport.MapDomainError(err)
 	}
-
-	// 返回成功响应
-	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(adaptorctx.WithFiberContext(c))
+	// fiberhouse.Response() 是一个响应构建器，提供了链式调用的方式来构建响应
+	// SendWithCtx() 对系统支持的协议自动识别和响应。
+	// 其他协议的响应，也可以直接调用 fiberhouse.RespProto().xxx 、 fiberhouse.RespMsgpack().xxx
+	return fiberhouse.Response().
+		SuccessWithData(resp).
+		SendWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusCreated)
 }
 
-// GetExamples godoc
+// Get 处理按 id 获取单个 example 资源的 GET 请求。
 //
-//	@Summary		get Examples with pagination
-//	@Description	get paginated list of Example objects
-//	@Tags			example
-//	@Accept			json
-//	@Produce		json
-//	@Param			p	query		int	false	"Page number"	default(1)	minimum(1)
-//	@Param			s	query		int	false	"Page size"		default(10)	minimum(1)	maximum(20)
-//	@Success		200	{object}	response.RespInfo
-//	@Failure		400	{object}	response.RespInfo
-//	@Failure		422	{object}	response.RespInfo
-//	@Failure		500	{object}	response.RespInfo
-//	@Router			/list [get]
-func (h *ExampleHandler) GetExamples(c *fiber.Ctx) error {
-	p, s := c.Query("p", "1"), c.Query("s", "10")
-
-	page, _ := strconv.Atoi(p)
-	size, _ := strconv.Atoi(s)
-
-	// 获取验证包装器对象
-	var lang = c.Get(constant.XLanguageFlag, "en")
-	vw := h.GetContext().GetValidateWrap()
-
-	// 动态组合要验证的参数
-	vaMap := fiber.Map{
-		"Page": page,
-		"Size": size,
-	}
-	// 动态组合验证规则
-	vaRule := fiber.Map{
-		"Page": "required,min=1",
-		"Size": "required,min=1,max=20",
-	}
-
-	// 获取指定语言的验证器，验证map参数的动态规则
-	if errsMap := vw.GetValidate(lang).ValidateMap(vaMap, vaRule); len(errsMap) > 0 {
-		return vw.ErrorsMap(errsMap, lang, true)
-	}
-
-	// 从服务层获取数据
-	resp, err := h.Service.GetExamples(page, size)
-	if err != nil {
+// @Summary      获取 example
+// @Description  按 id 获取单个 example 资源。
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "example id"
+// @Success      200  {object}  response.RespInfo{data=responsevo.ExampleRespVo}
+// @Failure      400  {object}  response.RespInfo  "id 非法"
+// @Failure      404  {object}  response.RespInfo  "example 不存在"
+// @Failure      500  {object}  response.RespInfo  "内部错误"
+// @Router       /examples/{id} [get]
+// @ID           fiberGetExample
+func (h *ExampleHandler) Get(c *fiber.Ctx) error {
+	id := c.Params("id")
+	lang := c.Get(moduleconstant.XLanguageFlag, "en")
+	if err := h.validateID(id, lang); err != nil {
 		return err
 	}
+	resp, err := h.UseCase.Get(c.UserContext(), id)
+	if err != nil {
+		return transport.MapDomainError(err)
+	}
+	// JsonWithCtx() json 响应
+	return fiberhouse.Response().
+		SuccessWithData(resp).
+		JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
+}
 
-	// 返回成功响应
-	return fiberhouse.Response().SuccessWithData(resp).JsonWithCtx(adaptorctx.WithFiberContext(c))
+// List 处理对 example 资源进行分页查询的 GET 请求。
+//
+// @Summary      查询 example 列表
+// @Description  分页查询 example 资源，可按 status 过滤。
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        page       query     int     false  "页码（默认 1）"
+// @Param        page_size  query     int     false  "每页数量，最大 100（默认 20）"
+// @Param        status     query     string  false  "按状态过滤"  Enums(active, archived)
+// @Success      200        {object}  response.RespInfo{data=responsevo.ExampleListRespVo}
+// @Failure      400        {object}  response.RespInfo  "查询参数非法"
+// @Failure      500        {object}  response.RespInfo  "内部错误"
+// @Router       /examples [get]
+// @ID           fiberListExamples
+func (h *ExampleHandler) List(c *fiber.Ctx) error {
+	var req requestvo.ListExamplesReqVo
+	if err := c.QueryParser(&req); err != nil {
+		return err
+	}
+	lang := c.Get(moduleconstant.XLanguageFlag, "en")
+	if err := h.validate(&req, lang); err != nil {
+		return err
+	}
+	resp, err := h.UseCase.List(c.UserContext(), req)
+	if err != nil {
+		return transport.MapDomainError(err)
+	}
+	// JsonWithCtx() json 响应
+	return fiberhouse.Response().
+		SuccessWithData(resp).
+		JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
+}
+
+// Update 处理按 id 部分更新 example 资源的 PATCH/PUT 请求。
+// 仅更新请求体中出现的字段。
+//
+// @Summary      更新 example
+// @Description  按 id 部分更新 example 资源，仅更新请求体中出现的字段。
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                         true  "example id"
+// @Param        example  body      requestvo.UpdateExampleReqVo   true  "待更新的字段"
+// @Success      200      {object}  response.RespInfo{data=responsevo.ExampleRespVo}
+// @Failure      400      {object}  response.RespInfo  "输入非法 / 校验错误"
+// @Failure      404      {object}  response.RespInfo  "example 不存在"
+// @Failure      409      {object}  response.RespInfo  "更新冲突或内容未变化"
+// @Failure      500      {object}  response.RespInfo  "内部错误"
+// @Router       /examples/{id} [put]
+// @ID           fiberUpdateExample
+func (h *ExampleHandler) Update(c *fiber.Ctx) error {
+	var req requestvo.UpdateExampleReqVo
+	if err := c.BodyParser(&req); err != nil {
+		return err
+	}
+	id := c.Params("id")
+	lang := c.Get(moduleconstant.XLanguageFlag, "en")
+	if err := h.validate(&req, lang); err != nil {
+		return err
+	}
+	if err := h.validateID(id, lang); err != nil {
+		return err
+	}
+	resp, err := h.UseCase.Update(c.UserContext(), id, req)
+	if err != nil {
+		return transport.MapDomainError(err)
+	}
+	// JsonWithCtx() json 响应
+	return fiberhouse.Response().
+		SuccessWithData(resp).
+		JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
+}
+
+// Delete 处理按 id 删除 example 资源的 DELETE 请求。
+//
+// @Summary      删除 example
+// @Description  按 id 删除 example 资源。
+// @Tags         example
+// @Accept       json
+// @Produce      json
+// @Param        id   path  string  true  "example id"
+// @Success      204  "无内容"
+// @Failure      400  {object}  response.RespInfo  "id 非法"
+// @Failure      404  {object}  response.RespInfo  "example 不存在"
+// @Failure      500  {object}  response.RespInfo  "内部错误"
+// @Router       /examples/{id} [delete]
+// @ID           fiberDeleteExample
+func (h *ExampleHandler) Delete(c *fiber.Ctx) error {
+	id := c.Params("id")
+	lang := c.Get(moduleconstant.XLanguageFlag, "en")
+	if err := h.validateID(id, lang); err != nil {
+		return err
+	}
+	if err := h.UseCase.Delete(c.UserContext(), id); err != nil {
+		return transport.MapDomainError(err)
+	}
+	// 直接使用 response 包进行响应，默认仅支持 json 协议进行响应
+	return response.SuccessWithData().JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusNoContent)
 }

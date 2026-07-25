@@ -34,10 +34,7 @@ func NewFiberRecoveryProvider() *FiberRecoveryProvider {
 
 // Initialize 重载fiber提供者初始化方法
 func (p *FiberRecoveryProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	if !p.Check() {
-		return p.ReturnDirectly()
-	}
-	return p.SetAndReturnSucceededInitialized(NewFiberRecovery(ctx.(IApplicationContext)), nil)
+	return NewFiberRecovery(ctx.(IApplicationContext)), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -61,10 +58,7 @@ func NewGinRecoveryProvider() *GinRecoveryProvider {
 
 // Initialize 重载gin提供者初始化方法
 func (p *GinRecoveryProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	if !p.Check() {
-		return p.ReturnDirectly()
-	}
-	return p.SetAndReturnSucceededInitialized(NewGinRecovery(ctx.(IApplicationContext)), nil)
+	return NewGinRecovery(ctx.(IApplicationContext)), nil
 }
 
 // PManager-----------------------------------------------------------------------------------

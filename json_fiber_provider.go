@@ -23,7 +23,6 @@ func NewJsonJCodecFiberProvider() *JsonJCodecFiberProvider {
 
 // Initialize 重载初始化 JSON 编解码提供者
 func (j *JsonJCodecFiberProvider) Initialize(ctx IContext, fn ...ProviderInitFunc) (any, error) {
-	j.Check()
 	if j.Status() == StateLoaded {
 		return j.jcodec, nil
 	}
@@ -31,5 +30,5 @@ func (j *JsonJCodecFiberProvider) Initialize(ctx IContext, fn ...ProviderInitFun
 	jcodec := jsoncodec.StdJsonDefault()
 
 	j.jcodec = jcodec
-	return j.SetAndReturnSucceededInitialized(jcodec, nil)
+	return j.jcodec, nil
 }

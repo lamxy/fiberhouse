@@ -54,7 +54,7 @@ func NewLevel2Cache(appCtx fiberhouse.IContext, local cache.Cache, remote cache.
 	)
 
 	if err != nil {
-		appCtx.GetLogger().Fatal(appCtx.GetConfig().LogOriginCache()).
+		appCtx.GetLogger().Error(appCtx.GetConfig().LogOriginCache()).
 			Err(err).
 			Msg("NewLevel2Cache create local goroutine pool error")
 		return nil
@@ -78,7 +78,7 @@ func NewLevel2Cache(appCtx fiberhouse.IContext, local cache.Cache, remote cache.
 
 	if err != nil {
 		localPool.Release()
-		appCtx.GetLogger().Fatal(appCtx.GetConfig().LogOriginCache()).
+		appCtx.GetLogger().Error(appCtx.GetConfig().LogOriginCache()).
 			Err(err).
 			Msg("NewLevel2Cache create remote goroutine pool error")
 		return nil

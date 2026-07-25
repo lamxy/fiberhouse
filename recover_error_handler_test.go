@@ -16,6 +16,7 @@ import (
 	"github.com/lamxy/fiberhouse/exception"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valyala/fasthttp"
 )
 
 type task5RecoverManager struct {
@@ -231,6 +232,83 @@ func TestErrorHandler_RejectsMissingOrInvalidRecoveryManager(t *testing.T) {
 	assert.PanicsWithValue(t, "Recovery: loaded recover provider does not implement IRecover", func() {
 		invalid.RecoverMiddleware()
 	})
+}
+
+// task6NilProviderRecoverManager simulates a custom IProviderManager whose
+// LoadProvider returns (nil, nil) — a currently-unreachable-by-default but
+// legally implementable case per the IProviderManager contract.
+type task6NilProviderRecoverManager struct {
+	IProviderManager
+}
+
+func (m *task6NilProviderRecoverManager) LoadProvider(...ProviderLoadFunc) (any, error) {
+	return nil, nil
+}
+
+// TestErrorHandler_GetParamsJson_NilRoute_DoesNotPanic reproduces the crash
+// described in fix-recover-brief.md: a *fiber.Ctx reaching the error handler
+// without having matched a route (c.route == nil), as happens on the
+// fasthttp error path (e.g. swagger-internal requests) which is NOT wrapped
+// by recover middleware. FiberRecovery.GetParamsJson must not panic in this
+// case. We reproduce a true nil-route ctx by acquiring one directly from a
+// fiber.App via AcquireCtx, bypassing routing entirely, so c.route is never
+// set (matching the router.go code path where c.route is only assigned once
+// a route match succeeds).
+func TestErrorHandler_GetParamsJson_NilRoute_DoesNotPanic(t *testing.T) {
+	ctx := newTask5AppContext(t, false, false)
+	recovery := NewFiberRecovery(ctx)
+
+	app := fiber.New()
+	fctx := &fasthttp.RequestCtx{}
+	fctx.Request.SetRequestURI("/no-route-matched")
+	fctx.Request.Header.SetMethod(http.MethodGet)
+
+	c := app.AcquireCtx(fctx)
+	defer app.ReleaseCtx(c)
+
+	wrapped := adaptorctx.WithFiberContext(c)
+	defer func() {
+		if r, ok := wrapped.(*adaptorctx.FiberContext); ok {
+			r.Release()
+		}
+	}()
+
+	assert.NotPanics(t, func() {
+		result := recovery.GetParamsJson(wrapped, ctx.GetLogger(), json.Marshal, "trace")
+		assert.True(t, result == nil || json.Valid(result))
+	})
+}
+
+// TestErrorHandler_DefaultStackTraceHandler_NilProvider_DoesNotPanic
+// reproduces the latent defect described in fix-recover-brief.md: a custom
+// recover manager whose LoadProvider returns (nil, nil) leaves `recovery`
+// as a nil IRecover interface, which currently falls through the
+// `if lp != nil {...}` guard and panics at recovery.GetHeader(...).
+func TestErrorHandler_DefaultStackTraceHandler_NilProvider_DoesNotPanic(t *testing.T) {
+	ctx := newTask5AppContext(t, false, false)
+	installTask5ResponseManager(t, ctx)
+	installTask5Exceptions(t, ctx)
+
+	handler := &ErrorHandler{
+		AppCtx: ctx,
+		recoverManager: &task6NilProviderRecoverManager{
+			IProviderManager: NewProviderManager(ctx),
+		},
+	}
+
+	app := fiber.New()
+	app.Get("/panic-nil-provider", func(c *fiber.Ctx) error {
+		wrapped := adaptorctx.WithFiberContext(c)
+		defer wrapped.(*adaptorctx.FiberContext).Release()
+		assert.NotPanics(t, func() {
+			handler.DefaultStackTraceHandler(wrapped, errors.New("boom"))
+		})
+		return c.SendStatus(http.StatusNoContent)
+	})
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/panic-nil-provider", nil))
+	require.NoError(t, err)
+	response.Body.Close()
+	assert.Equal(t, http.StatusNoContent, response.StatusCode)
 }
 
 var _ adaptorctx.ICoreContext = (*task5WrongCoreContext)(nil)

@@ -156,11 +156,13 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 		logger.Error(cfg.LogOriginRecover()).Err(err).Msg("DefaultStackTraceHandler load logger provider from recover manager failed")
 		return
 	}
-	if lp != nil {
-		if recovery, ok = lp.(IRecover); !ok {
-			logger.Error(cfg.LogOriginRecover()).Msg("DefaultStackTraceHandler logger provider from recover manager type assert to IRecover failed")
-			return
-		}
+	if lp == nil {
+		logger.Error(cfg.LogOriginRecover()).Msg("DefaultStackTraceHandler: recover provider is nil")
+		return
+	}
+	if recovery, ok = lp.(IRecover); !ok {
+		logger.Error(cfg.LogOriginRecover()).Msg("DefaultStackTraceHandler logger provider from recover manager type assert to IRecover failed")
+		return
 	}
 
 	// http头部debug标记

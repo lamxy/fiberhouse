@@ -9,6 +9,7 @@ package fiberhouse
 import (
 	"errors"
 	"fmt"
+
 	"github.com/lamxy/fiberhouse/response"
 )
 
@@ -29,10 +30,7 @@ func NewRespInfoProtobufProvider() *RespInfoProtobufProvider {
 
 // Initialize 初始化
 func (p *RespInfoProtobufProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	if !p.Check() {
-		return p.ReturnDirectly()
-	}
-	return p.SetAndReturnSucceededInitialized(response.GetRespInfoPB(), nil)
+	return response.GetRespInfoPB(), nil
 }
 
 // RespInfoMsgpackProvider 响应信息 Msgpack 提供者
@@ -50,10 +48,7 @@ func NewRespInfoMsgpackProvider() *RespInfoMsgpackProvider {
 
 // Initialize 初始化
 func (p *RespInfoMsgpackProvider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
-	if !p.Check() {
-		return p.ReturnDirectly()
-	}
-	return p.SetAndReturnSucceededInitialized(response.GetRespInfoMsgPack(), nil)
+	return response.GetRespInfoMsgPack(), nil
 }
 
 // PManager------------------------------------------------------------------------------------------------------------
@@ -77,6 +72,7 @@ func NewRespInfoPManager(ctx IContext) *RespInfoPManager {
 
 // LoadProvider 加载提供者
 func (m *RespInfoPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error) {
+	m.Check()
 	if len(loadFunc) == 0 {
 		return nil, fmt.Errorf("manager '%s': no load function provided", m.Name())
 	}

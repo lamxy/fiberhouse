@@ -3,6 +3,8 @@ package module
 import (
 	"context"
 	"fmt"
+	"reflect"
+
 	"github.com/hibiken/asynq"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/cache"
@@ -51,7 +53,8 @@ func (ta *TaskAsync) GetTaskHandlerMap() map[string]func(context.Context, *asynq
 	// 注册 example-module 模块下的任务处理器
 	exampleTaskHandler.RegisterTaskHandlers(ta)
 
-	// 注册更多的模块下的任务处理器...
+	// 注册更多的模块下的任务处理器
+	//...
 
 	return ta.taskHandlerMap
 }
@@ -87,7 +90,7 @@ func (ta *TaskAsync) RegisterTaskServerToContainer() {
 				"low":      1,
 			},
 			Logger:   logadaptor.NewTaskLoggerAdapter(ta.Ctx), // 任务日志适配器，统一接入框架系统日志器
-			LogLevel: asynq.WarnLevel,                      // 指定日志级别
+			LogLevel: asynq.WarnLevel,                         // 指定日志级别
 		})
 		return worker, nil
 	})
@@ -98,15 +101,35 @@ func (ta *TaskAsync) RegisterTaskDispatcherToContainer() {
 	if !ta.Ctx.GetConfig().Bool("application.task.enableServer") {
 		return
 	}
-	cacheIns, err := ta.Ctx.GetContainer().Get(ta.Ctx.GetStarterApp().GetApplication().GetRedisKey())
-	if err != nil {
-		panic(err.Error())
-	}
-	rdb := cacheIns.(cache.IRedisClient)
 	ta.Ctx.GetContainer().Register(ta.Ctx.GetStarterApp().GetApplication().GetTaskDispatcherKey(), func() (interface{}, error) {
+		redisKey := ta.Ctx.GetStarterApp().GetApplication().GetRedisKey()
+		cacheIns, err := ta.Ctx.GetContainer().Get(redisKey)
+		if err != nil {
+			return nil, fmt.Errorf("get redis instance %q for task dispatcher: %w", redisKey, err)
+		}
+		rdb, ok := cacheIns.(cache.IRedisClient)
+		if !ok || isNilRedisClient(rdb) || rdb.GetRedisClient() == nil {
+			return nil, fmt.Errorf("invalid redis instance %q for task dispatcher", redisKey)
+		}
 		dispatcher := fiberhouse.NewTaskDispatcher(rdb.GetRedisClient())
+		if dispatcher == nil {
+			return nil, fmt.Errorf("construct task dispatcher from redis instance %q", redisKey)
+		}
 		return dispatcher, nil
 	})
+}
+
+func isNilRedisClient(client cache.IRedisClient) bool {
+	if client == nil {
+		return true
+	}
+	value := reflect.ValueOf(client)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 // GetTaskDispatcher 从容器获取任务分发器实例
@@ -116,7 +139,7 @@ func (ta *TaskAsync) GetTaskDispatcher() (*fiberhouse.TaskDispatcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	if result, ok := instance.(*fiberhouse.TaskDispatcher); ok {
+	if result, ok := instance.(*fiberhouse.TaskDispatcher); ok && result != nil {
 		return result, nil
 	}
 	return nil, fmt.Errorf("assertion failure for type of '%s' instance", key)

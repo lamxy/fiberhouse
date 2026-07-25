@@ -11,6 +11,7 @@ cbuild
 */.DS_Store
 .vscode
 .idea
+.claude/settings.local.json
 swagger/swagger.json
 packed/swagger.go
 target/

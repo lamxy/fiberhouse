@@ -15,6 +15,14 @@ import (
 // xxxProvide表示为当前层级包含当前以下层级依赖组合的完整provide，用来跟当前层级及上级层级组合依赖
 
 func InjectExampleApi(ctx fiberhouse.IApplicationContext) (*ExampleHandler, error) {
-	wire.Build(NewExampleHandler, service.ExampleServiceWireSet, repository.ExampleRepoWireSet, model.ExampleModelWireSet)
+	wire.Build(
+		NewExampleHandler,
+		service.NewExampleService,
+		repository.NewExampleRepository,
+		model.NewExampleModel,
+		wire.Bind(new(repository.ExampleModelStore), new(*model.ExampleModel)),
+		wire.Bind(new(repository.ExampleStore), new(*repository.ExampleRepository)),
+		wire.Bind(new(service.ExampleUseCase), new(*service.ExampleService)),
+	)
 	return nil, nil
 }

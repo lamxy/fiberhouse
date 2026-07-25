@@ -6,9 +6,9 @@ import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/cache/cachelocal"
 	"github.com/lamxy/fiberhouse/component/cache/cacheremote"
+	"github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/lamxy/fiberhouse/component/database/dbmongo"
 	"github.com/lamxy/fiberhouse/component/database/dbmysql"
-	"github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/lamxy/fiberhouse/example_application"
 	"github.com/lamxy/fiberhouse/example_application/command/application/commands"
 	"github.com/lamxy/fiberhouse/globalmanager"
@@ -95,7 +95,7 @@ func (app *Application) RegisterCommands(core interface{}) {
 	coreApp := core.(*cli.App)
 
 	cmdGetters := []fiberhouse.CommandGetter{
-		commands.NewTestOrmCMD(app.Ctx),
+		commands.NewExampleCommand(app.Ctx),
 		// TODO 收集更多的实现了CommandGetter接口的命令...
 
 	}

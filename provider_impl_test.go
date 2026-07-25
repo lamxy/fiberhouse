@@ -26,17 +26,17 @@ func newTask2Provider(name, target string, typ IProviderType) *task2Provider {
 
 func (p *task2Provider) Initialize(ctx IContext, initFunc ...ProviderInitFunc) (any, error) {
 	if !p.Check() {
-		return p.ReturnDirectly()
+		return p.ReturnInitialized()
 	}
 	p.initializeCalls++
 	if len(initFunc) > 0 {
 		injected, err := initFunc[0](p)
 		p.injected = injected
 		if err != nil {
-			return p.SetAndReturnFailedInitialized(nil, err)
+			return p.ReturnAndSetFailInitialize(nil, err)
 		}
 	}
-	return p.SetAndReturnSucceededInitialized(p.result, p.err)
+	return p.ReturnAndSetSuccessInitialize(p.result, p.err)
 }
 
 type legacyTask2Provider struct {
@@ -112,7 +112,7 @@ func TestProvider_UnknownStateRemainsPendingForInitialization(t *testing.T) {
 		SetStatus(State(255))
 
 	assert.True(t, provider.Check())
-	result, err := provider.ReturnDirectly()
+	result, err := provider.ReturnInitialized()
 	assert.Nil(t, result)
 	assert.EqualError(t, err, "provider 'unknown-state' is in an unknown state")
 }
@@ -122,7 +122,7 @@ func TestProvider_StateIsIsolatedBetweenInstances(t *testing.T) {
 	first := NewProvider().SetName("first").SetType(typ)
 	second := NewProvider().SetName("second").SetType(typ)
 
-	_, err := first.SetAndReturnSucceededInitialized("first-result", nil)
+	_, err := first.ReturnAndSetSuccessInitialize("first-result", nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, StateLoaded, first.Status())

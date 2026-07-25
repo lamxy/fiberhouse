@@ -20,15 +20,14 @@ func NewSonicJCodecFiberProvider() *SonicJCodecFiberProvider {
 
 // Initialize 重载初始化 JSON 编解码提供者
 func (j *SonicJCodecFiberProvider) Initialize(ctx IContext, fn ...ProviderInitFunc) (any, error) {
-	j.Check()
 	if j.Status() == StateLoaded {
 		return j.jcodec, nil
 	}
 	// 实现 JSON 编解码器的注册逻辑
 	jcodec, err := GetInstance[JsonWrapper](ctx.GetStarter().GetApplication().GetDefaultTrafficCodecKey())
 	if err != nil {
-		return j.SetAndReturnFailedInitialized(nil, err)
+		return nil, err
 	}
 	j.jcodec = jcodec
-	return j.SetAndReturnSucceededInitialized(jcodec, nil)
+	return j.jcodec, nil
 }

@@ -31,7 +31,14 @@ func (f *FiberRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap
 	if !ok {
 		return nil
 	}
-	params := c.AllParams()
+	// The error handler can run before route matching (fasthttp error path), where
+	// c.route is nil and c.AllParams() would nil-deref. c.Route() returns a safe
+	// placeholder (empty Params) in that case.
+	route := c.Route()
+	params := make(map[string]string, len(route.Params))
+	for _, name := range route.Params {
+		params[name] = c.Params(name)
+	}
 	j, err := jsonEncoder(params)
 	if err != nil {
 		log.Warn(f.AppCtx.GetConfig().LogOriginRecover()).Str("traceId", traceId).Str("reqParamsErr", err.Error()).Msg("getParamsJson error")

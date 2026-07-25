@@ -2,14 +2,15 @@ package example_application
 
 import (
 	"fmt"
+
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/cache"
 	"github.com/lamxy/fiberhouse/component/cache/cache2"
 	"github.com/lamxy/fiberhouse/component/cache/cachelocal"
 	"github.com/lamxy/fiberhouse/component/cache/cacheremote"
+	"github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/lamxy/fiberhouse/component/database/dbmongo"
 	"github.com/lamxy/fiberhouse/component/database/dbmysql"
-	"github.com/lamxy/fiberhouse/component/codec/json"
 	"github.com/lamxy/fiberhouse/component/validate"
 	"github.com/lamxy/fiberhouse/example_application/providers/exceptions"
 	"github.com/lamxy/fiberhouse/example_application/providers/validatecustom"
@@ -59,7 +60,8 @@ func (app *Application) GetContext() fiberhouse.IApplicationContext {
 	return app.Ctx
 }
 
-// ConfigGlobalInitializers 配置全局对象初始化器  // TODO 全局对象初始化提供者
+// ConfigGlobalInitializers 配置全局对象初始化器
+// 可交给全局对象初始化提供者实现
 func (app *Application) ConfigGlobalInitializers() globalmanager.InitializerMap {
 	return globalmanager.InitializerMap{
 		KEY_MONGODB: func() (interface{}, error) {
@@ -104,7 +106,7 @@ func (app *Application) ConfigGlobalInitializers() globalmanager.InitializerMap 
 }
 
 // ConfigRequiredGlobalKeys 配置并返回全局管理容器中在启动时必须初始化的key
-// 可交给全局对象初始化提供者
+// 可交给全局对象初始化提供者实现
 func (app *Application) ConfigRequiredGlobalKeys() []globalmanager.KeyName {
 	return []string{KEY_MONGODB, KEY_REDIS, KEY_JSON_SONIC_ESCAPE, KEY_JSON_SONIC_FAST, KEY_MYSQL}
 }
@@ -141,7 +143,6 @@ func (app *Application) RegisterAppMiddleware(cs fiberhouse.CoreStarter) {
 }
 
 // 统一定义"获取部分必要对象在全局管理容器中的实例Key"
-//可交给全局实例Key提供者
 
 func (app *Application) GetDBKey() string {
 	return KEY_MONGODB
@@ -203,7 +204,7 @@ func (app *Application) GetXxxCustomKey() globalmanager.KeyName {
 	return "__key_custom_example" // 注意：这里是示例key
 }
 
-// RegisterCoreHook 注册核心应用的生命周期钩子函数
+// RegisterCoreHook 注册核心应用的生命周期钩子函数（如有）
 func (app *Application) RegisterCoreHook(cs fiberhouse.CoreStarter) {
 	// 核心应用钩子提供者
 	managers := fiberhouse.ProviderLocationDefault().LocationCoreHookInit.GetManagers()
