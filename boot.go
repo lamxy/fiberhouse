@@ -4,8 +4,8 @@
 // Author: lamxy <pytho5170@hotmail.com>
 // GitHub: https://github.com/lamxy
 
-// Package fiberhouse provides a web application framework built on top of Fiber,
-// combining frame and core starters to simplify application bootstrapping.
+// Package fiberhouse 包提供了一个基于 Fiber/gin 构建的 Web 应用程序框架，
+// 结合了框架层与核心层的启动器(可切換)，旨在简化应用程序的引导过程。
 package fiberhouse
 
 import (
@@ -509,7 +509,7 @@ func (fh *FiberHouse) resolveAndReturnFrameStarter(fs []FrameStarterOption) Fram
 	if len(ms) == 0 {
 		msg := "Location point:LocationFrameStarterCreate， no FrameStarterCreate provider manager found"
 		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-		panic(errors.New(msg))
+		panic(msg)
 	}
 	// 通过提供者加载回调函数(ProviderLoadFunc)参数注入框架启动器选项
 	anyStarter, err := ms[0].LoadProvider(func(manager IProviderManager) (any, error) {
@@ -540,7 +540,7 @@ func (fh *FiberHouse) resolveAndReturnCoreStarter(cs []CoreStarterOption) CoreSt
 	if len(ms) == 0 {
 		msg := "Location point: LocationCoreStarterCreate, no CoreStarterCreate provider manager found"
 		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-		panic(errors.New(msg))
+		panic(msg)
 	}
 	// 通过提供者加载回调函数(ProviderLoadFunc)参数注入核心启动器选项
 	anyCoreStarter, err := ms[0].LoadProvider(func(manager IProviderManager) (any, error) {
