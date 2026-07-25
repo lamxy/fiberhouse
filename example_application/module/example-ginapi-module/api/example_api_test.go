@@ -222,14 +222,14 @@ func TestRegisterRouteHandlers_GinKeepsDemonstrationsOutsideCRUDRoutes(t *testin
 	registered := make(map[string]bool)
 	for _, route := range router.Routes() {
 		registered[route.Method+" "+route.Path] = true
-		if strings.HasPrefix(route.Path, "/examples/gin/common") {
+		if strings.HasPrefix(route.Path, "/examples/common") {
 			t.Fatalf("demonstration route mounted under CRUD path: %s %s", route.Method, route.Path)
 		}
 	}
 	for _, route := range []string{
-		"GET /gin/common/test/get-instance",
-		"GET /gin/common/test/get-must-instance",
-		"GET /gin/common/test/get-must-instance-failed",
+		"GET /common/test/get-instance",
+		"GET /common/test/get-must-instance",
+		"GET /common/test/get-must-instance-failed",
 	} {
 		if !registered[route] {
 			t.Fatalf("production route %q not registered", route)

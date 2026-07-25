@@ -266,7 +266,7 @@ func (m *DefaultPManager) LoadProvider(loadFunc ...ProviderLoadFunc) (any, error
 	bootCfg := m.GetContext().(IApplicationContext).GetBootConfig()
 
 	if len(m.List()) == 0 {
-		return nil, fmt.Errorf("no providers registered in manager '%s'", m.Name())
+		return nil, fmt.Errorf("manager: '%s' LoadProvider no providers registered: %w", m.Name(), ErrProviderNotFound)
 	}
 
 	var errs []error
