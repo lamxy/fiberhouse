@@ -60,12 +60,19 @@ jobs:
 
       - name: Fetch all refs
         run: |
-          git fetch --all --tags
+          set -e
+          git fetch origin --prune --tags "+refs/heads/*:refs/remotes/origin/*"
+          # origin/HEAD 是符号引用，按 refspec 展开会得到无效的分支名 HEAD
+          git remote set-head origin --delete || true
 
-      - name: Mirror all refs (branches + tags)
+      - name: Mirror branches and tags
         run: |
-          # --mirror 会保持与 GitHub 完全一致（包括删除远端多余的引用）
-          git push --mirror gitee
+          set -e
+          # 只推送分支与标签。不能用 --mirror: 它会连 refs/remotes/* 一起推，
+          # 而 Gitee 把这些视为 hidden ref 直接拒绝，导致即便分支已同步成功，
+          # 整个 push 仍以非零退出码失败。
+          git push --force --prune gitee "refs/remotes/origin/*:refs/heads/*"
+          git push --force --prune gitee "refs/tags/*:refs/tags/*"
 
       - name: (Optional) Push Git LFS objects
         if: env.PUSH_LFS == 'true'
