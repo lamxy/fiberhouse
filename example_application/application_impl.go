@@ -17,7 +17,9 @@ import (
 	"github.com/lamxy/fiberhouse/globalmanager"
 )
 
-// Application 实现Global全局接口
+// Application 自定义业务应用/应用注册器
+//
+// 需实现 fiberhouse 框架的 IApplication、ApplicationRegister、IRegister 契约/接口
 type Application struct {
 	name           string // for marking & container key
 	Ctx            fiberhouse.IApplicationContext
@@ -45,22 +47,23 @@ func (app *Application) initKeyMap() {
 	}
 }
 
-// GetName 获取应用名称
+// GetName 实现 IRegister 契约，获取应用注册器名称
 func (app *Application) GetName() string {
 	return app.name
 }
 
-// SetName 设置应用名称
+// SetName 实现 IRegister 契约，设置应用注册器名称
 func (app *Application) SetName(name string) {
 	app.name = name
 }
 
-// GetContext 获取应用上下文
+// GetContext 获取全局应用上下文
 func (app *Application) GetContext() fiberhouse.IApplicationContext {
 	return app.Ctx
 }
 
 // ConfigGlobalInitializers 配置全局对象初始化器
+// 应用启动前，预设注入全局对象管理器（容器）的懒加载全局对象清单
 // 可交给全局对象初始化提供者实现
 func (app *Application) ConfigGlobalInitializers() globalmanager.InitializerMap {
 	return globalmanager.InitializerMap{
@@ -106,6 +109,7 @@ func (app *Application) ConfigGlobalInitializers() globalmanager.InitializerMap 
 }
 
 // ConfigRequiredGlobalKeys 配置并返回全局管理容器中在启动时必须初始化的key
+// 应用启动阶段必须完成初始化的全局对象清单，此处列举后，框架启动阶段自动完成对象创建的初始化工作
 // 可交给全局对象初始化提供者实现
 func (app *Application) ConfigRequiredGlobalKeys() []globalmanager.KeyName {
 	return []string{KEY_MONGODB, KEY_REDIS, KEY_JSON_SONIC_ESCAPE, KEY_JSON_SONIC_FAST, KEY_MYSQL}
@@ -117,7 +121,7 @@ func (app *Application) ConfigCustomValidateInitializers() []validate.ValidateIn
 	return validatecustom.GetValidateInitializers()
 }
 
-// ConfigValidatorCustomTags 配置并返回验证器自定义tag函数
+// ConfigValidatorCustomTags 配置并返回验证器自定义tag函数（用于字段校验逻辑的 tag 标签）
 func (app *Application) ConfigValidatorCustomTags() []validate.RegisterValidatorTagFunc {
 	return validatecustom.GetValidatorTagFuncs()
 }

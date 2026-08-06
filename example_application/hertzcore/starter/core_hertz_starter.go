@@ -3,6 +3,12 @@
 // 本套件完全位於 example_application 之下，僅依賴框架的匯出 API，
 // 用以驗證 fiberhouse 「核心引擎可插拔」的擴展設計：
 // 新增核心引擎不需要修改框架任何一行程式碼。
+//
+// 各生命週期方法的統一骨架（自定義核心的實作範式）：
+//  1. 以 GetAppState() 短路已運行的應用；
+//  2. 呼叫 fiberhouse.LoadProviderManagersAtLocation 分派該位點的 provider，
+//     若回傳 replaced 為 true 表示已被擴展替代組接管，直接返回；
+//  3. 執行本核心的預設邏輯。
 package starter
 
 import (
@@ -66,7 +72,7 @@ func (ch *CoreWithHertz) InitCoreApp(fs fiberhouse.FrameStarter, managers ...fib
 		return
 	}
 
-	_, replaced, err := loadManagersAtLocation(
+	_, replaced, err := fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationCoreEngineInit, ch)
 	if err != nil {
 		ch.logErr(err, "InitCoreApp providers failed")
@@ -186,7 +192,7 @@ func (ch *CoreWithHertz) RegisterAppMiddleware(fs fiberhouse.FrameStarter, manag
 		return
 	}
 
-	_, replaced, err := loadManagersAtLocation(
+	_, replaced, err := fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationAppMiddlewareInit, ch)
 	if err != nil {
 		ch.logErr(err, "RegisterAppMiddleware providers failed")
@@ -253,12 +259,12 @@ func (ch *CoreWithHertz) RegisterModuleInitialize(fs fiberhouse.FrameStarter, ma
 		return
 	}
 
-	if _, _, err := loadManagersAtLocation(
+	if _, _, err := fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationModuleMiddlewareInit, ch); err != nil {
 		ch.logErr(err, "RegisterModuleInitialize module middleware providers failed")
 	}
 
-	routeHandled, _, err := loadManagersAtLocation(
+	routeHandled, _, err := fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationRouteRegisterInit, ch)
 	if err != nil {
 		ch.logErr(err, "RegisterModuleInitialize route providers failed")
@@ -275,7 +281,7 @@ func (ch *CoreWithHertz) RegisterModuleSwagger(fs fiberhouse.FrameStarter, manag
 		return
 	}
 
-	_, replaced, err := loadManagersAtLocation(
+	_, replaced, err := fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationModuleSwaggerInit, ch)
 	if err != nil {
 		ch.logErr(err, "RegisterModuleSwagger providers failed")
@@ -296,7 +302,7 @@ func (ch *CoreWithHertz) RegisterAppHooks(fs fiberhouse.FrameStarter, managers .
 		return
 	}
 
-	_, replaced, err := loadManagersAtLocation(
+	_, replaced, err := fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationCoreHookInit, ch)
 	if err != nil {
 		ch.logErr(err, "RegisterAppHooks providers failed")
@@ -343,7 +349,7 @@ func (ch *CoreWithHertz) AppCoreRun(managers ...fiberhouse.IProviderManager) err
 		return nil
 	}
 
-	_, replaced, err := loadManagersAtLocation(
+	_, replaced, err := fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationServerRun, ch)
 	if err != nil {
 		return fmt.Errorf("failed to load server run providers: %w", err)
@@ -371,7 +377,7 @@ func (ch *CoreWithHertz) Shutdown(managers ...fiberhouse.IProviderManager) error
 		return nil
 	}
 
-	_, replaced, err := loadManagersAtLocation(
+	_, replaced, err := fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationServerShutdown, ch)
 	if err != nil {
 		return fmt.Errorf("failed to load server shutdown providers: %w", err)
@@ -380,7 +386,7 @@ func (ch *CoreWithHertz) Shutdown(managers ...fiberhouse.IProviderManager) error
 		return nil
 	}
 
-	if _, _, err = loadManagersAtLocation(
+	if _, _, err = fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationServerShutdownBefore, ch); err != nil {
 		return fmt.Errorf("failed to load pre-shutdown providers: %w", err)
 	}
@@ -394,7 +400,7 @@ func (ch *CoreWithHertz) Shutdown(managers ...fiberhouse.IProviderManager) error
 		return err
 	}
 
-	if _, _, err = loadManagersAtLocation(
+	if _, _, err = fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationServerShutdownAfter, ch); err != nil {
 		return fmt.Errorf("failed to load post-shutdown providers: %w", err)
 	}

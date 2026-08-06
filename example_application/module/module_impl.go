@@ -4,7 +4,9 @@ import (
 	"github.com/lamxy/fiberhouse"
 )
 
-// Module struct
+// Module 自定义应用下的模块/子系统/模块注册器
+//
+// 需实现框架的 ModuleRegister、IRegister 契约/接口
 type Module struct {
 	name string // for marking & container key
 	Ctx  fiberhouse.IApplicationContext
@@ -17,12 +19,12 @@ func NewModule(ctx fiberhouse.IApplicationContext) fiberhouse.ModuleRegister {
 	}
 }
 
-// GetName get module name
+// GetName 实现 IRegister 契约，获取模块注册器名称
 func (m *Module) GetName() string {
 	return m.name
 }
 
-// SetName set module name
+// SetName 实现 IRegister 契约，设置模块注册器名称
 func (m *Module) SetName(name string) {
 	m.name = name
 }

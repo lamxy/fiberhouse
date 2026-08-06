@@ -18,7 +18,7 @@ type CommonHandler struct {
 func NewCommonHandler(ctx fiberhouse.IApplicationContext) *CommonHandler {
 	return &CommonHandler{
 		ApiLocator:     fiberhouse.NewApi(ctx).SetName(GetKeyCommonHandler()),
-		KeyTestService: service.RegisterKeyTestService(ctx), // 注册依赖的TestService实例初始化器并返回注册实例key，通过 h.GetInstance(key) 方法获取TestService实例
+		KeyTestService: service.RegisterKeyTestService(ctx), // 注册依赖的TestService实例初始化器并返回注册实例key，本地 handler 通过 h.GetInstance(key) 方法获取TestService实例
 	}
 }
 

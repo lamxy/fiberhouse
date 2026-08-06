@@ -6,7 +6,7 @@
 
 - `example_main/`：Web 可执行入口、默认 provider/manager 与应用扩展的合并，以及 Swagger 生成产物的导入。
 - `example_config/`：dev/test/prod 配置样例、环境选择和覆盖键，以及 HTTP、日志、缓存、数据库、任务、验证、CLI 等配置形状。
-- `example_application/`：应用、模块、任务注册器，Fiber/Gin 中间件和路由 provider，验证扩展，以及 Web/CLI 共享的数据库与缓存调用示例。
+- `example_application/`：应用、模块、任务注册器，Fiber/Gin 中间件和路由 provider，验证扩展，以及 Web/CLI 共享的数据库与缓存调用示例。其中 `hertzcore/` 演示如何在不修改框架的前提下接入第三方内核（Hertz），见[自定义核心启动器](../guides/custom-core-starter.md)。
 
 这些目录共同说明“如何接线”，不说明所有配置项背后都已有实现。尤其是 `plugins`、`mq`、`rpc` 配置节点不能作为对应运行时能力已经完成的证据。
 
@@ -19,11 +19,11 @@
 入口是 `example_main/main.go`，调用链可概括为：
 
 1. 使用 `fiberhouse.New(&fiberhouse.BootConfig{...})` 创建上下文、加载 `./example_config` 并初始化日志。
-2. 通过 `DefaultProviders().AndMore(...)` 收集框架 provider，以及示例的 Fiber/Gin 中间件、Fiber hook 和两种内核的路由 provider。
+2. 通过 `DefaultProviders().AndMore(...)` 收集框架 provider，以及示例的 Fiber/Gin 中间件、Fiber hook 和三种内核（Fiber/Gin/Hertz）的路由 provider；Hertz 的 core、codec、recovery 等 provider 同样在此追加。
 3. 通过 `DefaultPManagers(fh.AppCtx).AndMore(...)` 收集默认 manager，以及示例的 option、hook、中间件和路由 manager。
 4. 调用 `WithProviders(...).WithPManagers(...).RunServer()`；option provider 在启动期创建 `ApplicationRegister`、`ModuleRegister` 与 `TaskRegister`。
 
-当前 `BootConfig.CoreType` 明确选择 Fiber。虽然集合里也放入 Gin provider，它们只用于演示 target 选择，当前这次运行不会同时启动 Gin。框架或应用 provider 缺失、类型不匹配、必需全局实例初始化失败时，路径中既有返回错误和日志，也有 fatal/panic；不要把示例的乐观类型断言直接复制到边界不可信的业务代码。
+当前 `BootConfig.CoreType` 明确选择 Hertz（`hertzconst.CoreTypeWithHertz`），用于演示第三方内核接入；改回 `constant.CoreTypeWithFiber` 或 `CoreTypeWithGin` 即可切换。虽然集合里同时放入 Fiber、Gin 与 Hertz 三套 provider，它们只用于演示 target 选择，一次运行只会有一个内核被选中。框架或应用 provider 缺失、类型不匹配、必需全局实例初始化失败时，路径中既有返回错误和日志，也有 fatal/panic；不要把示例的乐观类型断言直接复制到边界不可信的业务代码。
 
 启动顺序还会经过全局实例初始化、core 初始化、hook、中间件、模块路由、Swagger、任务、keepalive、server run 与 shutdown。某个 provider 只有在类型、target 和 location 都匹配时才会参与对应阶段。
 

@@ -84,7 +84,7 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 		return
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationCoreEngineInit,
 		cg,
@@ -273,7 +273,7 @@ func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProvi
 		return
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationAppMiddlewareInit,
 		cg,
@@ -377,7 +377,7 @@ func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter, managers ...IPr
 		return
 	}
 
-	_, _, moduleErr := loadProviderManagersAtLocation(
+	_, _, moduleErr := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationModuleMiddlewareInit,
 		cg,
@@ -388,7 +388,7 @@ func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter, managers ...IPr
 			Msg("RegisterModuleInitialize module middleware providers failed")
 	}
 
-	routeHandled, _, routeErr := loadProviderManagersAtLocation(
+	routeHandled, _, routeErr := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationRouteRegisterInit,
 		cg,
@@ -414,7 +414,7 @@ func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter, managers ...IProvi
 		return
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationModuleSwaggerInit,
 		cg,
@@ -447,7 +447,7 @@ func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderMa
 		return
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationCoreHookInit,
 		cg,
@@ -484,7 +484,7 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 		return nil
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationServerRun,
 		cg,
@@ -538,7 +538,7 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 		return nil
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationServerShutdown,
 		cg,
@@ -550,7 +550,7 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 		return nil
 	}
 
-	_, _, err = loadProviderManagersAtLocation(
+	_, _, err = LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationServerShutdownBefore,
 		cg,
@@ -577,7 +577,7 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 	}
 	cg.releaseGinLogger()
 
-	_, _, err = loadProviderManagersAtLocation(
+	_, _, err = LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationServerShutdownAfter,
 		cg,

@@ -55,7 +55,7 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 		return
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationCoreEngineInit,
 		cf,
@@ -192,7 +192,7 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IPro
 		return
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationAppMiddlewareInit,
 		cf,
@@ -258,7 +258,7 @@ func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter, managers ...I
 		return
 	}
 
-	_, _, moduleErr := loadProviderManagersAtLocation(
+	_, _, moduleErr := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationModuleMiddlewareInit,
 		cf,
@@ -269,7 +269,7 @@ func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter, managers ...I
 			Msg("RegisterModuleInitialize module middleware providers failed")
 	}
 
-	routeHandled, _, routeErr := loadProviderManagersAtLocation(
+	routeHandled, _, routeErr := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationRouteRegisterInit,
 		cf,
@@ -292,7 +292,7 @@ func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter, managers ...IPro
 		return
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationModuleSwaggerInit,
 		cf,
@@ -322,7 +322,7 @@ func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProvider
 		return
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationCoreHookInit,
 		cf,
@@ -370,7 +370,7 @@ func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
 		return nil
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationServerRun,
 		cf,
@@ -403,7 +403,7 @@ func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
 		return nil
 	}
 
-	_, replaced, err := loadProviderManagersAtLocation(
+	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationServerShutdown,
 		cf,
@@ -415,7 +415,7 @@ func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
 		return nil
 	}
 
-	_, _, err = loadProviderManagersAtLocation(
+	_, _, err = LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationServerShutdownBefore,
 		cf,
@@ -431,7 +431,7 @@ func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
 		return err
 	}
 
-	_, _, err = loadProviderManagersAtLocation(
+	_, _, err = LoadProviderManagersAtLocation(
 		managers,
 		ProviderLocationDefault().LocationServerShutdownAfter,
 		cf,

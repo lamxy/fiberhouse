@@ -116,9 +116,14 @@ gin 用 `servers.gin`（`core_gin_starter_impl.go:184`）。hertz 沿用 `server
 `git status` 证实：框架根目录与 `adaptor/` 下无任何文件被修改，
 变更仅限 `example_config/`、`example_main/main.go`、`go.mod`/`go.sum` 及新增的 example 目录。
 
-⚠️ 唯一的扩展摩擦点：`loadProviderManagersAtLocation` 未导出，外部核心实现无法复用框架的
-"位点 provider 替代"样板逻辑，需要自行用导出 API 重写一份等价实现
-（见 `hertzcore/starter/manager_loader.go`，已附 5 个单元测试锁定语义）。
+~~⚠️ 唯一的扩展摩擦点：`loadProviderManagersAtLocation` 未导出~~
+**已解决**：该函数已导出为 `fiberhouse.LoadProviderManagersAtLocation`
+（`starter_manager_loader.go`），成为框架正式的扩展点。
+
+- 框架内 20 处调用点（Fiber 10 + Gin 10）已同步更名；
+- hertz 侧删除了本地复制的 `manager_loader.go`，改用框架导出版本；
+- 5 个语义锁定测试已移入框架根的 `starter_manager_loader_test.go`，
+  作为公开 API 的契约测试。
 
 ---
 
@@ -178,7 +183,34 @@ GET /common/test/get-must-instance-failed
 启动日志显示 8 条路由全部经 provider 链注册成功，监听 `[::]:8080`。
 
 测试：`go test ./...` 全绿；`go vet` 无告警。
-新增单元测试 15 个（context 4 + recovery 6 + 位点加载器 5）。
+新增单元测试 15 个（context 4 + recovery 6 + 位点加载器 5，后者已移入框架根）。
 
-> 注：`/examples/{id}` 走 MongoDB、部分路径走 Redis，本机未启动该等服务时会返回 500，
-> 属环境依赖而非接入缺陷。
+---
+
+## 10. 真实依赖环境下的完整验证（第二轮）
+
+在本机 Docker（MongoDB `27037` / Redis `6379` / MySQL `3306`）已启动的条件下复验，
+启动日志中 redis 连接错误由数百条降为 **0**：
+
+```
+POST   /examples          → 201  data.id = 6a740e1c8ce48826b497122c（真实 ObjectID）
+GET    /examples/{id}     → 200  返回刚创建的记录
+PUT    /examples/{id}     → 200  name 已更新为 hertz-e2e-updated
+GET    /examples          → 200
+GET    /examples/0000...  → 404  领域错误正确映射（此前因缺 Mongo 而返回 500）
+DELETE /examples/{id}     → 204  → 复查 GET 返回 404，测试数据已清理
+GET    /swagger/index.html → 200
+GET    /swagger/doc.json   → 200  返回真实 spec（title: XXX Service APIs）
+```
+
+> 测试记录已删除，容器既有数据未受影响。
+
+### Swagger 结论
+
+- **注解层面无需变化**：swaggo 按 `method + path` 去重，多适配器标注相同 `@Router`
+  会导致 `swag init` 冲突。既有约定是注解单一来源于 Fiber handler，
+  Gin 不带 swaggo 标签；hertz 已遵循同一约定。
+- **UI 路由层面需要补齐**：各适配器需各自挂载 Swagger UI 路由。
+  已引入 `github.com/hertz-contrib/swagger` v0.1.0，在
+  `RegisterHertzSwagger` 中注册 `/swagger/*any`，同样由
+  `application.swagger.enable` 控制。

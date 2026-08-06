@@ -132,11 +132,18 @@ func main() {
 
 两种内核共享启动、运行错误传递和信号关闭抽象，但路由、绑定与 handler 仍使用各自的原生 API。示例默认运行 Fiber，`/health/livez` 也只注册在 Fiber 路由中。详细差异见[Web 运行时](docs/guides/web-runtime.md)。
 
+### 还可以接第三方内核
+
+`CoreType` 是普通字符串而非枚举，所有分派点都按 `provider.Target() == CoreType` 匹配，因此**应用侧可以在不修改框架代码的前提下接入新的 HTTP 引擎**。
+
+`example_application/hertzcore/` 是一个已端到端验证的完整参考（cloudwego/hertz），可作为接入模板。做法见[自定义核心启动器](docs/guides/custom-core-starter.md)。
+
 ## 示例目录
 
 - [`example_main/`](example_main/)：Web 可执行入口，将 Provider/Manager 全部合并运行。
 - [`example_config/`](example_config/)：dev/test/prod 三套配置形状，以及环境变量如何覆盖。
 - [`example_application/`](example_application/)：应用、模块、任务、Fiber/Gin 路由、CLI 的完整接线示范。
+- [`example_application/hertzcore/`](example_application/hertzcore/)：在框架之外接入第三方内核（Hertz）的完整参考实现。
 
 示例中包含固定凭据、调试开关和用于展示边界的简化实现，适合作为源码导航，不适合作为部署模板直接使用。细节见[示例目录说明](docs/reference/examples.md)。
 
