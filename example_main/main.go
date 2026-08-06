@@ -4,6 +4,8 @@ import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/constant"
 	_ "github.com/lamxy/fiberhouse/example_application/docs" // swagger docs
+	hertzconst "github.com/lamxy/fiberhouse/example_application/hertzcore/constant"
+	hertzproviders "github.com/lamxy/fiberhouse/example_application/hertzcore/providers"
 	"github.com/lamxy/fiberhouse/example_application/providers/apphook"
 	"github.com/lamxy/fiberhouse/example_application/providers/middleware"
 	"github.com/lamxy/fiberhouse/example_application/providers/module"
@@ -58,7 +60,7 @@ func main() {
 		AppName:                     "Default FiberHouse Application",          // 应用名称
 		Version:                     Version,                                   // 应用版本
 		FrameType:                   constant.FrameTypeWithDefaultFrameStarter, // 默认提供的框架启动器标识: DefaultFrameStarter
-		CoreType:                    constant.CoreTypeWithFiber,                // fiber | gin | ... // 如果需要切换核心框架，只需修改此处；如果框架支持设置编译标签，编译时指定了核心，那么此处必须跟标签核心一致
+		CoreType:                    hertzconst.CoreTypeWithHertz,              // fiber | gin | hertz | ... // 如果需要切换核心框架，只需修改此处；如果框架支持设置编译标签，编译时指定了核心，那么此处必须跟标签核心一致
 		TrafficCodec:                constant.TrafficCodecWithSonic,            // 传输流量的编解码器: sonic_json_codec|std_json_codec|go_json_codec|pb...
 		EnableBinaryProtocolSupport: true,                                      // 是否启用二进制协议支持，如Protobuf等
 		ConfigPath:                  "./example_config",                        // 应用全局配置路径
@@ -89,6 +91,21 @@ func main() {
 		module.NewGinRouteRegisterProvider(),
 		// 更多基于其他核心框架的模块路由注册提供者
 		// ...
+
+		// ===== hertz 核心引擎扩展（全部位于 example_application 之下，未改动框架本身）=====
+		// 核心启动器提供者：由框架的 CoreStarterPManager 依 CoreType 选中
+		hertzproviders.NewCoreStarterHertzProvider(),
+		// JSON 编解码提供者：框架的 JsonCodecPManager 同时按 TrafficCodec 与 CoreType 匹配
+		hertzproviders.NewSonicJCodecHertzProvider(),
+		hertzproviders.NewStdJCodecHertzProvider(),
+		// 恢复中间件提供者：由框架的 RecoveryPManager 依 CoreType 选中
+		hertzproviders.NewHertzRecoveryProvider(),
+		// 基于 hertz 的应用级中间件提供者
+		hertzproviders.NewHertzAppMiddlewareProvider(),
+		// 基于 hertz 的生命周期 hook 注册提供者
+		hertzproviders.NewHertzAppHookProvider(),
+		// hertz 模块路由注册提供者
+		hertzproviders.NewHertzRouteRegisterProvider(),
 	)
 	managers := fiberhouse.DefaultPManagers(fh.AppCtx).AndMore(
 		// 框架选项初始化管理器，获取框架启动器初始化的选项函数列表
