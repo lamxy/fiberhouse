@@ -1,14 +1,22 @@
-# FiberHouse 🏠
+# FiberHouse Framework
+
+[![Go Version](https://img.shields.io/badge/go-1.25-blue.svg)](https://go.dev/)
+[![Build & Test](https://github.com/lamxy/fiberhouse/actions/workflows/go1.yml/badge.svg)](https://github.com/lamxy/fiberhouse/actions/workflows/go1.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Fiber Version](https://img.shields.io/badge/fiber-v2.x-green.svg)](https://github.com/gofiber/fiber)
+[![Gin Version](https://img.shields.io/badge/gin-v1.x-green.svg)](https://github.com/gin-gonic/gin)
+[![Hertz Version](https://img.shields.io/badge/hertz-v0.10.x-green.svg)](https://github.com/cloudwego/hertz)
+
+📖 中文 | [English]()
+
+## 🏠 關於 FiberHouse 
 
 FiberHouse 是一个面向 Go Web 应用的装配式框架。它将配置、日志、HTTP 内核、Provider 扩展和业务注册统一纳入清晰的启动生命周期，使服务的创建、运行与关闭遵循一致的组织方式。框架默认使用 Fiber，也支持切换 Gin；数据库、缓存、任务等组件均由应用显式选择和装配。
 
 框架的重点不是替代业务架构，而是提供可组合的启动器、可定位的扩展执行点，以及可复用的共享实例管理。当前实现进一步完善了 Provider 初始化幂等、扩展替代逻辑、运行错误传递和优雅关闭链，使 Fiber 与 Gin 能够在同一套生命周期模型下运行。
 
-[![Go Version](https://img.shields.io/badge/go-1.25-blue.svg)](https://go.dev/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build & Test](https://github.com/lamxy/fiberhouse/actions/workflows/go1.yml/badge.svg)](https://github.com/lamxy/fiberhouse/actions/workflows/go1.yml)
 
-## FiberHouse 解决什么问题
+## 🎯 FiberHouse 解决什么问题
 
 Go Web 服务通常需要分别处理配置加载、日志输出、中间件顺序、共享资源和关闭流程。这些基础能力如果缺少统一边界，往往会分散在入口、组件和业务代码中。FiberHouse 不负责生成业务目录，而是提供一条明确的装配路径：一套启动链（`FiberHouse` → `FrameStarter` → `CoreStarter`）、一套可插拔的扩展机制（Provider / Manager / Location），以及一套跨组件访问共享实例的方式（`GlobalManager`）。
 
@@ -16,13 +24,13 @@ Go Web 服务通常需要分别处理配置加载、日志输出、中间件顺�
 
 框架提供默认的框架级启动器（FrameStarter）和核心启动器（CoreStarter），两者都可以定制或替换。样例应用（`example_application`）展示了上层业务结构与接入方式，便于从可运行路径理解各类扩展点。
 
-## 目前是什么状态
+## 🚧 目前是什么状态
 
-FiberHouse 仍在持续迭代，**目前尚未承诺可直接用于生产环境的稳定性**。Web 主链已经覆盖 Fiber/Gin、配置与日志、统一响应、参数校验、Provider 幂等初始化和信号关闭；`GlobalManager` 以及 MySQL、MongoDB、Redis、缓存、asynq 任务、CLI 等组件也已有明确接入路径，具体见下面的[核心能力](#核心能力)。
+FiberHouse 仍在持续迭代，**目前尚未承诺可直接用于生产环境的稳定性**。Web 主链已经覆盖 Fiber/Gin、配置与日志、统一响应、参数校验、Provider 幂等初始化和信号关闭；`GlobalManager` 以及 MySQL、MongoDB、Redis、缓存、asynq 任务、CLI 等组件也已有明确接入路径，具体见下面的[核心能力](#-核心能力)。
 
 启动运行与关闭链已经具备专项回归测试，但统一资源所有权、完整并发契约、可恢复错误边界和外部依赖验证仍需继续完善，公开接口也可能调整。各项能力的成熟度和限制以[功能状态](docs/reference/feature-status.md)为准；`example_main`/`example_config`/`example_application` 用于展示调用路径，不应直接作为生产模板。
 
-## 核心能力
+## ✨ 核心能力
 
 - Fiber 与 Gin 共享同一套启动和关闭模型，并保留扩展其他 HTTP 内核的接口边界。
 - Provider / Manager / Location：按类型和执行位点组织扩展，支持初始化状态缓存、同位点替代和重复加载保护：[Provider 系统](docs/concepts/provider-system.md)。
@@ -32,14 +40,14 @@ FiberHouse 仍在持续迭代，**目前尚未承诺可直接用于生产环境�
 - 统一 `{code,msg,data}` 响应、panic recovery、参数校验，可选 MsgPack/Protobuf body。
 - MySQL、MongoDB、Redis、本地/二级缓存、asynq 后台任务、基于 urfave/cli 的命令行子应用，按需接入。
 
-## 环境要求
+## 🧰 环境要求
 
 - Go `1.25.0`（以 [`go.mod`](go.mod) 为准）。
 - 阅读代码或编译框架本身不需要数据库和 Redis。
 - 运行完整 Web 示例需要 Docker + Docker Compose，或者自行准备 MongoDB、Redis、MySQL。
 - 示例的 MySQL DSN 指向 `test` 库，Compose 只启动 MySQL 服务本身，不会自动建库。
 
-## 五分钟跑起来
+## 🚀 五分钟跑起来
 
 在仓库根目录执行以下命令，拉起完整的 Fiber 示例：
 
@@ -72,7 +80,7 @@ docker compose -f docs/docker_compose_db_redis_yaml/docker-compose.yml down
 
 配置选择、Gin 切换和常见问题见[入门指南](docs/getting-started.md)。
 
-## 接入你自己的应用长什么样
+## 🧩 接入你自己的应用长什么样
 
 ```go
 package main
@@ -110,7 +118,7 @@ func main() {
 
 `newApplicationRegister`、`newModuleRegister` 代表应用必须自行实现的接口职责，示例为控制篇幅省略了具体实现。完整装配可参照 [`example_main/main.go`](example_main/main.go)，但不应将 example package 作为稳定依赖直接 import。`Default()` 不会自动调用 `DefaultProviders()`/`DefaultPManagers(ctx)`，默认集合仍需由应用显式加入。
 
-## 想深入了解框架内部
+## 🔍 想深入了解框架内部
 
 启动链、Provider 系统和请求处理流程的完整设计由专题文档说明：
 
@@ -120,7 +128,7 @@ func main() {
 - [Web 启动生命周期](docs/concepts/startup-lifecycle.md)：`RunServer` 从配置加载到监听关闭的完整阶段。
 - [响应与序列化](docs/guides/response-and-serialization.md)、[错误与恢复](docs/guides/errors-and-recovery.md)：统一响应、JSON codec 选择、MsgPack/Protobuf 协商。
 
-## Fiber 还是 Gin
+## ⚡ Fiber 还是 Gin
 
 | 维度 | Fiber | Gin |
 |---|---|---|
@@ -138,7 +146,7 @@ func main() {
 
 `example_application/hertzcore/` 是一个已端到端验证的完整参考（cloudwego/hertz），可作为接入模板。做法见[自定义核心启动器](docs/guides/custom-core-starter.md)。
 
-## 示例目录
+## 📂 示例目录
 
 - [`example_main/`](example_main/)：Web 可执行入口，将 Provider/Manager 全部合并运行。
 - [`example_config/`](example_config/)：dev/test/prod 三套配置形状，以及环境变量如何覆盖。
@@ -147,14 +155,14 @@ func main() {
 
 示例中包含固定凭据、调试开关和用于展示边界的简化实现，适合作为源码导航，不适合作为部署模板直接使用。细节见[示例目录说明](docs/reference/examples.md)。
 
-## 更多文档
+## 📚 更多文档
 
 - [完整文档索引](docs/README.md)
 - [入门指南](docs/getting-started.md)
 - [组件目录](docs/reference/components.md)
 - [功能状态](docs/reference/feature-status.md)
 
-## 开发与验证
+## 🛠️ 开发与验证
 
 仓库根目录下常用命令：
 
@@ -172,10 +180,10 @@ CI 在 GitHub Actions 上拆成三个 job：`quality` 跑普通测试、覆盖�
 
 `Makefile` 同时提供 `build`、`lint` 和交叉编译目标，执行前应确认目标路径与本机工具链一致。
 
-## 贡献
+## 🤝 贡献
 
 提交改动时应保持范围清晰，并说明行为、兼容性和验证结果；涉及启动、并发或资源生命周期的修改，需要补充相应测试与文档。问题和建议可提交至 [GitHub Issues](https://github.com/lamxy/fiberhouse/issues)，安全问题请使用维护者公布的私密联系方式，不要通过公开 issue 报告。
 
-## 许可证
+## 📄 许可证
 
 MIT License，见 [LICENSE](LICENSE)。
