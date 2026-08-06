@@ -176,6 +176,51 @@ h.GET("/swagger/*any", hertzSwagger.WrapHandler(swaggerFiles.Handler))
 
 详见 `example_application/docs/README.md`。
 
+### 4.7 引擎日志与调试输出
+
+引擎自身的日志（路由注册、监听地址、连接错误、优雅关闭进度）默认直接写 stderr，
+**绕过框架的日志器**，因而不受 Origin、级别、轮转与异步 writer 配置管辖。
+接入新 Core 时应把这条通道也接管过来。
+
+各引擎的接管方式不同，需先确认它暴露的钩子：
+
+| 引擎 | 接管点 | 形态 |
+|---|---|---|
+| Gin | `DebugPrintFunc`、`DebugPrintRouteFunc`、`DefaultWriter`、`DefaultErrorWriter` | 四个分散的包级全局量 |
+| Hertz | `hlog.SetLogger(hlog.FullLogger)` | 单一集中接口（21 个方法） |
+
+Hertz 的实现见 `example_application/hertzcore/adaptor/hertz_logger.go`，三个要点：
+
+1. **级别映射**：hertz 有框架不具备的 `Trace` 与 `Notice`，分别归并到 `Debug` 与 `Info`。
+2. **前缀剥离**：hertz 会给系统日志加 `"HERTZ: "` 前缀；该信息已由结构化字段
+   `Component` 承载，转发前剥离以免污染 message。
+3. **`Control` 接口置空**：`SetLevel` / `SetOutput` 实现为空操作——
+   输出目标与级别由框架配置统一掌管，不允许引擎侧反向篡改。
+
+**所有权与释放顺序**（两种引擎一致）：
+
+接管是进程级副作用，需用 lease 表达所有权。`hlog.SetLogger` 明确声明非并发安全，
+所以只在首次安装时装入一个稳定转发器，之后仅用原子指针切换转发目标：
+
+```go
+// InitCoreApp：须在创建 engine 之前安装，否则路由注册日志会漏到 stderr
+lease, err := hertzadaptor.InstallHertzLogger(
+    hertzadaptor.NewHertzLoggerAdapter(appCtx.GetLogger(), cfg.LogOriginFrame()))
+
+// Shutdown：必须在 logger.Close() 之前释放，
+// 否则引擎后续日志会写入已关闭的 writer
+ch.releaseHertzLogger()
+return ch.GetAppContext().GetLogger().Close()
+```
+
+释放后引擎日志回落到其原始日志器，而不是静默丢弃——这样应用关闭日志器之后，
+引擎若仍有输出也不会丢失或写坏。`Release` 需幂等，以支持
+`AppCoreRun` 与 `Shutdown` 两条路径分别释放。
+
+> 注意区分两类日志：本节说的是**引擎自身**的日志；
+> 每个请求的访问日志（method/path/status/latency）是另一条通道，
+> 由 Core 自己的 HTTP 日志中间件产生，见 `CoreWithHertz.loggerMiddleware`。
+
 ---
 
 ## 5. 接线与切换
@@ -215,6 +260,7 @@ providers := fiberhouse.DefaultProviders().AndMore(
 | 错误传递 | 返回 error | `c.Error()` 链 | 无 —— 需委派框架处理器 |
 | 内置 requestid | 有 | `gin-contrib/requestid` | 无 —— 需自行生成 |
 | 生命周期钩子 | `Hooks().OnListen/OnShutdown` | 无 | `OnRun` / `OnShutdown` 切片 |
+| 引擎日志接管点 | 配置 `fiber.Config` | 四个包级全局量 | `hlog.SetLogger` 单一接口 |
 
 ---
 
@@ -232,6 +278,8 @@ providers := fiberhouse.DefaultProviders().AndMore(
 - [ ] panic 被恢复并以统一格式响应，未导致进程退出
 - [ ] `Ctrl+C` 能优雅关闭，无重复信号处理
 - [ ] Swagger UI 可访问（若启用）
+- [ ] 引擎自身日志（路由注册、监听地址）出现在**框架日志文件**中而非 stdout/stderr，
+      且带正确的 Origin 与级别；关闭流程结束后没有向已关闭 writer 写入的报错
 
 ---
 
@@ -241,6 +289,8 @@ providers := fiberhouse.DefaultProviders().AndMore(
 |---|---|
 | 标识常量 | `example_application/hertzcore/constant/constant.go` |
 | `ICoreContext` 实现 | `example_application/hertzcore/adaptor/hertz_context.go` |
+| 引擎日志适配 | `example_application/hertzcore/adaptor/hertz_logger.go` |
+| 日志接管与 lease | `example_application/hertzcore/adaptor/hertz_logger_install.go` |
 | `IRecover` 实现 | `example_application/hertzcore/recovery/hertz_recovery.go` |
 | `CoreStarter` 实现 | `example_application/hertzcore/starter/core_hertz_starter.go` |
 | 六类 Provider | `example_application/hertzcore/providers/` |

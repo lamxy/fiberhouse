@@ -14,7 +14,7 @@
 | 目录 | 内容 | 对应的框架契约 |
 |---|---|---|
 | `constant/` | `CoreTypeWithHertz = "hertz"` 等标识常量 | `BootConfig.CoreType` 与各 Provider 的 `Target()` |
-| `adaptor/` | `HertzContext` —— 原生上下文适配 + 对象池 | `adaptor/context.ICoreContext` |
+| `adaptor/` | `HertzContext` —— 原生上下文适配 + 对象池；`HertzLoggerAdapter` —— 引擎日志接入框架日志器 | `adaptor/context.ICoreContext`、`hlog.FullLogger` |
 | `recovery/` | `HertzRecovery` —— panic 恢复与请求数据提取 | `fiberhouse.IRecover` |
 | `starter/` | `CoreWithHertz` —— 引擎生命周期九方法 | `fiberhouse.CoreStarter` |
 | `providers/` | 六类 Provider | 各 `Group*` Provider 类型 |
@@ -37,7 +37,7 @@ CoreType: hertzconst.CoreTypeWithHertz,   // 替换 constant.CoreTypeWithFiber
 
 ---
 
-## 三个关键设计点
+## 四个关键设计点
 
 1. **复用框架的位点分派**
    每个生命周期方法都调用 `fiberhouse.LoadProviderManagersAtLocation(...)`，
@@ -49,7 +49,12 @@ CoreType: hertzconst.CoreTypeWithHertz,   // 替换 constant.CoreTypeWithFiber
    它已实现 `fiber.Error → ValidateException → Exception → 未知错误` 的完整分类。
    自行实现容易漏掉校验错误分支，导致本该 400 的响应变成 500。
 
-3. **信号处理交给框架**
+3. **引擎日志接管到框架日志器**
+   hertz 通过 `hlog.SetLogger` 集中暴露日志接口（相比 Gin 分散的四个全局钩子更集中）。
+   `InstallHertzLogger` 以 lease 表达所有权：安装须早于 `server.New`（否则路由注册日志漏到 stderr），
+   释放须早于 `logger.Close()`（否则写入已关闭的 writer）。
+
+4. **信号处理交给框架**
    使用 `Engine.Run()` 而非 `Hertz.Spin()`——后者会重复注册信号监听，
    与框架 `RunServer` 的统一优雅关闭冲突。
 
@@ -65,5 +70,7 @@ CoreType: hertzconst.CoreTypeWithHertz,   // 替换 constant.CoreTypeWithFiber
 - panic 恢复：以框架统一信封响应，进程不退出
 - Swagger UI：`/swagger/index.html` 与 `/swagger/doc.json` 均 200
 - 响应格式：全部为框架统一信封 `{"code":..,"msg":..,"data":..}`
+- 引擎日志：路由注册、`Using network library=netpoll`、监听地址、优雅关闭进度
+  全部以结构化 JSON 落入框架日志文件（`Component: Hertz`），stdout 无残留输出
 
 单元测试：`go test ./example_application/hertzcore/...`

@@ -15,6 +15,7 @@ import (
 	ctxpkg "context"
 	"crypto/tls"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -22,16 +23,28 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/config"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/appconfig"
+	hertzadaptor "github.com/lamxy/fiberhouse/example_application/hertzcore/adaptor"
 	hertzconst "github.com/lamxy/fiberhouse/example_application/hertzcore/constant"
 )
 
 // CoreWithHertz 基於 hertz 的核心應用啟動器
 type CoreWithHertz struct {
-	ctx     fiberhouse.IApplicationContext
-	Options []config.Option
-	coreApp *server.Hertz
-	json    fiberhouse.JsonWrapper
-	initErr error
+	ctx                 fiberhouse.IApplicationContext
+	Options             []config.Option
+	coreApp             *server.Hertz
+	json                fiberhouse.JsonWrapper
+	hertzLoggerLease    *hertzadaptor.HertzLoggerLease
+	initErr             error
+	shutdownCoordinated atomic.Bool
+}
+
+// releaseHertzLogger 釋放引擎日誌所有權，使引擎日誌回落到 hertz 原始日誌器。
+//
+// 必須在框架日誌器關閉前釋放，否則引擎後續日誌會寫入已關閉的 writer。
+func (ch *CoreWithHertz) releaseHertzLogger() {
+	if ch.hertzLoggerLease != nil {
+		ch.hertzLoggerLease.Release()
+	}
 }
 
 // 編譯期確保實作了框架的核心啟動器介面
@@ -85,6 +98,28 @@ func (ch *CoreWithHertz) InitCoreApp(fs fiberhouse.FrameStarter, managers ...fib
 	cfg := ch.GetAppContext().GetConfig()
 	ch.logInfo("InitCoreApp starting...")
 
+	// 接管引擎日誌：須在 server.New 之前安裝，
+	// 否則路由註冊等啟動期輸出會直接落到 stderr 而繞過框架日誌器。
+	lease, err := hertzadaptor.InstallHertzLogger(
+		hertzadaptor.NewHertzLoggerAdapter(
+			ch.GetAppContext().GetLogger(),
+			cfg.LogOriginFrame(),
+		),
+	)
+	if err != nil {
+		ch.initErr = fmt.Errorf("install Hertz framework logger: %w", err)
+		ch.logErr(ch.initErr, "InitCoreApp Hertz logger bridge failed")
+		return
+	}
+	ch.hertzLoggerLease = lease
+
+	initialized := false
+	defer func() {
+		if !initialized {
+			ch.releaseHertzLogger()
+		}
+	}()
+
 	ch.json, err = ch.resolveJSONCodec(fs, managers...)
 	if err != nil {
 		ch.initErr = err
@@ -97,6 +132,7 @@ func (ch *CoreWithHertz) InitCoreApp(fs fiberhouse.FrameStarter, managers ...fib
 		opts = ch.buildServerOptions(cfg)
 	}
 	ch.coreApp = server.New(opts...)
+	initialized = true
 }
 
 // buildServerOptions 依全域配置組裝 hertz 服務端選項。
@@ -342,6 +378,13 @@ func (ch *CoreWithHertz) listenAddr() string {
 // 使用 Run() 而非 Spin()：框架的 FiberHouse.RunServer 已統一接管系統信號與優雅關閉，
 // Spin() 會重複註冊信號監聽並自行呼叫 Shutdown，與框架的關閉流程衝突。
 func (ch *CoreWithHertz) AppCoreRun(managers ...fiberhouse.IProviderManager) error {
+	// Run 返回即代表監聽結束；若非由 Shutdown 協調，則在此歸還引擎日誌所有權
+	defer func() {
+		if !ch.shutdownCoordinated.Load() {
+			ch.releaseHertzLogger()
+		}
+	}()
+
 	if ch.initializationFailed() {
 		return ch.initErr
 	}
@@ -370,6 +413,8 @@ func (ch *CoreWithHertz) AppCoreRun(managers ...fiberhouse.IProviderManager) err
 
 // Shutdown 優雅關閉應用
 func (ch *CoreWithHertz) Shutdown(managers ...fiberhouse.IProviderManager) error {
+	defer ch.releaseHertzLogger()
+
 	if ch.initializationFailed() {
 		return ch.initErr
 	}
@@ -395,6 +440,7 @@ func (ch *CoreWithHertz) Shutdown(managers ...fiberhouse.IProviderManager) error
 	shutdownCtx, cancel := ctxpkg.WithTimeout(ctxpkg.Background(), 30*time.Second)
 	defer cancel()
 
+	ch.shutdownCoordinated.Store(true)
 	if err = ch.coreApp.Shutdown(shutdownCtx); err != nil {
 		ch.logErr(err, "Hertz app Shutdown failed.")
 		return err
@@ -406,6 +452,10 @@ func (ch *CoreWithHertz) Shutdown(managers ...fiberhouse.IProviderManager) error
 	}
 
 	ch.logInfo("Hertz server shutdown complete")
+
+	// 必須在關閉框架日誌器之前歸還引擎日誌所有權，
+	// 否則引擎後續日誌會寫入已關閉的 writer。
+	ch.releaseHertzLogger()
 	return ch.GetAppContext().GetLogger().Close()
 }
 
