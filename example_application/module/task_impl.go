@@ -12,7 +12,9 @@ import (
 	exampleTaskHandler "github.com/lamxy/fiberhouse/example_application/module/example-module/task/handler"
 )
 
-// TaskAsync 任务注册器
+// TaskAsync 任务服务组件注册器
+//
+// 可选组件，如需要异步任务服务组件支持，此处需实现框架的 TaskRegister、IRegister 契约/接口
 type TaskAsync struct {
 	name           string // 用于标记注册器名称或用于容器的keyName
 	Ctx            fiberhouse.IApplicationContext
@@ -27,12 +29,12 @@ func NewTaskAsync(ctx fiberhouse.IApplicationContext) fiberhouse.TaskRegister {
 	}
 }
 
-// GetName 获取注册器名称
+// GetName 实现 IRegister 契约，获取任务注册器名称
 func (ta *TaskAsync) GetName() string {
 	return ta.name
 }
 
-// SetName 设置注册器名称
+// SetName 实现 IRegister 契约，设置任务注册器名称
 func (ta *TaskAsync) SetName(name string) {
 	ta.name = name
 }

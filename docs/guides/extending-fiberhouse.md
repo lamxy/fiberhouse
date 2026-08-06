@@ -308,6 +308,39 @@ func (p *EchoCoreProvider) Initialize(
 
 上面的空方法只列出接口形状，不构成可运行 Core。真正实现还必须：创建并停止 server；安装 JSON codec、普通 error handler 与 panic recovery；定义原生 request context 到 `ICoreContext` 的适配；回调应用中间件、模块路由和 Swagger；处理监听错误、信号、超时与资源所有权。默认 recovery、JSON、中间件和路由 Provider 只覆盖 Fiber/Gin target，新 Core 必须分别提供匹配实现。
 
+### 可运行的完整参考：Hertz Core
+
+`example_application/hertzcore/` 是一个**已端到端验证**的第三方 Core 接入实现（cloudwego/hertz），
+完成了上一段列出的全部要求，且**未修改框架任何一行代码**。需要落地新 Core 时，
+按 [自定义核心启动器教程](custom-core-starter.md) 逐步照做即可；该教程以 Hertz 为范例，
+逐一说明六类必需 Provider、三个必须实现的导出接口，以及实作中容易踩空的差异点。
+
+### 复用框架的位点分派逻辑
+
+自定义 Core 的每个生命周期方法都需要「先分派该位点的 Provider，若被扩展替代组接管则跳过默认逻辑」。
+这段样板由框架导出的 `LoadProviderManagersAtLocation` 提供，不需要自行复制：
+
+```go
+func (c *CoreWithEcho) InitCoreApp(fs fh.FrameStarter, managers ...fh.IProviderManager) {
+	if c.GetAppContext().GetAppState() {
+		return
+	}
+	_, replaced, err := fh.LoadProviderManagersAtLocation(
+		managers, fh.ProviderLocationDefault().LocationCoreEngineInit, c)
+	if err != nil {
+		// 记录错误并返回
+		return
+	}
+	if replaced {
+		return // 已被 GroupExtendReplace 管理器接管
+	}
+	// ... 本 Core 的默认初始化逻辑
+}
+```
+
+返回值语义：`handled` 表示该位点是否有管理器被实际加载；`replaced` 表示是否由
+`GroupExtendReplace` 组接管；`err` 是各管理器加载错误的 `errors.Join` 聚合。
+
 ## 验证清单
 
 - Provider 的 Name 唯一，Type 与 Manager 完全一致；需要选择时 Provider 已 `SetTarget`，Manager 明确比较 Target/Version/Name。

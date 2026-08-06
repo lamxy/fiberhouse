@@ -1,0 +1,15 @@
+#!/usr/bin/expect -f
+
+set timeout -1
+# 啟動 claude 
+spawn claude -c
+
+expect {
+    # 捕捉 API 超時或錯誤提示
+    -re "(API Error|Request timed out|connection closed|Press Enter)" {
+        send "continue\r"
+        exp_continue
+    }
+    # 捕捉正常結束訊號
+    eof
+}

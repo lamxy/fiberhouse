@@ -37,6 +37,7 @@
 ## 扩展与维护
 
 - [扩展 FiberHouse](guides/extending-fiberhouse.md)：自定义 Provider/Manager/Location、codec、响应协议和 CoreStarter。
+- [自定义核心启动器](guides/custom-core-starter.md)：以 Hertz 为完整参考，说明接入第三方 HTTP 引擎所需的三个接口、六类 Provider、关键实现点与验证清单。
 - [功能状态](reference/feature-status.md)：定义“已接入”“实验性”“内部工具”“预留/占位”，并逐项说明默认注册和应用启用条件。
 - [组件目录](reference/components.md)：`component/`、数据库辅助和内部工具的调用者、并发与生命周期索引。
 - [示例目录](reference/examples.md)：`example_main`、`example_config`、`example_application` 的可借鉴部分与不完善处。
