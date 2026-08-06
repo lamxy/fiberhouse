@@ -164,7 +164,24 @@ application.plugins.engine.servers.<coreType>
 
 Hertz 使用 `servers.hertz`。配置文件属于应用资产，可自由新增。
 
-### 4.6 Swagger
+### 4.6 路由集合必须与 Fiber 适配器对齐
+
+新 Core 的传输层是独立实现的，**很容易只迁移业务路由而漏掉基础设施路由**。
+
+典型例子：`GET /health/livez`。它由 `example-module/api` 的 `HealthHandler` 提供，
+CI 冒烟测试（`.github/workflows/go1.yml`）会以
+
+```bash
+curl --fail --retry 10 --retry-connrefused http://127.0.0.1:8080/health/livez
+```
+
+探测启动后的 `example_main`。Hertz 接入初期遗漏了该路由，切换默认核心后流水线随即失败。
+
+对照 `example-module/api/register_api_router.go` 逐组核对：业务路由、健康检查、公共路由，
+缺一不可。健康检查的 service 层可直接复用（`service.HealthServiceProvide`），
+只需为新 Core 编写 handler 与 wire 注入。
+
+### 4.7 Swagger
 
 swaggo 注解在整个扫描树中按 `method + path` 去重，**多个适配器标注相同 `@Router` 会导致 `swag init` 冲突**。
 
@@ -176,7 +193,7 @@ h.GET("/swagger/*any", hertzSwagger.WrapHandler(swaggerFiles.Handler))
 
 详见 `example_application/docs/README.md`。
 
-### 4.7 引擎日志与调试输出
+### 4.8 引擎日志与调试输出
 
 引擎自身的日志（路由注册、监听地址、连接错误、优雅关闭进度）默认直接写 stderr，
 **绕过框架的日志器**，因而不受 Origin、级别、轮转与异步 writer 配置管辖。
@@ -278,6 +295,9 @@ providers := fiberhouse.DefaultProviders().AndMore(
 - [ ] panic 被恢复并以统一格式响应，未导致进程退出
 - [ ] `Ctrl+C` 能优雅关闭，无重复信号处理
 - [ ] Swagger UI 可访问（若启用）
+- [ ] **路由覆盖对齐**：新 Core 注册的路由集合与 Fiber 适配器一致，
+      尤其是 `GET /health/livez`——CI 冒烟测试会探测该路径，
+      任何作为 `example_main` 默认核心的适配器缺失它都会导致流水线失败
 - [ ] 引擎自身日志（路由注册、监听地址）出现在**框架日志文件**中而非 stdout/stderr，
       且带正确的 Origin 与级别；关闭流程结束后没有向已关闭 writer 写入的报错
 

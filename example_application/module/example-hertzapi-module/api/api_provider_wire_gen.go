@@ -21,3 +21,10 @@ func InjectExampleApi(ctx fiberhouse.IApplicationContext) (*ExampleHandler, erro
 	exampleHandler := NewExampleHandler(ctx, exampleService)
 	return exampleHandler, nil
 }
+
+func InjectHealthApi(ctx fiberhouse.IApplicationContext) (*HealthHandler, error) {
+	healthRepository := repository.NewHealthRepository(ctx)
+	healthService := service.NewHealthService(ctx, healthRepository)
+	healthHandler := NewHealthHandler(ctx, healthService)
+	return healthHandler, nil
+}

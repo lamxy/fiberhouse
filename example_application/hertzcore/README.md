@@ -65,6 +65,7 @@ CoreType: hertzconst.CoreTypeWithHertz,   // 替换 constant.CoreTypeWithFiber
 已在真实依赖环境（MongoDB / Redis / MySQL 容器）下端到端验证：
 
 - 完整 CRUD：`POST` 201 → `GET` 200 → `PUT` 200 → `LIST` 200 → `DELETE` 204
+- 健康检查：`GET /health/livez` 200（CI 冒烟测试探测路径）
 - 领域错误映射：不存在资源 → 404
 - 参数校验：非法 ID → 400，含字段级错误信息
 - panic 恢复：以框架统一信封响应，进程不退出

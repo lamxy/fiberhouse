@@ -12,8 +12,20 @@ func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, router route.IRou
 	exampleAPI, _ := InjectExampleApi(ctx)
 	registerExampleRoutes(router, exampleAPI)
 
+	healthAPI, _ := InjectHealthApi(ctx)
+	registerHealthRoutes(router, healthAPI)
+
 	commonAPI := NewCommonHandler(ctx)
 	registerCommonRoutes(router, commonAPI)
+}
+
+// registerHealthRoutes 注册与应用健康状态的路由
+//
+// 路径与 Fiber 适配器保持一致；CI 冒烟测试探测 GET /health/livez，
+// 任何作为 example_main 默认核心的适配器都必须提供该路由。
+func registerHealthRoutes(router route.IRouter, handler *HealthHandler) {
+	healthGroup := router.Group("/health")
+	healthGroup.GET("/livez", handler.Liveness)
 }
 
 func registerExampleRoutes(router route.IRouter, handler *ExampleHandler) {

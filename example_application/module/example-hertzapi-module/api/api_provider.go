@@ -26,3 +26,8 @@ func InjectExampleApi(ctx fiberhouse.IApplicationContext) (*ExampleHandler, erro
 	)
 	return nil, nil
 }
+
+func InjectHealthApi(ctx fiberhouse.IApplicationContext) (*HealthHandler, error) {
+	wire.Build(NewHealthHandler, service.HealthServiceProvide)
+	return nil, nil
+}
