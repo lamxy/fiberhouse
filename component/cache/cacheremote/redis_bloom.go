@@ -35,9 +35,10 @@ type RedisBloomFilter struct {
 	executor commandExecutor
 	config   RedisBloomConfig
 
-	mu        sync.RWMutex
-	preloadMu sync.Mutex
-	ready     bool
+	mu         sync.RWMutex
+	preloadMu  sync.Mutex
+	ready      bool
+	generation uint64
 }
 
 var _ cache.ExistenceFilter = (*RedisBloomFilter)(nil)
@@ -92,9 +93,10 @@ func (f *RedisBloomFilter) Preload(ctx context.Context, keys []string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		end := start + f.config.BatchSize
-		if end > len(keys) {
-			end = len(keys)
+		remaining := len(keys) - start
+		end := len(keys)
+		if f.config.BatchSize < remaining {
+			end = start + f.config.BatchSize
 		}
 		args := make([]interface{}, 0, end-start+2)
 		args = append(args, "BF.MADD", f.config.Key)
@@ -123,12 +125,21 @@ func (f *RedisBloomFilter) MayContain(ctx context.Context, key string) (bool, er
 	if err := ctx.Err(); err != nil {
 		return true, err
 	}
-	if !f.Ready() {
+	f.mu.RLock()
+	ready, generation := f.ready, f.generation
+	f.mu.RUnlock()
+	if !ready {
 		return true, nil
 	}
 	result, err := f.executor.Do(ctx, "BF.EXISTS", f.config.Key, key).Int64()
 	if err != nil {
 		return true, normalizeRedisBloomError(err)
+	}
+	f.mu.RLock()
+	stillAuthoritative := f.ready && f.generation == generation
+	f.mu.RUnlock()
+	if !stillAuthoritative {
+		return true, nil
 	}
 	return result != 0, nil
 }
@@ -153,6 +164,7 @@ func (f *RedisBloomFilter) setReady(ready bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ready = ready
+	f.generation++
 }
 
 func normalizeRedisBloomError(err error) error {

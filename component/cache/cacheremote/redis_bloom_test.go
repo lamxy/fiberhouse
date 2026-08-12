@@ -18,6 +18,21 @@ type scriptedCommandExecutor struct {
 	onDo     func(context.Context, []interface{})
 }
 
+type blockingExistsExecutor struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (e *blockingExistsExecutor) Do(_ context.Context, args ...interface{}) *redis.Cmd {
+	if args[0] != "BF.EXISTS" {
+		return redis.NewCmdResult(int64(1), nil)
+	}
+	e.once.Do(func() { close(e.started) })
+	<-e.release
+	return redis.NewCmdResult(int64(0), nil)
+}
+
 func (e *scriptedCommandExecutor) Do(ctx context.Context, args ...interface{}) *redis.Cmd {
 	e.mu.Lock()
 	e.commands = append(e.commands, append([]interface{}(nil), args...))
@@ -161,6 +176,62 @@ func TestRedisBloomConfigAndBusyKeyPolicy(t *testing.T) {
 			} else {
 				require.ErrorIs(t, filter.Prepare(context.Background()), busy)
 			}
+		})
+	}
+}
+
+func TestRedisBloomPreloadHandlesMaximumBatchSizeWithoutOverflow(t *testing.T) {
+	config := bloomConfig()
+	config.BatchSize = int(^uint(0) >> 1)
+	executor := &scriptedCommandExecutor{}
+	filter, err := NewRedisBloomFilter(executor, config)
+	require.NoError(t, err)
+
+	require.NoError(t, filter.Preload(context.Background(), []string{"a", "b", "c"}))
+	require.True(t, filter.Ready())
+	require.Equal(t, [][]interface{}{{"BF.MADD", "cache:keys", "a", "b", "c"}}, executor.recorded())
+}
+
+func TestRedisBloomPreloadEmptyKeysBecomesReadyAndZeroBatchDefaults(t *testing.T) {
+	config := bloomConfig()
+	config.BatchSize = 0
+	filter, err := NewRedisBloomFilter(&scriptedCommandExecutor{}, config)
+	require.NoError(t, err)
+	require.Equal(t, 1000, filter.config.BatchSize)
+
+	require.NoError(t, filter.Preload(context.Background(), nil))
+	require.True(t, filter.Ready())
+}
+
+func TestRedisBloomMayContainFailsOpenWhenAuthorityChangesDuringLookup(t *testing.T) {
+	for _, transition := range []struct {
+		name    string
+		perform func(*RedisBloomFilter) error
+	}{
+		{name: "reset", perform: func(filter *RedisBloomFilter) error { filter.Reset(); return nil }},
+		{name: "preload", perform: func(filter *RedisBloomFilter) error {
+			return filter.Preload(context.Background(), nil)
+		}},
+	} {
+		t.Run(transition.name, func(t *testing.T) {
+			executor := &blockingExistsExecutor{started: make(chan struct{}), release: make(chan struct{})}
+			filter, err := NewRedisBloomFilter(executor, bloomConfig())
+			require.NoError(t, err)
+			require.NoError(t, filter.Preload(context.Background(), nil))
+
+			result := make(chan bool, 1)
+			errs := make(chan error, 1)
+			go func() {
+				mayContain, err := filter.MayContain(context.Background(), "missing")
+				result <- mayContain
+				errs <- err
+			}()
+			<-executor.started
+			require.NoError(t, transition.perform(filter))
+			close(executor.release)
+
+			require.NoError(t, <-errs)
+			require.True(t, <-result, "a lookup overlapping an authority transition must fail open")
 		})
 	}
 }
