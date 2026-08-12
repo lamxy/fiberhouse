@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"math"
 	"testing"
 	"time"
@@ -13,6 +14,68 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestIsMiss(t *testing.T) {
+	tests := []struct {
+		err  error
+		want bool
+	}{
+		{ErrKeyNotFound, true},
+		{NewErrRedisNil("k"), true},
+		{NewErrRejectedByBloomFilter("k"), true},
+		{ErrCacheClosed, false},
+		{context.Canceled, false},
+		{errors.New("network down"), false},
+	}
+
+	for _, tt := range tests {
+		if got := IsMiss(tt.err); got != tt.want {
+			t.Fatalf("IsMiss(%v) = %v, want %v", tt.err, got, tt.want)
+		}
+	}
+}
+
+func TestCacheOption_PolicyCloneAndPoolReset(t *testing.T) {
+	appCtx := newCacheOptionTestContext()
+	original := NewCacheOption(appCtx).
+		SetContextCtx(context.Background()).
+		SetCacheErrorPolicy(LoadOnCacheError).
+		SetNegativeTTL(time.Minute).
+		SetLoadTimeout(5 * time.Second)
+
+	clone := original.Clone()
+	defer clone.Release()
+	assert.Equal(t, LoadOnCacheError, clone.GetCacheErrorPolicy())
+	assert.Equal(t, time.Minute, clone.GetNegativeTTL())
+	assert.Equal(t, 5*time.Second, clone.GetLoadTimeout())
+
+	pooled := OptionPoolGet(appCtx)
+	pooled.SetCacheErrorPolicy(LoadOnCacheError).
+		SetNegativeTTL(time.Minute).
+		SetLoadTimeout(time.Second)
+	OptionPoolPut(pooled)
+
+	reset := OptionPoolGet(appCtx)
+	defer OptionPoolPut(reset)
+	assert.Equal(t, ReturnCacheError, reset.GetCacheErrorPolicy())
+	assert.Zero(t, reset.GetNegativeTTL())
+	assert.Equal(t, 30*time.Second, reset.GetLoadTimeout())
+}
+
+func TestCacheOption_PolicyValidation(t *testing.T) {
+	valid := func() *CacheOption {
+		return NewCacheOption(newCacheOptionTestContext()).
+			Local().
+			SetCacheKey("key").
+			SetContextCtx(context.Background())
+	}
+
+	assert.Error(t, valid().SetContextCtx(nil).Valid())
+	assert.Error(t, valid().SetNegativeTTL(-time.Second).Valid())
+	assert.Error(t, valid().SetLoadTimeout(0).Valid())
+	assert.Error(t, valid().Level2().SetLocalTTL(2*time.Minute).SetRemoteTTL(time.Minute).Valid())
+	assert.NoError(t, valid().Level2().SetLocalTTL(time.Minute).SetRemoteTTL(2*time.Minute).Valid())
+}
 
 // helper: 采样断言
 func sampleRange(t *testing.T, n int, f func() time.Duration, min, max time.Duration) []time.Duration {

@@ -13,10 +13,16 @@ import (
 
 var (
 	ErrKeyNotFound           = errors.New("cache: key not found")
+	ErrOriginNotFound        = errors.New("cache: origin value not found")
 	ErrCacheClosed           = errors.New("cache: cache is closed")
 	ErrSerializationFailed   = errors.New("cache: serialization failed")
 	ErrDeserializationFailed = errors.New("cache: deserialization failed")
 )
+
+// IsMiss reports whether err represents a cache miss.
+func IsMiss(err error) bool {
+	return errors.Is(err, ErrKeyNotFound)
+}
 
 // CacheError 包含缓存操作失败的详细信息
 type CacheError struct {
@@ -81,10 +87,18 @@ func (e ErrRejectedByBloomFilter) Error() string {
 	return e.msg
 }
 
+func (e ErrRejectedByBloomFilter) Is(target error) bool {
+	return target == ErrKeyNotFound
+}
+
 func (e ErrCircuitBreakerOpen) Error() string {
 	return e.msg
 }
 
 func (e ErrRedisNil) Error() string {
 	return e.msg
+}
+
+func (e ErrRedisNil) Is(target error) bool {
+	return target == ErrKeyNotFound
 }

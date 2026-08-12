@@ -88,6 +88,9 @@ type Level int8
 // Strategy 缓存在2级缓存的同步策略
 type Strategy int8
 
+// CacheErrorPolicy determines how callers handle cache infrastructure errors.
+type CacheErrorPolicy uint8
+
 // 缓存级别
 const (
 	Local Level = iota + 1 // 从1开始，避免零值问题
@@ -101,6 +104,11 @@ const (
 	WriteRemoteOnly
 	AsyncWriteBoth
 	AsyncWriteRemoteOnly
+)
+
+const (
+	ReturnCacheError CacheErrorPolicy = iota + 1
+	LoadOnCacheError
 )
 
 // TTLConfig TTL配置结构
@@ -118,6 +126,10 @@ type CacheOption struct {
 	enable bool
 	// context
 	ctx context.Context
+	// request-scoped cache failure behavior
+	cacheErrorPolicy CacheErrorPolicy
+	negativeTTL      time.Duration
+	loadTimeout      time.Duration
 
 	// 缓存级别： 1本地缓存、2远程缓存、3二级缓存
 	cacheLevel Level
@@ -145,11 +157,13 @@ type CacheOption struct {
 // NewCacheOption 创建默认的CacheOption实例
 func NewCacheOption(appCtx fiberhouse.IContext) *CacheOption {
 	return &CacheOption{
-		AppCtx:          appCtx,
-		enable:          true,
-		syncStrategy:    WriteRemoteOnly,
-		localTTLConfig:  &TTLConfig{UseRandom: false},
-		remoteTTLConfig: &TTLConfig{UseRandom: false},
+		AppCtx:           appCtx,
+		enable:           true,
+		syncStrategy:     WriteRemoteOnly,
+		cacheErrorPolicy: ReturnCacheError,
+		loadTimeout:      30 * time.Second,
+		localTTLConfig:   &TTLConfig{UseRandom: false},
+		remoteTTLConfig:  &TTLConfig{UseRandom: false},
 	}
 }
 
@@ -176,6 +190,9 @@ func (c *CacheOption) Clone(ctx ...context.Context) *CacheOption {
 		coNew.ctx = ctx[0]
 	}
 	coNew.enable = c.enable
+	coNew.cacheErrorPolicy = c.cacheErrorPolicy
+	coNew.negativeTTL = c.negativeTTL
+	coNew.loadTimeout = c.loadTimeout
 	coNew.cacheLevel = c.cacheLevel
 	coNew.syncStrategy = c.syncStrategy
 	coNew.singleFlight = c.singleFlight
@@ -209,6 +226,9 @@ func (c *CacheOption) Release() {
 // Reset 重置CacheOption实例属性，保留AppCtx
 func (c *CacheOption) Reset() *CacheOption {
 	c.ctx = nil
+	c.cacheErrorPolicy = ReturnCacheError
+	c.negativeTTL = 0
+	c.loadTimeout = 30 * time.Second
 	c.bloomFilter = false
 	c.circuitBreaker = false
 	c.singleFlight = false
@@ -482,6 +502,39 @@ func (c *CacheOption) GetContextCtx() context.Context {
 	return c.ctx
 }
 
+// SetCacheErrorPolicy sets the request's behavior for cache infrastructure errors.
+func (c *CacheOption) SetCacheErrorPolicy(policy CacheErrorPolicy) *CacheOption {
+	c.cacheErrorPolicy = policy
+	return c
+}
+
+// GetCacheErrorPolicy returns the request's cache error policy.
+func (c *CacheOption) GetCacheErrorPolicy() CacheErrorPolicy {
+	return c.cacheErrorPolicy
+}
+
+// SetNegativeTTL sets the duration used to cache an origin miss.
+func (c *CacheOption) SetNegativeTTL(ttl time.Duration) *CacheOption {
+	c.negativeTTL = ttl
+	return c
+}
+
+// GetNegativeTTL returns the duration used to cache an origin miss.
+func (c *CacheOption) GetNegativeTTL() time.Duration {
+	return c.negativeTTL
+}
+
+// SetLoadTimeout sets the maximum duration allowed for an origin load.
+func (c *CacheOption) SetLoadTimeout(timeout time.Duration) *CacheOption {
+	c.loadTimeout = timeout
+	return c
+}
+
+// GetLoadTimeout returns the maximum duration allowed for an origin load.
+func (c *CacheOption) GetLoadTimeout() time.Duration {
+	return c.loadTimeout
+}
+
 // GetContext 获取全局上下文对象
 func (c *CacheOption) GetContext() fiberhouse.IContext {
 	return c.AppCtx
@@ -561,6 +614,24 @@ func (c *CacheOption) Valid() error {
 
 	if c.AppCtx == nil {
 		return errors.New("AppCtx is required")
+	}
+
+	if c.ctx == nil {
+		return errors.New("context is required")
+	}
+
+	if c.negativeTTL < 0 {
+		return errors.New("negative TTL must not be negative")
+	}
+
+	if c.loadTimeout <= 0 {
+		return errors.New("load timeout must be positive")
+	}
+
+	if c.localTTLConfig != nil && c.remoteTTLConfig != nil &&
+		c.localTTLConfig.BaseTTL > 0 && c.remoteTTLConfig.BaseTTL > 0 &&
+		c.localTTLConfig.BaseTTL > c.remoteTTLConfig.BaseTTL {
+		return errors.New("local base TTL must not exceed remote base TTL")
 	}
 
 	return nil
