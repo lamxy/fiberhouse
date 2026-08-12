@@ -128,6 +128,22 @@ func TestShardedBloomFilter_ResetClearsEveryShard(t *testing.T) {
 	}
 }
 
+func TestShardedBloomFilter_ExtremeShardCountFallsBackSafely(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	done := make(chan *ShardedBloomFilter, 1)
+	go func() {
+		done <- NewShardedBloomFilter(maxInt, 1, 0.01).(*ShardedBloomFilter)
+	}()
+	select {
+	case filter := <-done:
+		if got := len(filter.shards); got != 16 {
+			t.Fatalf("extreme shard count produced %d shards, want safe default 16", got)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("extreme shard count did not return promptly")
+	}
+}
+
 // TestShardedBloomFilter_Concurrent 并发安全 & 低误判验证（仅不崩溃）
 func TestShardedBloomFilter_Concurrent(t *testing.T) {
 	bf := NewShardedBloomFilter(32, 5000, 0.01)

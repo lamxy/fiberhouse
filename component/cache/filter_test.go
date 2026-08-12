@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 )
@@ -86,6 +87,16 @@ func TestMemoryBloomFilter_InvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestMemoryBloomFilter_RejectsExtremeCapacityAndShardCount(t *testing.T) {
+	maxUint := ^uint(0)
+	if _, err := NewMemoryBloomFilter(maxUint-1, 0.01, 3); err == nil {
+		t.Fatal("NewMemoryBloomFilter accepted an extreme capacity that cannot be safely allocated")
+	}
+	if _, err := NewMemoryBloomFilter(1, 0.01, int(^uint(0)>>1)); err == nil {
+		t.Fatal("NewMemoryBloomFilter accepted an extreme shard count")
+	}
+}
+
 func TestMemoryBloomFilter_NormalizesShardCountToNextPowerOfTwo(t *testing.T) {
 	for _, tc := range []struct {
 		requested int
@@ -136,4 +147,69 @@ func TestMemoryBloomFilter_PreloadAndMayContainAreConcurrentSafe(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestMemoryBloomFilter_PreloadPreservesSuccessfulConcurrentAdd(t *testing.T) {
+	filter, err := NewMemoryBloomFilter(100, 0.01, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	preloadDone := make(chan error, 1)
+	go func() {
+		preloadDone <- filter.preload(context.Background(), []string{"preloaded"}, func() {
+			close(started)
+			<-release
+		})
+	}()
+	<-started
+	addDone := make(chan error, 1)
+	go func() { addDone <- filter.Add(context.Background(), "added") }()
+	select {
+	case err := <-addDone:
+		t.Fatalf("Add returned before preload transaction ended: %v", err)
+	default:
+	}
+	close(release)
+	if err := <-preloadDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-addDone; err != nil {
+		t.Fatal(err)
+	}
+	if !filter.Ready() {
+		t.Fatal("preload did not make filter ready")
+	}
+	mayContain, err := filter.MayContain(context.Background(), "added")
+	if err != nil || !mayContain {
+		t.Fatalf("successful Add was lost by Preload: MayContain=%v err=%v", mayContain, err)
+	}
+}
+
+func TestMemoryBloomFilter_CanceledPreloadPreservesPreviousReadySet(t *testing.T) {
+	filter, err := NewMemoryBloomFilter(100, 0.01, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filter.Preload(context.Background(), []string{"known"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := filter.Preload(ctx, []string{"replacement"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Preload error = %v, want context cancellation", err)
+	}
+	for _, tc := range []struct {
+		key  string
+		want bool
+	}{
+		{key: "known", want: true},
+		{key: "replacement", want: false},
+	} {
+		mayContain, err := filter.MayContain(context.Background(), tc.key)
+		if err != nil || mayContain != tc.want {
+			t.Fatalf("MayContain(%q) = %v, %v; want %v, nil", tc.key, mayContain, err, tc.want)
+		}
+	}
 }

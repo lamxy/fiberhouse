@@ -198,6 +198,9 @@ func (c *Coordinator) allowByFilter(request *CacheOption) error {
 	mayContain, err := c.filter.MayContain(request.GetContextCtx(), request.GetCacheKey())
 	if err != nil {
 		c.observer(EventFilterError)
+		if ctxErr := request.GetContextCtx().Err(); ctxErr != nil {
+			return ctxErr
+		}
 		if c.filterFailureMode == FilterFailOpen {
 			return nil
 		}

@@ -480,6 +480,42 @@ func TestCoordinator_BloomFilterErrorUsesConfiguredFailureMode(t *testing.T) {
 	}
 }
 
+func TestCoordinator_BloomFilterContextErrorIsReturnedUnchanged(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode FilterFailureMode
+		err  error
+	}{
+		{name: "fail open cancellation", mode: FilterFailOpen, err: context.Canceled},
+		{name: "fail closed deadline", mode: FilterFailClosed, err: context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := newCoordinatorFakeCache()
+			coord, err := NewCoordinator(backend, WithExistenceFilter(failingExistenceFilter{err: tc.err}), WithFilterFailureMode(tc.mode))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			if tc.err == context.Canceled {
+				cancel()
+			} else {
+				cancel()
+				ctx, cancel = context.WithTimeout(context.Background(), time.Nanosecond)
+				time.Sleep(time.Millisecond)
+			}
+			defer cancel()
+			called := false
+			_, err = GetOrLoad(coord, coordinatorRequest(ctx, "cancelled").EnableBloomFilter(), func(context.Context) (coordinatorPayload, error) {
+				called = true
+				return coordinatorPayload{}, nil
+			})
+			if !errors.Is(err, tc.err) || called {
+				t.Fatalf("err=%v loader called=%v; want original context error", err, called)
+			}
+		})
+	}
+}
+
 type addFailingExistenceFilter struct{ err error }
 
 func (f addFailingExistenceFilter) Ready() bool { return false }

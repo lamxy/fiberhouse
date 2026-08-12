@@ -136,13 +136,22 @@ type ShardedBloomFilter struct {
 	fpRate      float64
 }
 
+const (
+	defaultBloomShards = 16
+	maxBloomShards     = 1 << 16
+)
+
 func NewShardedBloomFilter(shardCount int, estPerShard uint, fpRate float64) CacheBloomFilter {
 	// The bit-mask index requires a power of two. Preserve the legacy default
 	// for zero while making all positive requests safe for mask indexing.
 	if shardCount <= 0 {
-		shardCount = 16
+		shardCount = defaultBloomShards
 	}
-	shardCount = normalizeShardCount(shardCount)
+	normalized, ok := normalizeShardCount(shardCount)
+	if !ok {
+		normalized = defaultBloomShards
+	}
+	shardCount = normalized
 	sb := &ShardedBloomFilter{
 		shards:      make([]shard, shardCount),
 		mask:        uint32(shardCount - 1),
@@ -203,15 +212,18 @@ func bloomShardIndex(key []byte, mask uint32) int {
 	return int(h.Sum32() & mask)
 }
 
-func normalizeShardCount(shardCount int) int {
+func normalizeShardCount(shardCount int) (int, bool) {
 	if shardCount <= 1 {
-		return 1
+		return 1, true
+	}
+	if shardCount > maxBloomShards {
+		return 0, false
 	}
 	count := 1
 	for count < shardCount {
 		count <<= 1
 	}
-	return count
+	return count, true
 }
 
 // StableBloomFilter 支持陈旧信息驱逐的稳定布隆过滤器

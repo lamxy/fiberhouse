@@ -34,20 +34,33 @@ type MemoryBloomFilter struct {
 	ready     bool
 }
 
+const maxMemoryBloomCapacity uint = 1 << 26
+
 // NewMemoryBloomFilter constructs an unready filter. Shard counts are rounded
 // up to a power of two, with zero selecting one shard.
 func NewMemoryBloomFilter(capacity uint, errorRate float64, shardCount int) (*MemoryBloomFilter, error) {
 	if capacity == 0 {
 		return nil, errors.New("memory bloom filter capacity must be positive")
 	}
+	if capacity > maxMemoryBloomCapacity {
+		return nil, errors.New("memory bloom filter capacity is too large")
+	}
 	if errorRate <= 0 || errorRate >= 1 || math.IsNaN(errorRate) {
 		return nil, errors.New("memory bloom filter error rate must be between zero and one")
 	}
-	return newMemoryBloomFilter(capacity, errorRate, normalizeShardCount(shardCount)), nil
+	shardCount, ok := normalizeShardCount(shardCount)
+	if !ok {
+		return nil, errors.New("memory bloom filter shard count is too large")
+	}
+	return newMemoryBloomFilter(capacity, errorRate, shardCount), nil
 }
 
 func newMemoryBloomFilter(capacity uint, errorRate float64, shardCount int) *MemoryBloomFilter {
-	perShard := (capacity + uint(shardCount) - 1) / uint(shardCount)
+	shards := uint(shardCount)
+	perShard := capacity / shards
+	if capacity%shards != 0 {
+		perShard++
+	}
 	filter := &MemoryBloomFilter{
 		capacity:  capacity,
 		errorRate: errorRate,
@@ -93,10 +106,19 @@ func (f *MemoryBloomFilter) Add(ctx context.Context, key string) error {
 
 // Preload builds a complete replacement before atomically making it visible.
 func (f *MemoryBloomFilter) Preload(ctx context.Context, keys []string) error {
-	f.mu.RLock()
+	return f.preload(ctx, keys, nil)
+}
+
+// preload serializes construction and publication with Add. The hook exists
+// only to deterministically exercise that transaction in package tests.
+func (f *MemoryBloomFilter) preload(ctx context.Context, keys []string, hook func()) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	capacity, errorRate, shardCount := f.capacity, f.errorRate, len(f.shards)
-	f.mu.RUnlock()
 	next := newMemoryBloomFilter(capacity, errorRate, shardCount)
+	if hook != nil {
+		hook()
+	}
 	for _, key := range keys {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -106,11 +128,9 @@ func (f *MemoryBloomFilter) Preload(ctx context.Context, keys []string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	f.mu.Lock()
 	f.shards = next.shards
 	f.mask = next.mask
 	f.ready = true
-	f.mu.Unlock()
 	return nil
 }
 
