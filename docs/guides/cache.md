@@ -54,10 +54,13 @@ func LoadUser(
 }
 ```
 
-在 `GetOrLoad` 中，`SetDefaultInstanceKey` 参与 singleflight namespace；它让同一 backend
-上两个业务域的相同字符串 key 不会共享 flight。旧 `GetCached` 还会把这个字段当作
-GlobalManager lookup key。类型也属于 flight key，因此 `GetOrLoad[User]` 与
-`GetOrLoad[OtherType]` 不会互相复用结果。
+`SetDefaultInstanceKey` 只设置这次 request 的 Coordinator flight namespace；它让同一
+backend 上两个业务域的相同字符串 key 不会共享 flight。`NewCoordinator` 只接收 backend
+及 `CoordinatorOption`，不读取 namespace 配置。旧 `GetCached` 仍通过
+`Factory.Lookup(level)` 解析 backend，并分别使用 application 的 `GetLocalCacheKey`、
+`GetRemoteCacheKey` 或 `GetLevel2CacheKey`；`SetDefaultInstanceKey` 不参与 backend lookup。
+旧入口内部调用 `GetOrLoad` 时，该字段仍作为 request 的 flight namespace。结果类型也属于
+flight key，因此 `GetOrLoad[User]` 与 `GetOrLoad[OtherType]` 不会互相复用结果。
 
 ## Backend 构造与所有权
 
@@ -141,8 +144,8 @@ caller cancellation，再施加 `SetLoadTimeout`。默认 load timeout 是 30 �
 ## Bloom filter：先建立权威集合
 
 Bloom filter 只有在 `Ready()==true` 时才能拒绝 key。`Add` 只学习一次成功 load 的 key，
-不会把 filter 变成 authoritative（可用于否定判断的完整集合）。只有完整 `Preload`
-成功后才 ready；失败或取消必须继续 fail open。
+不会把 filter 变成 authoritative（可用于否定判断的完整集合）。首次 `Preload` 完整成功
+前保持 fail-open；已建立 authority 后的刷新失败如何处理，取决于具体实现。
 
 ### 进程内 MemoryBloomFilter
 
@@ -163,8 +166,14 @@ coordinator, err := cache.NewCoordinator(
 )
 ```
 
+Memory preload 是事务式替换：它先在旁路构建新 shards，成功后再原子发布。首次 preload
+失败或取消时 filter 仍未 ready，因此继续 fail-open；已 ready 后的 refresh 失败或取消时，
+旧的 authoritative snapshot 和 `Ready()==true` 保持不变。此时旧 snapshot 仍可拒绝未包含
+的 key，包括刷新期间新增但不在旧集合中的有效 key。需要显式撤销 authority 时调用
+`Reset`；它清空当前 snapshot、把 `Ready` 设为 false，并恢复 fail-open。
+
 capacity 必须在 1 到 `1<<26` 之间，error rate 必须在 0 和 1 之间。shard count 的零值
-表示 1；其他值向上取整为 2 的幂。`Reset` 清空权威状态并恢复 fail-open。
+表示 1；其他值向上取整为 2 的幂。
 
 ### RedisBloomFilter
 
@@ -189,6 +198,11 @@ if err := filter.Preload(ctx, authoritativeKeys); err != nil {
 Redis 不支持 `BF.*` 时错误可由 `errors.Is(err, cacheremote.ErrRedisBloomUnavailable)`
 识别。`AllowExisting` 默认 false，防止意外复用同名 Redis key；显式设为 true 才接受
 `BF.RESERVE` 的 BUSYKEY。`Reset` 只撤销当前进程的 authority，不删除共享远程 key。
+
+RedisBloom 的 refresh 与 Memory 不同：`Preload` 开始时先把当前进程的 `Ready` 设为
+false，再分批执行 `BF.MADD`。任何批次失败或 context 取消都会保持 unready，因此当前
+进程继续 fail-open；远程 Redis key 中已有或已写入的 bits 不会回滚。只有全部批次成功后
+才重新发布 authority。`Reset` 同样只把本地 readiness 转为 fail-open。
 
 Coordinator 默认 `FilterFailOpen`：filter 自身报错时继续访问 cache/loader。
 `FilterFailClosed` 将 filter error 转成 `ErrRejectedByBloomFilter`。caller cancellation 和
@@ -274,8 +288,10 @@ admitted 的 L2 任务会访问 closed backend。
   `maxBlockingTasks`, `nonblocking`。两个 size 都必须大于零。
 
 示例 YAML 中的 `cache.coordinator` 是应用侧配置形状，仅用于说明 namespace、filter、
-breaker 和 jitter policy；FiberHouse 不会自动读取或装配它。应用必须把这些值翻译成
-`SetDefaultInstanceKey`、`WithExistenceFilter`、backend/wrapper breaker 设置和 TTL option。
+breaker 和 jitter policy；FiberHouse 不会自动读取或装配它。应用必须把 namespace 放到
+每个 request 的 `SetDefaultInstanceKey`，把 filter 翻译成 `WithExistenceFilter`，并显式
+应用 backend/wrapper breaker 设置和 TTL option。`NewCoordinator` 不消费 namespace；
+legacy `GetCached` 仍按 application-level cache key 解析 backend。
 
 `cache.redis.protection` 是旧 Redis-owned protection 配置，保留用于兼容已有部署，但已
 deprecated。新代码应由应用显式构造 Coordinator/filter；不要假设 YAML 会自动开启保护。
