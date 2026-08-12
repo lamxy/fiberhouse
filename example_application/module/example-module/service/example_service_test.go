@@ -358,8 +358,8 @@ func TestListProductionCacheOptionsLoadStoreOnceAndPreserveCallerContext(t *test
 	loads := 0
 	store := &fakeExampleStore{listFn: func(got context.Context, _ repository.ListOptions) ([]entity.Example, int64, error) {
 		loads++
-		if got != caller {
-			t.Fatal("cache loader replaced caller context")
+		if got.Value(contextKey("request")) != caller.Value(contextKey("request")) {
+			return nil, 0, errors.New("cache loader lost caller context value")
 		}
 		return nil, 0, nil
 	}}

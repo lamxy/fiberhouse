@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -64,6 +65,8 @@ type ExampleService struct {
 	fiberhouse.ServiceLocator // 继承 service 定位层接口
 	Store                     repository.ExampleStore
 	now                       func() time.Time
+	listCoordinator           *cache.Coordinator
+	listCoordinatorOnce       sync.Once
 
 	listCached        exampleListCache
 	getTaskDispatcher func() (exampleTaskDispatcher, error)
@@ -233,6 +236,30 @@ func (s *ExampleService) readThroughList(ctx context.Context, key string, ttl ti
 		SetContextCtx(ctx).
 		SetSyncStrategyWriteRemoteOnly().
 		EnableSingleFlight()
+	if coordinator := s.resolveListCoordinator(appCtx); coordinator != nil {
+		return cache.GetOrLoad(coordinator, option, loader)
+	}
+	return s.readThroughListLegacy(option, loader)
+}
+
+// resolveListCoordinator lazily resolves and retains the optional L2 backend.
+// Construction therefore remains safe for contexts that only register routes,
+// while all real list requests share one full-path singleflight coordinator.
+func (s *ExampleService) resolveListCoordinator(appCtx fiberhouse.IContext) *cache.Coordinator {
+	s.listCoordinatorOnce.Do(func() {
+		backend, err := cache.NewFactory(appCtx).Lookup(cache.Level2)
+		if err != nil {
+			return
+		}
+		s.listCoordinator, _ = cache.NewCoordinator(backend)
+	})
+	return s.listCoordinator
+}
+
+// readThroughListLegacy keeps the compatibility path visible for applications
+// that still resolve a backend through CacheOption. New code should retain and
+// inject a Coordinator, as NewExampleService does for its primary path.
+func (s *ExampleService) readThroughListLegacy(option *cache.CacheOption, loader exampleListLoader) (*responsevo.ExampleListRespVo, error) {
 	return cache.GetCached[*responsevo.ExampleListRespVo](option, loader)
 }
 

@@ -38,7 +38,7 @@ FiberHouse 仍在持续迭代，**目前尚未承诺可直接用于生产环境�
 - YAML 与环境变量共同完成配置装配，zerolog 可输出到 console 或轮转文件。
 - `GlobalManager` + `Context` + `Locator`，用于跨组件访问已注册的共享实例。
 - 统一 `{code,msg,data}` 响应、panic recovery、参数校验，可选 MsgPack/Protobuf body。
-- MySQL、MongoDB、Redis、本地/二级缓存、asynq 后台任务、基于 urfave/cli 的命令行子应用，按需接入。
+- MySQL、MongoDB、Redis、本地/二级缓存、asynq 后台任务、基于 urfave/cli 的命令行子应用，按需接入；缓存的稳定 API、所有权边界和迁移路径见[缓存指南](docs/guides/cache.md)。
 
 ## 🧰 环境要求
 

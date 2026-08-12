@@ -118,7 +118,7 @@ cache:
     maxCost: 134217728                       # 最大缓存128M
     bufferItems: 64                          # 每个缓存分区的缓冲区大小
     metrics: true                            # 是否启用缓存指标
-    IgnoreInternalCost: false                # 是否忽略内部开销
+    ignoreInternalCost: false                # 是否忽略 Ristretto 内部开销（精确配置键）
   redis:                                     # remote 远程缓存配置
     host: 127.0.0.1                          # Redis 服务器地址
     port: 6379                               # Redis 服务器端口
@@ -130,9 +130,10 @@ cache:
     readTimeout: 3                           # 读操作超时时间
     writeTimeout: 3                          # 写操作超时时间
     poolTimeout: 4                           # 连接池最大等待时间
-    idleTimeout: 1800                        # 空闲连接超时时间
+    connMaxIdleTime: 1800                    # 空闲连接最长时间，单位秒（精确配置键）
+    connMaxLifetime: 0                       # 连接最长生命周期，单位秒；0 表示不限制
     pingTry: true                            # 启动时ping尝试连接
-    protection:                              # 缓存保护措施配置
+    protection:                              # 已弃用：仅保留 Redis 自有保护层的兼容配置
       enable: true                           # 开启缓存保护措施
       type:                                  # 已选中的保护类型，默认支持 shardedBloomFilter、wrapCircuitBreaker；第三方需自定义扩展
         bloomFilter:
@@ -149,6 +150,20 @@ cache:
         interval: 30                         # 间隔时间，单位秒
         timeout: 15                          # 超时时间，单位秒
         bucketPeriod: 10                     # 桶周期，单位秒
+  coordinator:                               # 仅作应用层装配示例；框架不会自动读取或注入
+    namespace: "example"                    # 应用传给 NewCoordinator 的命名空间
+    filter:
+      provider: "memory"                    # 应用显式创建 MemoryBloomFilter 或 RedisBloomFilter
+      capacity: 1000000
+      errorRate: 0.01
+      shards: 16
+      failureMode: "fail_open"
+    breaker:
+      enabled: true                          # 应用自有的后端包装层配置，不是 CoordinatorOption
+      name: "exampleCacheBreaker"
+    jitter:
+      localPercent: 0.1                      # 应用传给 SetLocalTTLRandomPercent
+      remoteSeconds: 60                      # 应用传给 SetRemoteTTLWithRandom
   asyncPool:                               # 启用二级缓存时的异步goroutine池配置，用于处理缓存更新和同步策略
     ants:                                  # ants异步goroutine池配置
       local:

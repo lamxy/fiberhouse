@@ -1,10 +1,67 @@
-# 缓存
+# 缓存指南
 
-FiberHouse 在 [`component/cache`](../../component/cache/) 下定义统一 `Cache` 接口，并分别提供基于 Ristretto 的本地缓存、基于 go-redis 的远程缓存，以及组合二者的 L2 缓存。框架不会自动创建这些实例：应用需要在启动期为自己的实例 key 注册 initializer，并通过 `IApplication` 的 `GetLocalCacheKey`、`GetRemoteCacheKey`、`GetLevel2CacheKey` 让读缓存工具定位它们。
+FiberHouse 把缓存拆成两个边界：`cache.Cache` backend 负责存储、连接和关闭，
+`cache.Coordinator` 负责 cache-aside 流程，包括 miss 判定、singleflight、Bloom
+预检、错误策略、负缓存和回填。应用显式创建并保存两者；配置文件不会自动创建
+Coordinator、Bloom filter 或 breaker。
 
-缓存代码已有可用路径，但 L2 生命周期和保护机制仍有明显限制。[功能状态](../reference/feature-status.md) 因此把本地/Redis 基础实现列为已接入，把 L2 与保护机制列为实验性能力。
+## 快速接入 Coordinator
 
-## 接口与实现
+下面的代码只依赖当前公开 API。应用应在启动期创建一个长期存活的 Coordinator，
+并为每次请求创建独立的 `CacheOption`。
+
+```go
+package users
+
+import (
+	"context"
+	"time"
+
+	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/component/cache"
+)
+
+type User struct {
+	ID string `json:"id"`
+}
+
+func NewUserCoordinator(backend cache.Cache) (*cache.Coordinator, error) {
+	return cache.NewCoordinator(backend)
+}
+
+func LoadUser(
+	ctx context.Context,
+	appCtx fiberhouse.IContext,
+	codec fiberhouse.JsonWrapper,
+	coordinator *cache.Coordinator,
+	id string,
+	load func(context.Context, string) (User, error),
+) (User, error) {
+	request := cache.NewCacheOption(appCtx).
+		Level2().
+		SetDefaultInstanceKey("users").
+		SetCacheKey("user:" + id).
+		SetContextCtx(ctx).
+		SetJsonWrapper(codec).
+		SetLocalTTLRandomPercent(30*time.Second, 0.10).
+		SetRemoteTTLWithRandom(10*time.Minute, time.Minute).
+		SetLoadTimeout(5 * time.Second).
+		SetCacheErrorPolicy(cache.ReturnCacheError)
+
+	return cache.GetOrLoad(coordinator, request, func(loadCtx context.Context) (User, error) {
+		return load(loadCtx, id)
+	})
+}
+```
+
+在 `GetOrLoad` 中，`SetDefaultInstanceKey` 参与 singleflight namespace；它让同一 backend
+上两个业务域的相同字符串 key 不会共享 flight。旧 `GetCached` 还会把这个字段当作
+GlobalManager lookup key。类型也属于 flight key，因此 `GetOrLoad[User]` 与
+`GetOrLoad[OtherType]` 不会互相复用结果。
+
+## Backend 构造与所有权
+
+`Cache` 保持原有六个方法，因此旧 backend 无需实现新的生命周期接口：
 
 ```go
 type Cache interface {
@@ -17,112 +74,240 @@ type Cache interface {
 }
 ```
 
-| 实现 | 构造入口 | 主要行为 |
+内置 backend：
+
+| Backend | 构造函数 | 默认配置路径 |
 |---|---|---|
-| `cachelocal.LocalCache` | `cachelocal.NewLocalCache(ctx, confPath...)` | Ristretto 内存缓存；异步接纳写入；可选 metrics |
-| `cacheremote.RedisDb` | `cacheremote.NewRedisDb(ctx, confPath...)` | Redis 字符串读写、TTL、健康检查和可选保护器 |
-| `cache2.Level2Cache` | `cache2.NewLevel2Cache(ctx, local, remote)` | 先本地后远端、远端命中回填、四种写策略和两个 ants pool |
+| Ristretto local | `cachelocal.NewLocalCache(appCtx, confPath...)` | `cache.local` |
+| Redis | `cacheremote.NewRedisDb(appCtx, confPath...)` | `cache.redis` |
+| L2 | `cache2.NewLevel2CacheWithError(appCtx, local, remote)` | pool 固定读取 `cache.asyncPool.ants.*` |
 
-构造器的默认配置路径分别是 `cache.local` 与 `cache.redis`。这是 package 常量，不是全局实例 key。L2 的 pool 配置固定读取 `cache.asyncPool.ants.local.*` 和 `cache.asyncPool.ants.remote.*`；构造函数不接收自定义配置前缀。
-
-本地缓存实际从 `<local-base>` 读取以下键；未传 `confPath` 时 `<local-base>` 是 `cache.local`：
-
-- `numCounters`、`maxCost`、`bufferItems`；
-- `metrics`、`ignoreInternalCost`。
-
-Redis 实际从 `<redis-base>` 读取连接地址、认证、DB、pool 和超时配置，包括 `host`、`port`、`password`、`db`、`poolSize`、`minIdleConns`、`dialTimeout`、`readTimeout`、`writeTimeout`、`poolTimeout`、`connMaxIdleTime`、`connMaxLifetime`。未传 `confPath` 时 `<redis-base>` 是 `cache.redis`；这些时间数值会乘以 `time.Second`。
-
-示例 YAML 当前写有 `IgnoreInternalCost` 和 `idleTimeout`，而构造器读取的是大小写不同的 `ignoreInternalCost` 以及 `connMaxIdleTime`/`connMaxLifetime`。正式配置必须按消费方键名核对，不能把示例字段当作已生效的框架默认。
-
-[`example_application`](../../example_application/) 中的 `Application.ConfigGlobalInitializers` 展示了把 local、Redis 和 L2 注册到 GlobalManager 的一种方式。`KEY_LOCAL_CACHE` 等名称、哪些 key 被列为启动必需项，以及远程缓存是否复用 Redis 实例，都是示例应用的选择，不是框架默认。
-
-## `CacheOption`
-
-每次缓存操作都携带 `*CacheOption`。新对象默认启用缓存，写策略是 `WriteRemoteOnly`，但缓存级别为零、key 为空、请求 context 也为空；直接交给 `GetCached` 会因级别或 key 校验失败。至少应明确级别、key、context 与 TTL：
+L2 的 error-returning 构造函数默认拥有传入的 local 和 remote。它的 `Shutdown`/`Close`
+会关闭两个 child，每个最多一次。因此把 child 交给 L2 后，不要再由另一个 owner 关闭。
+Coordinator 不关闭 backend；创建 Coordinator 的应用仍负责 backend 生命周期。
 
 ```go
-co := cache.OptionPoolGet(appCtx)
-defer cache.OptionPoolPut(co)
-
-co.Level2().
-	SetCacheKey("customer:42").
-	SetContextCtx(ctx).
-	SetLocalTTLRandomPercent(30*time.Second, 0.1).
-	SetRemoteTTLWithRandom(10*time.Minute, time.Minute).
-	SetSyncStrategyWriteRemoteOnly()
+local, err := cachelocal.NewLocalCache(appCtx)
+if err != nil {
+	return err
+}
+remote, err := cacheremote.NewRedisDb(appCtx)
+if err != nil {
+	_ = local.Close()
+	return err
+}
+l2, err := cache2.NewLevel2CacheWithError(appCtx, local, remote)
+if err != nil {
+	_ = local.Close()
+	_ = remote.Close()
+	return err
+}
+coordinator, err := cache.NewCoordinator(l2)
 ```
 
-`SetJsonWrapper` 可指定序列化器；未指定时，`GetJsonWrapper` 通过应用的 `GetDefaultTrafficCodecKey()` 从默认 GlobalManager 取 `fiberhouse.JsonWrapper`，取不到或类型错误会 panic。`SetDefaultInstanceKey`/`GetDefaultInstanceKey` 当前只有字段访问器，`GetCached` 并不读取它，而是按缓存级别调用应用的三个 key getter。
+应用也可以通过 `cache.NewFactory(appCtx).Lookup(cache.Level2)` 从已经注册的实例中取得
+backend。`Lookup` 返回 error；旧的 `GetCache` 保留 panic-on-failure 行为，仅用于兼容。
 
-`OptionPoolGet` 取得的对象只属于当前同步调用链。调用方负责最终 `OptionPoolPut`/`Release`，归还后不能继续引用或跨 goroutine 使用。L2 异步写会自行 `Clone` option，并在任务结束或提交失败时释放 clone；调用方仍只释放原 option。
+## GetOrLoad 的执行语义
 
-## TTL、随机抖动与序列化
+`GetOrLoad` 先执行一次 caller-scoped cache `Get`。命中后解码并返回；miss 后进入整个
+read-through flight。flight 内会再次读 cache，避免排队期间其他调用已经完成回填，然后
+才调用 loader 和 `Set`。
 
-本地和远端 TTL 相互独立。固定 TTL 由 `SetLocalTTL`/`SetRemoteTTL` 设置；随机范围可用绝对时长或百分比设置。每次调用 `GetLocalTTL`/`GetRemoteTTL` 都重新计算 `base ± range`；若结果不大于零，则回退到 base。零 TTL 的具体含义由 Ristretto/Redis 底层实现决定，应用应显式配置而不是依赖零值。
+### Miss 与基础设施错误
 
-本地和 Redis 的 `Set` 对 `string`、`[]byte` 直接存储，其他类型用 option 的 JSON wrapper 序列化。`Get` 始终返回字符串；类型恢复由调用方或 `GetCached` 完成。改变 codec、结构体字段或 JSON 兼容性会影响旧缓存值的可读性，key 设计应包含必要的 schema/version 维度。
+- `cache.IsMiss(err)` 使用 `errors.Is(err, cache.ErrKeyNotFound)` 判断 miss。
+- miss 总是允许 loader 执行。
+- `ReturnCacheError` 是默认策略。网络错误、closed backend 等非 miss 错误直接返回，
+  loader 不执行。
+- `LoadOnCacheError` 把非 miss cache error 当作可降级 miss，并让共享 loader 执行。
+- loader 成功但 cache `Set` 失败时，调用仍返回 loader 数据，并发送 `EventFillError`。
+- 命中值解码失败直接返回错误，不会自动删除损坏值。
 
-## Read-through：`GetCached`
+`WithObserver(func(cache.Event))` 可观察 `EventCacheHit`、`EventCacheMiss`、
+`EventCacheError`、`EventFillError` 和 `EventFilterError`。Observer 在请求路径同步调用，
+契约要求它不能阻塞。
 
-`cache.GetCached[R]` 的顺序是：
+### Singleflight 与 context
 
-1. 校验 option；option 通过 `DisableCache` 禁用缓存时直接调用 loader。校验发生在开关判断之前，因此禁用时仍需提供合法级别、key 和 AppCtx。
-2. 按 `Local`、`Remote`、`Level2` 从应用 key 获取缓存实例。
-3. 命中时把字符串 JSON 解码为 `R`。
-4. 普通 miss 或其他 `Get` 错误时调用 loader，再序列化并写回；写回失败只记录日志，仍返回 loader 数据。
-5. Bloom 拒绝错误直接返回，不调用 loader；circuit breaker 打开时优先调用可选 fallback，否则返回错误。
+Coordinator 总是保护完整的 miss → loader → fill 路径，不依赖旧的
+`EnableSingleFlight` 开关。每个等待者仍监听自己的 request context：等待者取消后立即
+返回 `ctx.Err()`，但已经共享出去的 loader 不被该等待者取消。
 
-因此 `GetCached` 把网络错误、反序列化前的缓存读取错误和普通 miss 大多归入同一 loader 路径，但命中后的 JSON 解码失败会直接返回错误，不会删除坏值或调用 loader。它也没有围绕 loader 建立 singleflight：Redis 层的 singleflight 只合并同一 key 的 Redis `Get`，并不能阻止多个 miss 随后并发执行 loader。
+共享 loader 使用首个进入 flight 的 context values，通过 `context.WithoutCancel` 脱离
+caller cancellation，再施加 `SetLoadTimeout`。默认 load timeout 是 30 秒。因此 loader
+必须使用收到的 `loadCtx`，不能替换成 `context.Background()`。
 
-loader 会收到 `CacheOption.GetContextCtx()`。应传请求/任务 context；不要依赖 nil 或无条件使用 `context.Background()` 来绕过取消和超时。
+## Bloom filter：先建立权威集合
 
-## L2 读取、回填与写策略
+Bloom filter 只有在 `Ready()==true` 时才能拒绝 key。`Add` 只学习一次成功 load 的 key，
+不会把 filter 变成 authoritative（可用于否定判断的完整集合）。只有完整 `Preload`
+成功后才 ready；失败或取消必须继续 fail open。
 
-L2 `Get` 先读 local，再读 remote。远端命中后会回填 local：当策略为 `AsyncWriteBoth` 或 `AsyncWriteRemoteOnly` 时走 local pool 异步回填，其他策略同步回填。回填本地失败只记录日志，远端值仍作为命中返回。
+### 进程内 MemoryBloomFilter
 
-`Set` 支持：
+适合单实例、每个实例都能取得完整 key 清单，或允许各实例独立维护过滤状态的服务。
 
-| 策略 | 行为 |
-|---|---|
-| `WriteBoth` | 两个临时 goroutine 并行写 local 与 remote，等待并汇总错误 |
-| `WriteRemoteOnly` | 同步只写 remote；local 的旧值不会自动删除 |
-| `AsyncWriteBoth` | 分别提交 local/remote pool，调用立即返回 |
-| `AsyncWriteRemoteOnly` | 只提交 remote pool，调用立即返回 |
+```go
+filter, err := cache.NewMemoryBloomFilter(1_000_000, 0.01, 16)
+if err != nil {
+	return err
+}
+if err := filter.Preload(ctx, authoritativeKeys); err != nil {
+	return err
+}
+coordinator, err := cache.NewCoordinator(
+	backend,
+	cache.WithExistenceFilter(filter),
+	cache.WithFilterFailureMode(cache.FilterFailOpen),
+)
+```
 
-`Delete` 总是并行删除两级并汇总错误。使用 remote-only 写策略时，调用方必须自行设计本地失效，否则旧 local 值仍优先于新 remote 值。
+capacity 必须在 1 到 `1<<26` 之间，error rate 必须在 0 和 1 之间。shard count 的零值
+表示 1；其他值向上取整为 2 的幂。`Reset` 清空权威状态并恢复 fail-open。
 
-`WriteBoth` 把同一个 `*CacheOption` 同时传给 local/remote goroutine。值为非 `string`/`[]byte` 且 option 尚未设置 `jsonWrapper` 时，两端都可能调用会懒写字段的 `GetJsonWrapper()`，存在数据竞争的源码静态风险。进入并行 `Set` 前应先解析 codec 并调用 `SetJsonWrapper(codec)`，让两个 goroutine 只读 option；这里是控制流观察，尚未通过 race 测试复现。
+### RedisBloomFilter
 
-异步 local/remote 操作分别使用 1 秒和 3 秒派生超时。提交失败或后台写失败只记日志，不传播给已经返回的 `Set`。pool 的 `nonblocking`、容量和阻塞任务上限决定背压/拒绝行为，必须按业务延迟和峰值评估，不能照搬示例数值。
+适合多个进程需要共享 filter，且 Redis 安装了 RedisBloom 模块的服务。它使用
+`BF.RESERVE`、`BF.MADD`、`BF.EXISTS` 和 `BF.ADD`。
 
-## Redis 保护机制
+```go
+filter, err := cacheremote.NewRedisBloomFilter(redisClient, cacheremote.RedisBloomConfig{
+	Key: "cache:users:keys", Capacity: 1_000_000, ErrorRate: 0.01, BatchSize: 1000,
+})
+if err != nil {
+	return err
+}
+if err := filter.Prepare(ctx); err != nil {
+	return err
+}
+if err := filter.Preload(ctx, authoritativeKeys); err != nil {
+	return err
+}
+```
 
-只有 `<redis-base>.protection.enable=true` 时，`NewRedisDb` 才向 GlobalManager 注册默认 `shardedBloomFilter` 和 `wrapCircuitBreaker` initializer，并按 `<redis-base>.protection.type.*.selected` 取得实现；默认 `<redis-base>` 是 `cache.redis`。随后还必须在每次 `CacheOption` 上开启对应开关，保护逻辑才会运行。
+Redis 不支持 `BF.*` 时错误可由 `errors.Is(err, cacheremote.ErrRedisBloomUnavailable)`
+识别。`AllowExisting` 默认 false，防止意外复用同名 Redis key；显式设为 true 才接受
+`BF.RESERVE` 的 BUSYKEY。`Reset` 只撤销当前进程的 authority，不删除共享远程 key。
 
-- singleflight：合并 Redis `Get`，不合并 read-through loader。
-- Bloom filter：filter 判定“不存在”时仍尝试一次 Redis。未启用 breaker 时，Redis miss 先转成 `ErrRedisNil`，再转成 `ErrRejectedByBloomFilter`，使 `GetCached` 不执行 loader；新合法 key 的冷启动语义需要应用自行验证。
-- circuit breaker：只包裹 Redis `Get`；`Set` 中的 breaker 分支当前被注释，写入不受保护。breaker 分支遇到 Redis miss 时保留原始 `redis.Nil`，`GetCached` 把它当普通错误并调用 loader；只有 breaker 打开/半开拒绝被转换成 `ErrCircuitBreakerOpen`，此时才使用可选 fallback。
+Coordinator 默认 `FilterFailOpen`：filter 自身报错时继续访问 cache/loader。
+`FilterFailClosed` 将 filter error 转成 `ErrRejectedByBloomFilter`。caller cancellation 和
+deadline 永远原样返回，不受 failure mode 改写。每次希望启用预检的 request 仍需调用
+`EnableBloomFilter()`。
 
-因此 `EnableProtectionAll()` 并不保证产生 Bloom 拒绝：当 Bloom 判定 key 不存在且 breaker 同时启用时，内部 Redis miss 仍可能以 `redis.Nil` 到达 `GetCached` 并进入 loader。保护开关的组合语义需要按实际业务 miss 场景分别测试，不能把三项开关理解成简单叠加。
+## 负缓存与 TTL jitter
 
-默认分片 Bloom 的索引用 `hash & (shardCount-1)`，但构造器只修正非正数，没有强制 shard 数是 2 的幂。保护器的 `Reset` 当前也是空实现。上述结论来自源码控制流检查，未通过故障注入或压力测试复现；采用前应补充 miss、恢复、误判和负载测试。
+loader 返回可由 `errors.Is(err, cache.ErrOriginNotFound)` 匹配的错误，且
+`SetNegativeTTL(ttl)` 大于零时，Coordinator 写入内部负缓存 marker。后续命中返回
+`ErrOriginNotFound`，不会再次调用 loader。普通数据库错误不会负缓存。
 
-## Wait、metrics 与关闭
+负缓存 TTL 按 level 写入：Local 只用 local TTL，Remote 只用 remote TTL，L2 强制
+`WriteBoth` 并同时设置两级 TTL。
 
-Ristretto 写入有异步接纳过程；需要“Set 后立即 Get”时调用 local `Wait()`。Redis `Wait()` 只检查未关闭并返回 nil。L2 `Wait()` 并行调用底层两个 `Wait()` 并用 `errors.Join` 返回子错误，但仍不等待 ants pool 中的 L2 异步任务，不能作为完整 flush 屏障。
+TTL jitter（抖动）降低大量 key 同时过期造成的尖峰：
 
-Local metrics 只有在 `<local-base>.metrics=true` 时可用；默认 `<local-base>` 是 `cache.local`。`GetMetricsInfo` 汇总 hit/miss、eviction、drop 等计数；L2 还暴露 local metrics 和 pool capacity/running/free。L2 的 local metrics 入口调用的是内置 `*cachelocal.LocalCache` 的具体 `GetMetrics` 能力，不属于通用 `cache.Cache` 契约；替换自定义 local 实现后不能调用这些入口，否则具体类型断言会 panic。
+- 固定：`SetLocalTTL`、`SetRemoteTTL`；
+- 绝对范围：`SetLocalTTLWithRandom(base, range)`、`SetRemoteTTLWithRandom`；
+- 百分比：`SetLocalTTLRandomPercent(base, percent)`、`SetRemoteTTLRandomPercent`，percent
+  被限制到 `[0,1]`。
 
-关闭顺序应是：先停止请求与任务生产者，再阻止新缓存操作，等待应用自己追踪的工作，最后关闭 L2 或其底层资源。不要同时让 L2 和其他所有者重复关闭共享 Redis/local 实例。
+随机 TTL 保证为正，并防止 `time.Duration` 溢出。`Valid` 拒绝负 TTL/range、零随机
+base、非正 load timeout，以及默认情况下 local base TTL 大于 remote base TTL。确有需要
+时调用 `AllowLocalTTLAboveRemote()` 显式放宽最后一条。
 
-当前 L2 `Close` 已使用原子 closed 标志保证单次关闭：第一次关闭后普通操作返回 `ErrCacheClosed`，重复 `Close` 返回 nil；它会关闭 `stopCh`、等待两个 pool 的 running 数最多 5 秒、释放 pool、关闭 local/remote，并用 `errors.Join` 聚合子缓存关闭错误。现有单元测试覆盖关闭状态、幂等、子缓存只关闭一次和错误聚合。
+## L2 consistency 与写策略
 
-仍有以下边界：
+L2 读取顺序是 local → remote。remote 命中会回填 local。每个 key 有独立、可清理的
+generation fence：与同 key 的同步 Set/Delete 交错时，旧 remote read 不会在 mutation
+完成后重新污染 local；无关 key 不互相抑制回填。
 
-- 关闭 `stopCh` 后最多等待 pool 的 running 数归零，再释放两个 pool 和两个底层缓存；排队状态与业务完成语义没有统一确认。
-- 构造 pool 失败使用 fatal 日志路径，构造函数本身不返回 error。
-- L2 直接持有并关闭 local/remote；若底层实例同时由其他组件共享，唯一关闭所有者仍须由应用明确。
+| Strategy | Set 行为 | 一致性 |
+|---|---|---|
+| `WriteBoth` | remote 成功后写 local；remote 失败不碰 local | 同步 remote-first |
+| `WriteRemoteOnly` | remote 成功后删除 local；remote 失败不碰 local | 同步 remote-first |
+| `AsyncWriteBoth` | 独立提交 local 与 remote pool | eventual；错误只记录日志 |
+| `AsyncWriteRemoteOnly` | 只提交 remote pool | eventual；不会同步失效 local |
 
-Local `Close` 重复调用返回 nil；Redis 第二次 `Close` 返回 `ErrCacheClosed`。L2 自身的幂等门禁会避免重复关闭其子缓存，但应用仍须避免由其他所有者再次关闭共享实例。GlobalManager 的 `ClearAll(true)` 不会逐项调用 `Close`，不能替代显式缓存回收；详见[《GlobalManager》](global-manager.md)。
+`Delete` 先删 remote，成功后逐 key 删除 local。remote 删除失败时 local 保持不变。
+同步策略适合读后必须立即观察新值的路径。异步策略适合能接受短暂旧值、并已设置
+监控和容量上限的路径。
 
-源码入口：[`component/cache/cache_interface.go`](../../component/cache/cache_interface.go)、[`component/cache/cache_option.go`](../../component/cache/cache_option.go)、[`component/cache/cache_utility.go`](../../component/cache/cache_utility.go)、[`component/cache/cachelocal`](../../component/cache/cachelocal/)、[`component/cache/cacheremote`](../../component/cache/cacheremote/) 与 [`component/cache/cache2`](../../component/cache/cache2/)。
+异步任务脱离 caller cancellation，并分别施加 1 秒 local timeout、3 秒 remote timeout。
+提交后 option clone 由 L2 释放；调用方只释放自己的原 option。不要把 pooled option 跨
+goroutine 传递，也不要在归还后继续引用。
+
+## Flush、Shutdown 与关闭迁移
+
+`Flusher` 和 `Shutdowner` 是可选接口，没有加入 `Cache`，所以旧 backend 继续编译：
+
+```go
+if flusher, ok := backend.(cache.Flusher); ok {
+	if err := flusher.Flush(ctx); err != nil {
+		return err
+	}
+}
+if shutdowner, ok := backend.(cache.Shutdowner); ok {
+	return shutdowner.Shutdown(ctx)
+}
+return backend.Close()
+```
+
+L2 `Flush(ctx)` 等待调用时快照中的 queued 和 running async work；deadline 返回
+`ctx.Err()`，不会取消这些任务。`Shutdown(ctx)` 先停止 admission，再 drain、release pool
+并关闭 owned children。若 caller timeout，后台 shutdown 仍继续；后续调用可等待真实完成。
+`Close()` 是无 context 的兼容入口，委托同一 shutdown 状态机；重复 Close 返回 nil。
+`Wait()` 先 Flush，再调用两个 child 的 `Wait()`。
+
+推荐停止顺序：停止生产请求/任务 → `Flush` → `Shutdown`。不要先关闭 child，否则已经
+admitted 的 L2 任务会访问 closed backend。
+
+## 配置参考
+
+内置实现实际消费这些 key：
+
+- `cache.local`: `numCounters`, `maxCost`, `bufferItems`, `metrics`,
+  `ignoreInternalCost`。
+- `cache.redis`: `host`, `port`, `password`, `db`, `poolSize`, `minIdleConns`,
+  `dialTimeout`, `readTimeout`, `writeTimeout`, `poolTimeout`, `connMaxIdleTime`,
+  `connMaxLifetime`。duration 数值按秒解释。
+- `cache.asyncPool.ants.{local,remote}`: `size`, `expiryDuration`, `preAlloc`,
+  `maxBlockingTasks`, `nonblocking`。两个 size 都必须大于零。
+
+示例 YAML 中的 `cache.coordinator` 是应用侧配置形状，仅用于说明 namespace、filter、
+breaker 和 jitter policy；FiberHouse 不会自动读取或装配它。应用必须把这些值翻译成
+`SetDefaultInstanceKey`、`WithExistenceFilter`、backend/wrapper breaker 设置和 TTL option。
+
+`cache.redis.protection` 是旧 Redis-owned protection 配置，保留用于兼容已有部署，但已
+deprecated。新代码应由应用显式构造 Coordinator/filter；不要假设 YAML 会自动开启保护。
+
+## 兼容 API 与迁移
+
+| 兼容入口 | 新代码 | 原因 |
+|---|---|---|
+| `GetCached` | retained `Coordinator` + `GetOrLoad` | Coordinator 在所有 caller 间共享完整-path flight 和 policy |
+| `Factory.GetCache` | `Factory.Lookup` | 用 error 处理缺少 context/application/registry key，避免 panic |
+| `cache2.NewLevel2Cache` | `NewLevel2CacheWithError` | 显式返回 pool 配置/创建错误；旧入口失败时只能返回 nil |
+| `EnableSingleFlight` | 直接使用 `GetOrLoad` | Coordinator 总是执行 full-path singleflight；旧 flag 只为 option 兼容保留 |
+| Redis `protection` + `EnableProtectionAll` | `NewCoordinator` + `WithExistenceFilter`，breaker 由 backend/wrapper 显式提供 | 所有权和 failure mode 可见，Bloom readiness 可验证 |
+| `CacheBloomFilter` | `ExistenceFilter` / `PreloadableFilter` | 新接口携带 context、error 与 authoritative readiness |
+
+`OptionPoolGet`/`OptionPoolPut` 仍受支持，但不是异步共享机制。简单路径优先用
+`NewCacheOption`；需要降低分配时再使用 pool，并严格限制为一个同步 owner。
+
+## 验证与排错
+
+- loader 没执行：先用 `cache.IsMiss(err)` 区分 miss 和基础设施错误，再检查
+  `ReturnCacheError`/`LoadOnCacheError`。
+- Bloom 拒绝新 key：确认 filter 是否错误地在完整 preload 前报告 ready；动态 `Add` 不应
+  建立 readiness。
+- 相同 key 仍重复 load：确认所有 caller 复用同一个 Coordinator，并使用相同 namespace、
+  key 和 result type。
+- Set 后立即读不到：local backend 调用 `Wait()`；L2 async strategy 调用 `Flush(ctx)`。
+- shutdown 卡住：检查 pending async backend 操作是否尊重 L2 的 1 秒/3 秒 timeout，且
+  child 没有被其他 owner 提前关闭。
+
+实现入口：[`cache_utility.go`](../../component/cache/cache_utility.go)、
+[`cache_option.go`](../../component/cache/cache_option.go)、
+[`filter.go`](../../component/cache/filter.go)、
+[`cache2/level2_cache.go`](../../component/cache/cache2/level2_cache.go)、
+[`cacheremote/redis_bloom.go`](../../component/cache/cacheremote/redis_bloom.go)。
