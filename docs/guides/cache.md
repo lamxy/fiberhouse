@@ -310,6 +310,27 @@ deprecated。新代码应由应用显式构造 Coordinator/filter；不要假设
 `OptionPoolGet`/`OptionPoolPut` 仍受支持，但不是异步共享机制。简单路径优先用
 `NewCacheOption`；需要降低分配时再使用 pool，并严格限制为一个同步 owner。
 
+## 性能基准
+
+仓库提供稳定命名的 Go benchmark 入口，覆盖 Coordinator hit、独立 miss、并发 miss
+合并、Memory Bloom 查询、local hit、L2 local hit、L2 remote hit + backfill，以及 option
+pool。运行：
+
+```bash
+go test ./component/cache/... -run '^$' \
+  -bench 'Benchmark(Coordinator|MemoryBloom|LocalCache|Level2|CacheOption)' \
+  -benchmem
+```
+
+fixture 使用固定 payload，并在计时前完成构造和预热。`BenchmarkCoordinatorContendedMiss`
+让 backend 持续 miss 且不保存回填，使用 `RunParallel` 让 caller 竞争同一个完整-path flight，
+同时报告 `loader/op`；因此它不会在首次回填后退化成 hit benchmark。
+
+这些入口是可重复的回归测量点，不是跨机器的延迟承诺。比较改动前后时必须使用相同 Go
+版本、CPU 配额、`GOMAXPROCS`、`-benchtime` 和运行环境，并进行多次采样；没有同环境
+baseline 时，只能把一次 smoke run 当作入口可执行与 allocation 指标存在的证据，不能据此
+宣称性能提升或退化。
+
 ## 验证与排错
 
 - loader 没执行：先用 `cache.IsMiss(err)` 区分 miss 和基础设施错误，再检查
