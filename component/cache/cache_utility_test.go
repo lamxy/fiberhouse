@@ -21,12 +21,14 @@ type coordinatorPayload struct {
 // coordinatorFakeCache is a deterministic in-memory Cache used to prove the
 // coordinator's observable read-through behavior without a network dependency.
 type coordinatorFakeCache struct {
-	mu       sync.Mutex
-	values   map[string]string
-	getCount int
-	setCount int
-	getErr   error
-	setErr   error
+	mu        sync.Mutex
+	values    map[string]string
+	getCount  int
+	setCount  int
+	getErr    error
+	setErr    error
+	setSignal chan struct{}
+	getSignal chan struct{}
 }
 
 func newCoordinatorFakeCache() *coordinatorFakeCache {
@@ -37,6 +39,12 @@ func (c *coordinatorFakeCache) Get(_ context.Context, key string, _ *CacheOption
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.getCount++
+	if c.getSignal != nil {
+		select {
+		case c.getSignal <- struct{}{}:
+		default:
+		}
+	}
 	if c.getErr != nil {
 		return "", c.getErr
 	}
@@ -59,6 +67,12 @@ func (c *coordinatorFakeCache) Set(_ context.Context, key string, value interfac
 		return ErrSerializationFailed
 	}
 	c.values[key] = stringValue
+	if c.setSignal != nil {
+		select {
+		case c.setSignal <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 
@@ -117,7 +131,15 @@ func TestCoordinator_CoalescesCompleteLoad(t *testing.T) {
 		}()
 	}
 
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
 	for loads.Load() == 0 {
+		select {
+		case <-deadline.C:
+			t.Fatal("loader did not start")
+		default:
+			time.Sleep(time.Millisecond)
+		}
 	}
 	close(release)
 	for range callers {
@@ -209,12 +231,16 @@ func TestCoordinator_CanceledWaiterDoesNotCancelSharedLoader(t *testing.T) {
 
 func TestCoordinator_FirstCallerCancellationDoesNotPoisonSecondWaiter(t *testing.T) {
 	backend := newCoordinatorFakeCache()
+	backend.getSignal = make(chan struct{}, 3)
 	coord, _ := NewCoordinator(backend)
 	first, cancel := context.WithCancel(context.Background())
 	started := make(chan struct{})
 	release := make(chan struct{})
+	var loads atomic.Int32
 	loader := func(context.Context) (coordinatorPayload, error) {
-		close(started)
+		if loads.Add(1) == 1 {
+			close(started)
+		}
 		<-release
 		return coordinatorPayload{ID: 4}, nil
 	}
@@ -232,6 +258,13 @@ func TestCoordinator_FirstCallerCancellationDoesNotPoisonSecondWaiter(t *testing
 		}
 		secondDone <- err
 	}()
+	for range 3 {
+		select {
+		case <-backend.getSignal:
+		case <-time.After(time.Second):
+			t.Fatal("second waiter did not reach cache read")
+		}
+	}
 	cancel()
 	close(release)
 	if !errors.Is(<-firstDone, context.Canceled) {
@@ -239,6 +272,9 @@ func TestCoordinator_FirstCallerCancellationDoesNotPoisonSecondWaiter(t *testing
 	}
 	if err := <-secondDone; err != nil {
 		t.Fatal(err)
+	}
+	if loads.Load() != 1 {
+		t.Fatalf("loader count = %d, want 1", loads.Load())
 	}
 }
 
@@ -270,5 +306,92 @@ func TestCoordinator_CorruptCachedJSONReturnsCodecError(t *testing.T) {
 	_, err := GetOrLoad(coord, coordinatorRequest(context.Background(), "corrupt"), func(context.Context) (coordinatorPayload, error) { called = true; return coordinatorPayload{}, nil })
 	if err == nil || called {
 		t.Fatalf("err = %v, loader called = %v; want codec error without loader", err, called)
+	}
+}
+
+func TestCoordinator_LeaderOptionReleaseDoesNotMutateSharedFlight(t *testing.T) {
+	// Resetting the leader's pooled option after cancellation must not change the
+	// asynchronous flight's key or codec used after the origin loader returns.
+	backend := newCoordinatorFakeCache()
+	backend.setSignal = make(chan struct{}, 1)
+	coord, _ := NewCoordinator(backend)
+	ctx, cancel := context.WithCancel(context.Background())
+	request := OptionPoolGet(newCacheOptionTestContext()).Local().SetCacheKey("stable-key").SetContextCtx(ctx).SetJsonWrapper(jsoncodec.StdJsonDefault())
+	started, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := GetOrLoad(coord, request, func(context.Context) (coordinatorPayload, error) {
+			close(started)
+			<-release
+			return coordinatorPayload{ID: 12}, nil
+		})
+		done <- err
+	}()
+	<-started
+	cancel()
+	if !errors.Is(<-done, context.Canceled) {
+		t.Fatal("leader did not return context cancellation")
+	}
+	request.Release()
+	reused := OptionPoolGet(newCacheOptionTestContext())
+	reused.Local().SetCacheKey("reused-key").SetContextCtx(context.Background()).SetJsonWrapper(jsoncodec.StdJsonDefault())
+	defer reused.Release()
+	close(release)
+	select {
+	case <-backend.setSignal:
+	case <-time.After(time.Second):
+		t.Fatal("shared flight did not fill cache")
+	}
+	backend.mu.Lock()
+	_, stable := backend.values["stable-key"]
+	_, reusedValue := backend.values["reused-key"]
+	backend.mu.Unlock()
+	if !stable || reusedValue {
+		t.Fatalf("stable=%v reused=%v, want stable key only", stable, reusedValue)
+	}
+}
+
+func TestCoordinator_AnyNilLoaderValueIsReturned(t *testing.T) {
+	// Returning untyped nil through an `any` result must remain a successful load.
+	coord, _ := NewCoordinator(newCoordinatorFakeCache())
+	got, err := GetOrLoad[any](coord, coordinatorRequest(context.Background(), "nil-any"), func(context.Context) (any, error) { return nil, nil })
+	if err != nil || got != nil {
+		t.Fatalf("got=%v err=%v, want nil nil", got, err)
+	}
+}
+
+type nonComparableValueCache struct{ values map[string]string }
+
+func (c nonComparableValueCache) Get(_ context.Context, key string, _ *CacheOption) (string, error) {
+	value, ok := c.values[key]
+	if !ok {
+		return "", ErrKeyNotFound
+	}
+	return value, nil
+}
+func (c nonComparableValueCache) Set(_ context.Context, key string, value interface{}, _ *CacheOption) error {
+	c.values[key] = value.(string)
+	return nil
+}
+func (nonComparableValueCache) Delete(context.Context, ...string) error { return nil }
+func (nonComparableValueCache) Close() error                            { return nil }
+func (nonComparableValueCache) Wait() error                             { return nil }
+func (nonComparableValueCache) GetLevel() Level                         { return Local }
+
+func TestCoordinatorFor_NonComparableValueBackendsDoNotShareCoordinator(t *testing.T) {
+	// Collapsing these values by type and level would make the second caller use
+	// the first backend's storage.
+	first := nonComparableValueCache{values: make(map[string]string)}
+	second := nonComparableValueCache{values: make(map[string]string)}
+	firstCoordinator, err := coordinatorFor(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondCoordinator, err := coordinatorFor(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstCoordinator == secondCoordinator {
+		t.Fatal("distinct non-comparable backends shared a coordinator")
 	}
 }

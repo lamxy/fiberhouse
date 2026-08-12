@@ -51,6 +51,10 @@ type Coordinator struct {
 	observer Observer
 }
 
+type flightResult[R any] struct {
+	value R
+}
+
 // NewCoordinator constructs a full-path cache-aside coordinator for backend.
 func NewCoordinator(backend Cache, options ...CoordinatorOption) (*Coordinator, error) {
 	if isNilCache(backend) {
@@ -87,6 +91,7 @@ func GetOrLoad[R any](coordinator *Coordinator, request *CacheOption, loader fun
 	if !request.IsCache() {
 		return loader(request.GetContextCtx())
 	}
+	sharedRequest := snapshotCacheOption(request)
 
 	value, err := coordinator.cache.Get(request.GetContextCtx(), request.GetCacheKey(), request)
 	if err == nil {
@@ -103,15 +108,16 @@ func GetOrLoad[R any](coordinator *Coordinator, request *CacheOption, loader fun
 	}
 	coordinator.observer(EventCacheMiss)
 
-	result := coordinator.flights.DoChan(flightKey[R](coordinator.cache, request), func() (any, error) {
-		loadCtx, cancel := context.WithTimeout(context.WithoutCancel(request.GetContextCtx()), request.GetLoadTimeout())
+	result := coordinator.flights.DoChan(flightKey[R](coordinator.cache, sharedRequest), func() (any, error) {
+		loadCtx, cancel := context.WithTimeout(context.WithoutCancel(sharedRequest.GetContextCtx()), sharedRequest.GetLoadTimeout())
 		defer cancel()
 
-		cached, err := coordinator.cache.Get(loadCtx, request.GetCacheKey(), request)
+		cached, err := coordinator.cache.Get(loadCtx, sharedRequest.GetCacheKey(), sharedRequest)
 		if err == nil {
-			return decodeCached[R](request, cached)
+			value, err := decodeCached[R](sharedRequest, cached)
+			return flightResult[R]{value: value}, err
 		}
-		if !IsMiss(err) && request.GetCacheErrorPolicy() != LoadOnCacheError {
+		if !IsMiss(err) && sharedRequest.GetCacheErrorPolicy() != LoadOnCacheError {
 			coordinator.observer(EventCacheError)
 			return zero, err
 		}
@@ -120,14 +126,14 @@ func GetOrLoad[R any](coordinator *Coordinator, request *CacheOption, loader fun
 		if err != nil {
 			return zero, err
 		}
-		encoded, err := request.GetJsonWrapper().Marshal(loaded)
+		encoded, err := sharedRequest.GetJsonWrapper().Marshal(loaded)
 		if err != nil {
 			return zero, err
 		}
-		if err := coordinator.cache.Set(loadCtx, request.GetCacheKey(), frameUtils.UnsafeString(encoded), request); err != nil {
+		if err := coordinator.cache.Set(loadCtx, sharedRequest.GetCacheKey(), frameUtils.UnsafeString(encoded), sharedRequest); err != nil {
 			coordinator.observer(EventFillError)
 		}
-		return loaded, nil
+		return flightResult[R]{value: loaded}, nil
 	})
 
 	select {
@@ -137,11 +143,11 @@ func GetOrLoad[R any](coordinator *Coordinator, request *CacheOption, loader fun
 		if shared.Err != nil {
 			return zero, shared.Err
 		}
-		decoded, ok := shared.Val.(R)
+		decoded, ok := shared.Val.(flightResult[R])
 		if !ok {
 			return zero, fmt.Errorf("cache coordinator returned %T for %s", shared.Val, reflect.TypeFor[R]())
 		}
-		return decoded, nil
+		return decoded.value, nil
 	}
 }
 
@@ -151,6 +157,21 @@ func decodeCached[R any](request *CacheOption, value string) (R, error) {
 		return decoded, err
 	}
 	return decoded, nil
+}
+
+// snapshotCacheOption detaches an asynchronous flight from the caller-owned
+// option, which may be returned to its pool as soon as that caller cancels.
+func snapshotCacheOption(request *CacheOption) *CacheOption {
+	snapshot := *request
+	if request.localTTLConfig != nil {
+		localTTL := *request.localTTLConfig
+		snapshot.localTTLConfig = &localTTL
+	}
+	if request.remoteTTLConfig != nil {
+		remoteTTL := *request.remoteTTLConfig
+		snapshot.remoteTTLConfig = &remoteTTL
+	}
+	return &snapshot
 }
 
 func flightKey[R any](backend Cache, request *CacheOption) string {
@@ -217,7 +238,10 @@ func GetCached[R any](
 }
 
 func coordinatorFor(backend Cache) (*Coordinator, error) {
-	identity := cacheIdentity(backend)
+	identity, cacheable := cacheIdentity(backend)
+	if !cacheable {
+		return NewCoordinator(backend)
+	}
 	if existing, ok := coordinatorsByBackend.Load(identity); ok {
 		return existing.(*Coordinator), nil
 	}
@@ -229,21 +253,18 @@ func coordinatorFor(backend Cache) (*Coordinator, error) {
 	return actual.(*Coordinator), nil
 }
 
-func cacheIdentity(backend Cache) any {
+func cacheIdentity(backend Cache) (any, bool) {
 	value := reflect.ValueOf(backend)
 	if value.Kind() == reflect.Pointer && !value.IsNil() {
 		return struct {
 			typeName string
 			pointer  uintptr
-		}{reflect.TypeOf(backend).String(), value.Pointer()}
+		}{reflect.TypeOf(backend).String(), value.Pointer()}, true
 	}
 	if reflect.TypeOf(backend).Comparable() {
-		return backend
+		return backend, true
 	}
-	return struct {
-		typeName string
-		level    Level
-	}{reflect.TypeOf(backend).String(), backend.GetLevel()}
+	return nil, false
 }
 
 // Factory resolves cache backends from the application's registry.
