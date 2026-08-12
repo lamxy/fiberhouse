@@ -26,12 +26,15 @@ type PreloadableFilter interface {
 // MemoryBloomFilter is an in-process authoritative Bloom filter. It is
 // unready until a complete preload succeeds.
 type MemoryBloomFilter struct {
-	mu        sync.RWMutex
-	capacity  uint
-	errorRate float64
-	shards    []shard
-	mask      uint32
-	ready     bool
+	mu          sync.RWMutex
+	preloadMu   sync.Mutex
+	capacity    uint
+	errorRate   float64
+	shards      []shard
+	mask        uint32
+	ready       bool
+	preloadLive bool
+	pendingAdds []string
 }
 
 const maxMemoryBloomCapacity uint = 1 << 26
@@ -101,6 +104,9 @@ func (f *MemoryBloomFilter) Add(ctx context.Context, key string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.add([]byte(key))
+	if f.preloadLive {
+		f.pendingAdds = append(f.pendingAdds, key)
+	}
 	return nil
 }
 
@@ -112,30 +118,60 @@ func (f *MemoryBloomFilter) Preload(ctx context.Context, keys []string) error {
 // preload serializes construction and publication with Add. The hook exists
 // only to deterministically exercise that transaction in package tests.
 func (f *MemoryBloomFilter) preload(ctx context.Context, keys []string, hook func()) error {
+	f.preloadMu.Lock()
+	defer f.preloadMu.Unlock()
+
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	capacity, errorRate, shardCount := f.capacity, f.errorRate, len(f.shards)
+	f.preloadLive = true
+	f.pendingAdds = nil
+	f.mu.Unlock()
+
 	next := newMemoryBloomFilter(capacity, errorRate, shardCount)
 	if hook != nil {
 		hook()
 	}
 	for _, key := range keys {
 		if err := ctx.Err(); err != nil {
+			f.finishPreloadFailure()
 			return err
 		}
 		next.add([]byte(key))
 	}
 	if err := ctx.Err(); err != nil {
+		f.finishPreloadFailure()
 		return err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		f.preloadLive = false
+		f.pendingAdds = nil
+		return err
+	}
+	for _, key := range f.pendingAdds {
+		next.add([]byte(key))
 	}
 	f.shards = next.shards
 	f.mask = next.mask
 	f.ready = true
+	f.preloadLive = false
+	f.pendingAdds = nil
 	return nil
+}
+
+func (f *MemoryBloomFilter) finishPreloadFailure() {
+	f.mu.Lock()
+	f.preloadLive = false
+	f.pendingAdds = nil
+	f.mu.Unlock()
 }
 
 // Reset discards authoritative state and returns to fail-open behavior.
 func (f *MemoryBloomFilter) Reset() {
+	f.preloadMu.Lock()
+	defer f.preloadMu.Unlock()
 	f.mu.RLock()
 	capacity, errorRate, shardCount := f.capacity, f.errorRate, len(f.shards)
 	f.mu.RUnlock()

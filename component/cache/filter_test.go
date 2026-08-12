@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestMemoryBloomFilter_ReadinessAndPreload(t *testing.T) {
@@ -168,14 +169,14 @@ func TestMemoryBloomFilter_PreloadPreservesSuccessfulConcurrentAdd(t *testing.T)
 	go func() { addDone <- filter.Add(context.Background(), "added") }()
 	select {
 	case err := <-addDone:
-		t.Fatalf("Add returned before preload transaction ended: %v", err)
-	default:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Add blocked behind off-side preload build")
 	}
 	close(release)
 	if err := <-preloadDone; err != nil {
-		t.Fatal(err)
-	}
-	if err := <-addDone; err != nil {
 		t.Fatal(err)
 	}
 	if !filter.Ready() {
@@ -184,6 +185,48 @@ func TestMemoryBloomFilter_PreloadPreservesSuccessfulConcurrentAdd(t *testing.T)
 	mayContain, err := filter.MayContain(context.Background(), "added")
 	if err != nil || !mayContain {
 		t.Fatalf("successful Add was lost by Preload: MayContain=%v err=%v", mayContain, err)
+	}
+}
+
+func TestMemoryBloomFilter_PreloadKeepsReadyLookupsResponsive(t *testing.T) {
+	filter, err := NewMemoryBloomFilter(100, 0.01, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filter.Preload(context.Background(), []string{"known"}); err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- filter.preload(context.Background(), []string{"replacement"}, func() {
+			close(started)
+			<-release
+		})
+	}()
+	<-started
+	lookup := make(chan struct {
+		mayContain bool
+		err        error
+	}, 1)
+	go func() {
+		mayContain, err := filter.MayContain(context.Background(), "known")
+		lookup <- struct {
+			mayContain bool
+			err        error
+		}{mayContain, err}
+	}()
+	select {
+	case result := <-lookup:
+		if result.err != nil || !result.mayContain {
+			t.Fatalf("MayContain during preload = %v, %v; want true, nil", result.mayContain, result.err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("MayContain blocked behind off-side preload build")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -196,8 +239,18 @@ func TestMemoryBloomFilter_CanceledPreloadPreservesPreviousReadySet(t *testing.T
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	started, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- filter.preload(ctx, []string{"replacement"}, func() {
+			close(started)
+			<-release
+		})
+	}()
+	<-started
 	cancel()
-	if err := filter.Preload(ctx, []string{"replacement"}); !errors.Is(err, context.Canceled) {
+	close(release)
+	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Preload error = %v, want context cancellation", err)
 	}
 	for _, tc := range []struct {
