@@ -29,6 +29,12 @@ type Level2Cache struct {
 	closed atomic.Bool
 	level  cache.Level
 
+	// generation fences remote read-through backfills against completed synchronous mutations.
+	// A single monotonically increasing value is bounded; unrelated mutations can only skip a
+	// backfill, never make a stale value visible.
+	generationMu sync.RWMutex
+	generation   uint64
+
 	// 使用ants goroutine池
 	localPool  *ants.Pool
 	remotePool *ants.Pool
@@ -128,6 +134,12 @@ func (l2c *Level2Cache) getInternal(ctx context.Context, key string, co *cache.C
 		return value, nil
 	}
 
+	// Capture the generation before the remote read. A successful synchronous mutation
+	// advances it before changing L1, so an older remote value cannot be backfilled.
+	l2c.generationMu.RLock()
+	generation := l2c.generation
+	l2c.generationMu.RUnlock()
+
 	// 从远程获取
 	value, err := l2c.remote.Get(ctx, key, co)
 
@@ -139,15 +151,22 @@ func (l2c *Level2Cache) getInternal(ctx context.Context, key string, co *cache.C
 	switch co.GetSyncStrategy() {
 	case cache.AsyncWriteBoth, cache.AsyncWriteRemoteOnly:
 		// 异步写入本地缓存
-		l2c.asyncSetLocal(ctx, key, value, co.Clone())
+		l2c.asyncSetLocalIfCurrent(ctx, key, value, co.Clone(), generation)
 	default:
-		// 同步写入本地缓存
-		err := l2c.local.Set(ctx, key, value, co)
-		if err != nil {
-			l2c.Ctx.GetLogger().InfoWith(l2c.Ctx.GetConfig().LogOriginCache()).Err(err).Msg("getInternal: Set local error")
-		}
+		l2c.setLocalIfGenerationCurrent(ctx, key, value, co, generation)
 	}
 	return value, nil
+}
+
+func (l2c *Level2Cache) setLocalIfGenerationCurrent(ctx context.Context, key string, value interface{}, co *cache.CacheOption, generation uint64) {
+	l2c.generationMu.RLock()
+	defer l2c.generationMu.RUnlock()
+	if l2c.generation != generation {
+		return
+	}
+	if err := l2c.local.Set(ctx, key, value, co); err != nil {
+		l2c.Ctx.GetLogger().InfoWith(l2c.Ctx.GetConfig().LogOriginCache()).Err(err).Msg("getInternal: Set local error")
+	}
 }
 
 // Set 设置缓存值
@@ -159,43 +178,24 @@ func (l2c *Level2Cache) Set(ctx context.Context, key string, value interface{}, 
 	// 根据策略选择写入方式
 	switch co.GetSyncStrategy() {
 	case cache.WriteBoth:
-		// 同步双写两级缓存
-		var wg sync.WaitGroup
-		errCh := make(chan error, 2)
-
-		wg.Add(2)
-
-		// 并行写入本地缓存
-		go func() {
-			defer wg.Done()
-			if err := l2c.local.Set(ctx, key, value, co); err != nil {
-				errCh <- err
-			}
-		}()
-
-		// 并行写入远程缓存
-		go func() {
-			defer wg.Done()
-			if err := l2c.remote.Set(ctx, key, value, co); err != nil {
-				errCh <- err
-			}
-		}()
-
-		wg.Wait()
-		close(errCh)
-
-		var errors []error
-		for err := range errCh {
-			errors = append(errors, err)
+		if err := l2c.remote.Set(ctx, key, value, co); err != nil {
+			return fmt.Errorf("remote cache set error: %w", err)
 		}
-
-		if len(errors) > 0 {
-			return fmt.Errorf("cache set errors: %v", errors)
+		l2c.generationMu.Lock()
+		defer l2c.generationMu.Unlock()
+		l2c.generation++
+		if err := l2c.local.Set(ctx, key, value, co); err != nil {
+			return fmt.Errorf("local cache set error: %w", err)
 		}
 	case cache.WriteRemoteOnly:
-		// 同步写远程
 		if err := l2c.remote.Set(ctx, key, value, co); err != nil {
-			return err
+			return fmt.Errorf("remote cache set error: %w", err)
+		}
+		l2c.generationMu.Lock()
+		defer l2c.generationMu.Unlock()
+		l2c.generation++
+		if err := l2c.local.Delete(ctx, key); err != nil {
+			return fmt.Errorf("local cache invalidate error: %w", err)
 		}
 	case cache.AsyncWriteBoth:
 		// 异步写入本地和远程缓存
@@ -209,6 +209,29 @@ func (l2c *Level2Cache) Set(ctx context.Context, key string, value interface{}, 
 	}
 
 	return nil
+}
+
+func (l2c *Level2Cache) asyncSetLocalIfCurrent(ctx context.Context, key string, value interface{}, co *cache.CacheOption, generation uint64) {
+	select {
+	case <-l2c.stopCh:
+		co.Release()
+		return
+	default:
+	}
+
+	err := l2c.localPool.Submit(func() {
+		defer co.Release()
+		timeoutCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		l2c.setLocalIfGenerationCurrent(timeoutCtx, key, value, co, generation)
+	})
+	if err != nil {
+		co.Release()
+		l2c.Ctx.GetLogger().Error(l2c.Ctx.GetConfig().LogOriginCache()).
+			Str("key", key).
+			Err(err).
+			Msg("AsyncSetLocal submit failed")
+	}
 }
 
 // asyncSetLocal 异步写入本地缓存
@@ -287,40 +310,16 @@ func (l2c *Level2Cache) Delete(ctx context.Context, keys ...string) error {
 		return cache.ErrCacheClosed
 	}
 
-	var wg sync.WaitGroup
-	var errors []error
-	var mu sync.Mutex
-
-	// 同时删除两级缓存
-	wg.Add(2)
-
-	// 删除本地缓存
-	go func() {
-		defer wg.Done()
-		if err := l2c.local.Delete(ctx, keys...); err != nil {
-			mu.Lock()
-			errors = append(errors, fmt.Errorf("local delete error: %w", err))
-			mu.Unlock()
-		}
-	}()
-
-	// 删除远程缓存
-	go func() {
-		defer wg.Done()
-		err := l2c.remote.Delete(ctx, keys...)
-		if err != nil {
-			mu.Lock()
-			errors = append(errors, fmt.Errorf("remote delete error: %w", err))
-			mu.Unlock()
-		}
-	}()
-
-	wg.Wait()
-
-	if len(errors) > 0 {
-		return fmt.Errorf("cache delete errors: %v", errors)
+	if err := l2c.remote.Delete(ctx, keys...); err != nil {
+		return fmt.Errorf("remote cache delete error: %w", err)
 	}
 
+	l2c.generationMu.Lock()
+	defer l2c.generationMu.Unlock()
+	l2c.generation++
+	if err := l2c.local.Delete(ctx, keys...); err != nil {
+		return fmt.Errorf("local cache delete error: %w", err)
+	}
 	return nil
 }
 

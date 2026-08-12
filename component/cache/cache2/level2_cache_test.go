@@ -29,6 +29,20 @@ type recordingCache struct {
 	level      cache.Level
 }
 
+type pausedGetCache struct {
+	*recordingCache
+	readOldValue chan struct{}
+	releaseGet   <-chan struct{}
+	readOnce     sync.Once
+}
+
+func (c *pausedGetCache) Get(ctx context.Context, key string, co *cache.CacheOption) (string, error) {
+	value, err := c.recordingCache.Get(ctx, key, co)
+	c.readOnce.Do(func() { close(c.readOldValue) })
+	<-c.releaseGet
+	return value, err
+}
+
 func newRecordingCache(level cache.Level) *recordingCache {
 	return &recordingCache{values: make(map[string]string), level: level}
 }
@@ -176,4 +190,102 @@ func TestLevel2ReadThroughAndSynchronousOperations(t *testing.T) {
 	assert.Same(t, local, l2.GetLocal())
 	assert.Same(t, remote, l2.GetRemote())
 	assert.NotEmpty(t, l2.GetPoolMetrics())
+}
+
+func TestLevel2Cache_RemoteFirstSetFailureLeavesLocalUntouched(t *testing.T) {
+	remoteErr := errors.New("remote set failed")
+	local, remote := newRecordingCache(cache.Local), newRecordingCache(cache.Remote)
+	local.values["key"] = "old"
+	remote.setErr = remoteErr
+	l2 := newTestLevel2(t, local, remote)
+	t.Cleanup(func() { _ = l2.Close() })
+
+	err := l2.Set(context.Background(), "key", "new", cache.NewCacheOption(nil).SetSyncStrategyWriteBoth())
+
+	require.ErrorIs(t, err, remoteErr)
+	assert.Equal(t, "old", local.values["key"])
+}
+
+func TestLevel2Cache_RemoteFirstWriteRemoteOnlyInvalidatesLocalAfterRemoteSuccess(t *testing.T) {
+	local, remote := newRecordingCache(cache.Local), newRecordingCache(cache.Remote)
+	local.values["key"] = "old"
+	l2 := newTestLevel2(t, local, remote)
+	t.Cleanup(func() { _ = l2.Close() })
+
+	require.NoError(t, l2.Set(context.Background(), "key", "new", cache.NewCacheOption(nil).SetSyncStrategyWriteRemoteOnly()))
+
+	assert.Equal(t, "new", remote.values["key"])
+	assert.NotContains(t, local.values, "key")
+}
+
+func TestLevel2Cache_RemoteFirstDeleteFailureLeavesLocalUntouched(t *testing.T) {
+	remoteErr := errors.New("remote delete failed")
+	local, remote := newRecordingCache(cache.Local), newRecordingCache(cache.Remote)
+	local.values["key"] = "old"
+	remote.deleteErr = remoteErr
+	l2 := newTestLevel2(t, local, remote)
+	t.Cleanup(func() { _ = l2.Close() })
+
+	err := l2.Delete(context.Background(), "key")
+
+	require.ErrorIs(t, err, remoteErr)
+	assert.Equal(t, "old", local.values["key"])
+}
+
+func TestLevel2Cache_NoStaleBackfillAfterSet(t *testing.T) {
+	releaseGet := make(chan struct{})
+	local := newRecordingCache(cache.Local)
+	remote := &pausedGetCache{
+		recordingCache: newRecordingCache(cache.Remote),
+		readOldValue:   make(chan struct{}),
+		releaseGet:     releaseGet,
+	}
+	remote.values["key"] = "old"
+	l2 := newTestLevel2(t, local, remote)
+	t.Cleanup(func() { _ = l2.Close() })
+	co := cache.NewCacheOption(nil).SetSyncStrategyWriteBoth()
+
+	getResult := make(chan string, 1)
+	getErr := make(chan error, 1)
+	go func() {
+		value, err := l2.Get(context.Background(), "key", co)
+		getResult <- value
+		getErr <- err
+	}()
+	<-remote.readOldValue
+	require.NoError(t, l2.Set(context.Background(), "key", "new", co))
+	close(releaseGet)
+
+	require.NoError(t, <-getErr)
+	assert.Equal(t, "old", <-getResult)
+	assert.Equal(t, "new", local.values["key"])
+}
+
+func TestLevel2Cache_NoStaleBackfillAfterDelete(t *testing.T) {
+	releaseGet := make(chan struct{})
+	local := newRecordingCache(cache.Local)
+	remote := &pausedGetCache{
+		recordingCache: newRecordingCache(cache.Remote),
+		readOldValue:   make(chan struct{}),
+		releaseGet:     releaseGet,
+	}
+	remote.values["key"] = "old"
+	l2 := newTestLevel2(t, local, remote)
+	t.Cleanup(func() { _ = l2.Close() })
+	co := cache.NewCacheOption(nil).SetSyncStrategyWriteBoth()
+
+	getResult := make(chan string, 1)
+	getErr := make(chan error, 1)
+	go func() {
+		value, err := l2.Get(context.Background(), "key", co)
+		getResult <- value
+		getErr <- err
+	}()
+	<-remote.readOldValue
+	require.NoError(t, l2.Delete(context.Background(), "key"))
+	close(releaseGet)
+
+	require.NoError(t, <-getErr)
+	assert.Equal(t, "old", <-getResult)
+	assert.NotContains(t, local.values, "key")
 }
