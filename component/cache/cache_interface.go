@@ -8,9 +8,20 @@ package cache
 
 import (
 	"context"
+
 	"github.com/lamxy/fiberhouse"
 	"github.com/redis/go-redis/v9"
 )
+
+// Flusher waits until all work admitted before its snapshot has completed.
+type Flusher interface {
+	Flush(ctx context.Context) error
+}
+
+// Shutdowner stops admission, drains work, and releases owned resources.
+type Shutdowner interface {
+	Shutdown(ctx context.Context) error
+}
 
 // Cache 缓存接口，定义了通用接口的方法
 // 定义Get、Set、Del、Wait、Close等

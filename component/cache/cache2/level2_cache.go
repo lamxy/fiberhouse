@@ -38,14 +38,34 @@ type Level2Cache struct {
 	// 使用ants goroutine池
 	localPool  *ants.Pool
 	remotePool *ants.Pool
-	stopCh     chan struct{}
+
+	lifecycleMu  sync.Mutex
+	pending      int
+	drain        chan struct{}
+	admitting    bool
+	ownChildren  bool
+	shutdownDone chan struct{}
+	shutdownErr  error
 }
 
 func NewLevel2Cache(appCtx fiberhouse.IContext, local cache.Cache, remote cache.Cache) cache.Cache {
+	l2c, err := NewLevel2CacheWithError(appCtx, local, remote)
+	if err != nil {
+		return nil
+	}
+	return l2c
+}
+
+func NewLevel2CacheWithError(appCtx fiberhouse.IContext, local cache.Cache, remote cache.Cache) (*Level2Cache, error) {
 	cfg := appCtx.GetConfig()
+	localSize := cfg.Int("cache.asyncPool.ants.local.size")
+	remoteSize := cfg.Int("cache.asyncPool.ants.remote.size")
+	if localSize <= 0 || remoteSize <= 0 {
+		return nil, fmt.Errorf("cache async pool sizes must be positive: local=%d remote=%d", localSize, remoteSize)
+	}
 	// 创建本地缓存异步操作池（容量size）
 	localPool, err := ants.NewPool(
-		cfg.Int("cache.asyncPool.ants.local.size"),
+		localSize,
 		ants.WithOptions(ants.Options{
 			ExpiryDuration:   time.Duration(cfg.Int("cache.asyncPool.ants.local.expiryDuration")) * time.Second,
 			PreAlloc:         cfg.Bool("cache.asyncPool.ants.local.preAlloc"),
@@ -63,12 +83,12 @@ func NewLevel2Cache(appCtx fiberhouse.IContext, local cache.Cache, remote cache.
 		appCtx.GetLogger().Error(appCtx.GetConfig().LogOriginCache()).
 			Err(err).
 			Msg("NewLevel2Cache create local goroutine pool error")
-		return nil
+		return nil, fmt.Errorf("create local cache async pool: %w", err)
 	}
 
 	// 创建远程缓存异步操作池（容量size）
 	remotePool, err := ants.NewPool(
-		cfg.Int("cache.asyncPool.ants.remote.size"),
+		remoteSize,
 		ants.WithOptions(ants.Options{
 			ExpiryDuration:   time.Duration(cfg.Int("cache.asyncPool.ants.remote.expiryDuration")) * time.Second,
 			PreAlloc:         cfg.Bool("cache.asyncPool.ants.remote.preAlloc"),
@@ -87,7 +107,7 @@ func NewLevel2Cache(appCtx fiberhouse.IContext, local cache.Cache, remote cache.
 		appCtx.GetLogger().Error(appCtx.GetConfig().LogOriginCache()).
 			Err(err).
 			Msg("NewLevel2Cache create remote goroutine pool error")
-		return nil
+		return nil, fmt.Errorf("create remote cache async pool: %w", err)
 	}
 
 	l2c := &Level2Cache{
@@ -98,10 +118,9 @@ func NewLevel2Cache(appCtx fiberhouse.IContext, local cache.Cache, remote cache.
 		level:      cache.Level2,
 		localPool:  localPool,
 		remotePool: remotePool,
-		stopCh:     make(chan struct{}),
 	}
-
-	return l2c
+	l2c.initLifecycle(true)
+	return l2c, nil
 }
 
 // GetLevel 获取缓存级别
@@ -212,20 +231,20 @@ func (l2c *Level2Cache) Set(ctx context.Context, key string, value interface{}, 
 }
 
 func (l2c *Level2Cache) asyncSetLocalIfCurrent(ctx context.Context, key string, value interface{}, co *cache.CacheOption, generation uint64) {
-	select {
-	case <-l2c.stopCh:
+	if !l2c.admit() {
 		co.Release()
 		return
-	default:
 	}
 
 	err := l2c.localPool.Submit(func() {
+		defer l2c.complete()
 		defer co.Release()
-		timeoutCtx, cancel := context.WithTimeout(ctx, time.Second)
+		timeoutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 		defer cancel()
 		l2c.setLocalIfGenerationCurrent(timeoutCtx, key, value, co, generation)
 	})
 	if err != nil {
+		l2c.complete()
 		co.Release()
 		l2c.Ctx.GetLogger().Error(l2c.Ctx.GetConfig().LogOriginCache()).
 			Str("key", key).
@@ -236,20 +255,18 @@ func (l2c *Level2Cache) asyncSetLocalIfCurrent(ctx context.Context, key string, 
 
 // asyncSetLocal 异步写入本地缓存
 func (l2c *Level2Cache) asyncSetLocal(ctx context.Context, key string, value interface{}, co *cache.CacheOption) {
-	// 首先检查是否已关闭
-	select {
-	case <-l2c.stopCh:
+	if !l2c.admit() {
 		co.Release()
 		return
-	default:
 	}
 
 	// 使用ants池提交任务
 	err := l2c.localPool.Submit(func() {
+		defer l2c.complete()
 		defer co.Release()
 
 		// 带超时的context
-		timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		timeoutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 		defer cancel()
 
 		if err := l2c.local.Set(timeoutCtx, key, value, co); err != nil {
@@ -260,6 +277,7 @@ func (l2c *Level2Cache) asyncSetLocal(ctx context.Context, key string, value int
 	})
 
 	if err != nil {
+		l2c.complete()
 		co.Release() // 提交失败时释放资源
 		l2c.Ctx.GetLogger().Error(l2c.Ctx.GetConfig().LogOriginCache()).
 			Str("key", key).
@@ -271,20 +289,18 @@ func (l2c *Level2Cache) asyncSetLocal(ctx context.Context, key string, value int
 
 // asyncSetRemote 异步写入远程缓存
 func (l2c *Level2Cache) asyncSetRemote(ctx context.Context, key string, value interface{}, co *cache.CacheOption) {
-	// 首先检查是否已关闭
-	select {
-	case <-l2c.stopCh:
+	if !l2c.admit() {
 		co.Release()
 		return
-	default:
 	}
 
 	// 使用ants池提交任务
 	err := l2c.remotePool.Submit(func() {
+		defer l2c.complete()
 		defer co.Release()
 
 		// 带超时的context
-		timeoutCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		timeoutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 
 		if err := l2c.remote.Set(timeoutCtx, key, value, co); err != nil {
@@ -296,6 +312,7 @@ func (l2c *Level2Cache) asyncSetRemote(ctx context.Context, key string, value in
 	})
 
 	if err != nil {
+		l2c.complete()
 		co.Release() // 提交失败时释放资源
 		l2c.Ctx.GetLogger().Error(l2c.Ctx.GetConfig().LogOriginCache()).
 			Str("key", key).
@@ -325,43 +342,118 @@ func (l2c *Level2Cache) Delete(ctx context.Context, keys ...string) error {
 
 // Close 关闭缓存实例，释放资源（应用退出时调用Close关闭资源）
 func (l2c *Level2Cache) Close() error {
-	if !l2c.closed.CompareAndSwap(false, true) {
-		return nil // 已关闭
+	done, drain, leader := l2c.beginShutdown()
+	if leader {
+		go l2c.finishShutdown(drain)
 	}
-
-	// 停止接收新任务
-	close(l2c.stopCh)
-
-	// 等待池中的任务完成（带超时）
-	timeout := 5 * time.Second
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		if l2c.localPool.Running() == 0 && l2c.remotePool.Running() == 0 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
+	<-done
+	if !leader {
+		return nil
 	}
+	l2c.lifecycleMu.Lock()
+	err := l2c.shutdownErr
+	l2c.lifecycleMu.Unlock()
+	return err
+}
 
-	// 关闭goroutine池
+func (l2c *Level2Cache) initLifecycle(ownChildren bool) {
+	l2c.lifecycleMu.Lock()
+	l2c.admitting = true
+	l2c.ownChildren = ownChildren
+	l2c.drain = make(chan struct{})
+	close(l2c.drain)
+	l2c.shutdownDone = make(chan struct{})
+	l2c.lifecycleMu.Unlock()
+}
+
+func (l2c *Level2Cache) admit() bool {
+	l2c.lifecycleMu.Lock()
+	defer l2c.lifecycleMu.Unlock()
+	if !l2c.admitting {
+		return false
+	}
+	if l2c.pending == 0 {
+		l2c.drain = make(chan struct{})
+	}
+	l2c.pending++
+	return true
+}
+
+func (l2c *Level2Cache) complete() {
+	l2c.lifecycleMu.Lock()
+	l2c.pending--
+	if l2c.pending == 0 {
+		close(l2c.drain)
+	}
+	l2c.lifecycleMu.Unlock()
+}
+
+func (l2c *Level2Cache) Flush(ctx context.Context) error {
+	l2c.lifecycleMu.Lock()
+	drain := l2c.drain
+	l2c.lifecycleMu.Unlock()
+	select {
+	case <-drain:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l2c *Level2Cache) Shutdown(ctx context.Context) error {
+	done, drain, leader := l2c.beginShutdown()
+	if leader {
+		go l2c.finishShutdown(drain)
+	}
+	select {
+	case <-done:
+		l2c.lifecycleMu.Lock()
+		err := l2c.shutdownErr
+		l2c.lifecycleMu.Unlock()
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l2c *Level2Cache) beginShutdown() (done, drain chan struct{}, leader bool) {
+	l2c.lifecycleMu.Lock()
+	defer l2c.lifecycleMu.Unlock()
+	if !l2c.admitting {
+		return l2c.shutdownDone, l2c.drain, false
+	}
+	l2c.admitting = false
+	l2c.closed.Store(true)
+	return l2c.shutdownDone, l2c.drain, true
+}
+
+
+func (l2c *Level2Cache) finishShutdown(drain chan struct{}) {
+	<-drain
 	l2c.localPool.Release()
 	l2c.remotePool.Release()
-
-	// 关闭底层缓存
-	var closeErrors []error
-	if err := l2c.local.Close(); err != nil {
-		closeErrors = append(closeErrors, fmt.Errorf("local cache close error: %w", err))
+	var shutdownErrors []error
+	if l2c.ownChildren {
+		if err := l2c.local.Close(); err != nil {
+			shutdownErrors = append(shutdownErrors, fmt.Errorf("local cache close error: %w", err))
+		}
+		if err := l2c.remote.Close(); err != nil {
+			shutdownErrors = append(shutdownErrors, fmt.Errorf("remote cache close error: %w", err))
+		}
 	}
-	if err := l2c.remote.Close(); err != nil {
-		closeErrors = append(closeErrors, fmt.Errorf("remote cache close error: %w", err))
-	}
-	return errors.Join(closeErrors...)
+	l2c.lifecycleMu.Lock()
+	l2c.shutdownErr = errors.Join(shutdownErrors...)
+	close(l2c.shutdownDone)
+	l2c.lifecycleMu.Unlock()
 }
 
 // Wait 当写入后立即读取时，等待底层缓存完成写入操作
 func (l2c *Level2Cache) Wait() error {
 	if l2c.closed.Load() {
 		return cache.ErrCacheClosed
+	}
+	if err := l2c.Flush(context.Background()); err != nil {
+		return err
 	}
 
 	var wg sync.WaitGroup

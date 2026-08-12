@@ -3,8 +3,11 @@ package cache2
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/appconfig"
@@ -34,6 +37,27 @@ type pausedGetCache struct {
 	readOldValue chan struct{}
 	releaseGet   <-chan struct{}
 	readOnce     sync.Once
+}
+
+type gatedSetCache struct {
+	*recordingCache
+	started  chan struct{}
+	release  <-chan struct{}
+	finished atomic.Int32
+}
+
+func (c *gatedSetCache) Set(ctx context.Context, key string, value interface{}, co *cache.CacheOption) error {
+	c.started <- struct{}{}
+	select {
+	case <-c.release:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := c.recordingCache.Set(ctx, key, value, co); err != nil {
+		return err
+	}
+	c.finished.Add(1)
+	return nil
 }
 
 func (c *pausedGetCache) Get(ctx context.Context, key string, co *cache.CacheOption) (string, error) {
@@ -106,10 +130,18 @@ func newTestLevel2(t *testing.T, local, remote cache.Cache) *Level2Cache {
 	require.NoError(t, err)
 	logger := zerolog.Nop()
 	ctx := fiberhouse.NewAppContext(appconfig.NewAppConfig(), bootstrap.NewLoggerWrap(&logger))
-	return &Level2Cache{
+	l2 := &Level2Cache{
 		Ctx: ctx, local: local, remote: remote, level: cache.Level2,
-		localPool: localPool, remotePool: remotePool, stopCh: make(chan struct{}),
+		localPool: localPool, remotePool: remotePool,
 	}
+	l2.initLifecycle(true)
+	return l2
+}
+
+func newLevel2Context(values map[string]interface{}) fiberhouse.IContext {
+	cfg := appconfig.NewAppConfig().LoadDefault(values)
+	logger := zerolog.Nop()
+	return fiberhouse.NewAppContext(cfg, bootstrap.NewLoggerWrap(&logger))
 }
 
 func TestLevel2Close_IsIdempotentAndClosesChildrenOnce(t *testing.T) {
@@ -150,6 +182,43 @@ func TestLevel2Wait_PropagatesChildErrors(t *testing.T) {
 	err := l2.Wait()
 	assert.ErrorIs(t, err, localErr)
 	assert.ErrorIs(t, err, remoteErr)
+}
+
+func TestLevel2Wait_DrainsQueuedAsyncWorkBeforeWaitingChildren(t *testing.T) {
+	release := make(chan struct{})
+	remote := &gatedSetCache{
+		recordingCache: newRecordingCache(cache.Remote),
+		started:        make(chan struct{}, 2),
+		release:        release,
+	}
+	l2 := newTestLevel2(t, newRecordingCache(cache.Local), remote)
+	l2.remotePool.Release()
+	pool, err := ants.NewPool(1, ants.WithMaxBlockingTasks(2))
+	require.NoError(t, err)
+	l2.remotePool = pool
+	co := cache.NewCacheOption(nil).SetSyncStrategyAsyncWriteRemoteOnly()
+	require.NoError(t, l2.Set(context.Background(), "running", "one", co))
+	<-remote.started
+	secondReturned := make(chan error, 1)
+	go func() { secondReturned <- l2.Set(context.Background(), "queued", "two", co) }()
+	require.Eventually(t, func() bool {
+		l2.lifecycleMu.Lock()
+		defer l2.lifecycleMu.Unlock()
+		return l2.pending == 2
+	}, time.Second, time.Millisecond)
+
+	waited := make(chan error, 1)
+	go func() { waited <- l2.Wait() }()
+	select {
+	case err := <-waited:
+		t.Fatalf("Wait returned before async work drained: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, <-secondReturned)
+	require.NoError(t, <-waited)
+	assert.Equal(t, int32(2), remote.finished.Load())
+	require.NoError(t, l2.Shutdown(context.Background()))
 }
 
 func TestLevel2Close_AggregatesChildErrors(t *testing.T) {
@@ -288,4 +357,154 @@ func TestLevel2Cache_NoStaleBackfillAfterDelete(t *testing.T) {
 	require.NoError(t, <-getErr)
 	assert.Equal(t, "old", <-getResult)
 	assert.NotContains(t, local.values, "key")
+}
+
+func TestLevel2Cache_FlushWaitsForQueuedAndRunningWork(t *testing.T) {
+	release := make(chan struct{})
+	remote := &gatedSetCache{
+		recordingCache: newRecordingCache(cache.Remote),
+		started:        make(chan struct{}, 2),
+		release:        release,
+	}
+	l2 := newTestLevel2(t, newRecordingCache(cache.Local), remote)
+	l2.remotePool.Release()
+	pool, err := ants.NewPool(1, ants.WithMaxBlockingTasks(2))
+	require.NoError(t, err)
+	l2.remotePool = pool
+	co := cache.NewCacheOption(nil).SetSyncStrategyAsyncWriteRemoteOnly()
+
+	require.NoError(t, l2.Set(context.Background(), "running", "one", co))
+	<-remote.started
+	secondReturned := make(chan error, 1)
+	go func() { secondReturned <- l2.Set(context.Background(), "queued", "two", co) }()
+	require.Eventually(t, func() bool {
+		l2.lifecycleMu.Lock()
+		defer l2.lifecycleMu.Unlock()
+		return l2.pending == 2
+	}, time.Second, time.Millisecond)
+
+	flushed := make(chan error, 1)
+	go func() { flushed <- l2.Flush(context.Background()) }()
+	select {
+	case err := <-flushed:
+		t.Fatalf("Flush returned before queued and running work completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, <-secondReturned)
+	require.NoError(t, <-flushed)
+	assert.Equal(t, int32(2), remote.finished.Load())
+	require.NoError(t, l2.Shutdown(context.Background()))
+}
+
+func TestLevel2Cache_FlushDeadlineDoesNotCancelPendingWork(t *testing.T) {
+	release := make(chan struct{})
+	remote := &gatedSetCache{
+		recordingCache: newRecordingCache(cache.Remote),
+		started:        make(chan struct{}, 1),
+		release:        release,
+	}
+	l2 := newTestLevel2(t, newRecordingCache(cache.Local), remote)
+	co := cache.NewCacheOption(nil).SetSyncStrategyAsyncWriteRemoteOnly()
+	require.NoError(t, l2.Set(context.Background(), "key", "value", co))
+	<-remote.started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, l2.Flush(ctx), context.DeadlineExceeded)
+	close(release)
+	require.NoError(t, l2.Flush(context.Background()))
+	assert.Equal(t, int32(1), remote.finished.Load())
+	require.NoError(t, l2.Shutdown(context.Background()))
+}
+
+func TestLevel2Cache_ShutdownStopsAdmissionWaitsAndClosesOwnedChildrenOnce(t *testing.T) {
+	release := make(chan struct{})
+	local := newRecordingCache(cache.Local)
+	remote := &gatedSetCache{
+		recordingCache: newRecordingCache(cache.Remote),
+		started:        make(chan struct{}, 1),
+		release:        release,
+	}
+	l2 := newTestLevel2(t, local, remote)
+	co := cache.NewCacheOption(nil).SetSyncStrategyAsyncWriteRemoteOnly()
+	require.NoError(t, l2.Set(context.Background(), "running", "value", co))
+	<-remote.started
+
+	const callers = 8
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() { errs <- l2.Shutdown(context.Background()) }()
+	}
+	require.Eventually(t, func() bool { return l2.closed.Load() }, time.Second, time.Millisecond)
+	require.ErrorIs(t, l2.Set(context.Background(), "late", "value", co), cache.ErrCacheClosed)
+	assert.Equal(t, 0, local.closeCalls, "Shutdown must not close children while a task is running")
+	assert.Equal(t, 0, remote.closeCalls, "Shutdown must not close children while a task is running")
+
+	close(release)
+	for i := 0; i < callers; i++ {
+		require.NoError(t, <-errs)
+	}
+	assert.Equal(t, 1, local.closeCalls)
+	assert.Equal(t, 1, remote.closeCalls)
+	require.NoError(t, l2.Shutdown(context.Background()))
+	assert.Equal(t, 1, local.closeCalls)
+	assert.Equal(t, 1, remote.closeCalls)
+}
+
+func TestLevel2Cache_SubmitAndFlushRaceDoesNotLoseAdmittedWork(t *testing.T) {
+	local, remote := newRecordingCache(cache.Local), newRecordingCache(cache.Remote)
+	l2 := newTestLevel2(t, local, remote)
+	co := cache.NewCacheOption(nil).SetSyncStrategyAsyncWriteRemoteOnly()
+
+	const tasks = 100
+	var submitted atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i < tasks; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			if err := l2.Set(context.Background(), fmt.Sprintf("key-%d", i), "value", co); err == nil {
+				submitted.Add(1)
+			}
+		}(i)
+		go func() {
+			defer wg.Done()
+			_ = l2.Flush(context.Background())
+		}()
+	}
+	wg.Wait()
+	require.NoError(t, l2.Flush(context.Background()))
+	remote.mu.Lock()
+	executed := len(remote.values)
+	remote.mu.Unlock()
+	assert.Equal(t, int(submitted.Load()), executed)
+	require.NoError(t, l2.Shutdown(context.Background()))
+}
+
+func TestLevel2Cache_NewLevel2CacheWithErrorRejectsInvalidPoolConfig(t *testing.T) {
+	ctx := newLevel2Context(map[string]interface{}{
+		"cache.asyncPool.ants.local.size":           1,
+		"cache.asyncPool.ants.local.expiryDuration": -1,
+		"cache.asyncPool.ants.remote.size":          1,
+	})
+	local, remote := newRecordingCache(cache.Local), newRecordingCache(cache.Remote)
+
+	l2, err := NewLevel2CacheWithError(ctx, local, remote)
+	require.Error(t, err)
+	assert.Nil(t, l2)
+	assert.Nil(t, NewLevel2Cache(ctx, local, remote))
+}
+
+func TestLevel2Cache_NewConstructorsOwnChildren(t *testing.T) {
+	ctx := newLevel2Context(map[string]interface{}{
+		"cache.asyncPool.ants.local.size":  1,
+		"cache.asyncPool.ants.remote.size": 1,
+	})
+	local, remote := newRecordingCache(cache.Local), newRecordingCache(cache.Remote)
+	l2, err := NewLevel2CacheWithError(ctx, local, remote)
+	require.NoError(t, err)
+	require.NoError(t, l2.Shutdown(context.Background()))
+	assert.Equal(t, 1, local.closeCalls)
+	assert.Equal(t, 1, remote.closeCalls)
 }
