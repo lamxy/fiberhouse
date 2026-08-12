@@ -26,6 +26,11 @@ type benchmarkCache struct {
 	storeWrites bool
 }
 
+var (
+	benchmarkStringSink string
+	benchmarkBoolSink   bool
+)
+
 func newBenchmarkCache(level cache.Level) *benchmarkCache {
 	return &benchmarkCache{values: make(map[string]string), level: level, storeWrites: true}
 }
@@ -111,31 +116,41 @@ func BenchmarkCoordinatorHit(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	var value string
+	var runErr error
 	for i := 0; i < b.N; i++ {
-		value, err := cache.GetOrLoad(coordinator, request, loader)
-		if err != nil || value != "value" {
-			b.Fatalf("GetOrLoad() = %q, %v", value, err)
-		}
+		value, runErr = cache.GetOrLoad(coordinator, request, loader)
+	}
+	b.StopTimer()
+	benchmarkStringSink = value
+	if runErr != nil || value != "value" {
+		b.Fatalf("GetOrLoad() = %q, %v", value, runErr)
 	}
 }
 
 func BenchmarkCoordinatorMiss(b *testing.B) {
 	appCtx := benchmarkAppContext()
 	backend := newBenchmarkCache(cache.Local)
+	backend.alwaysMiss = true
+	backend.storeWrites = false
 	coordinator, err := cache.NewCoordinator(backend)
 	if err != nil {
 		b.Fatal(err)
 	}
-	request := benchmarkOption(appCtx, "", cache.Local)
+	request := benchmarkOption(appCtx, "miss", cache.Local)
 	loader := func(context.Context) (string, error) { return "value", nil }
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	var value string
+	var runErr error
 	for i := 0; i < b.N; i++ {
-		request.SetCacheKey(fmt.Sprintf("miss-%d", i))
-		if _, err := cache.GetOrLoad(coordinator, request, loader); err != nil {
-			b.Fatal(err)
-		}
+		value, runErr = cache.GetOrLoad(coordinator, request, loader)
+	}
+	b.StopTimer()
+	benchmarkStringSink = value
+	if runErr != nil || value != "value" {
+		b.Fatalf("GetOrLoad() = %q, %v", value, runErr)
 	}
 }
 
@@ -185,11 +200,15 @@ func BenchmarkMemoryBloomMayContain(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	var present bool
+	var runErr error
 	for i := 0; i < b.N; i++ {
-		present, err := filter.MayContain(context.Background(), "present")
-		if err != nil || !present {
-			b.Fatalf("MayContain() = %v, %v", present, err)
-		}
+		present, runErr = filter.MayContain(context.Background(), "present")
+	}
+	b.StopTimer()
+	benchmarkBoolSink = present
+	if runErr != nil || !present {
+		b.Fatalf("MayContain() = %v, %v", present, runErr)
 	}
 }
 
@@ -210,11 +229,15 @@ func BenchmarkLocalCacheHit(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	var value string
+	var runErr error
 	for i := 0; i < b.N; i++ {
-		value, err := backend.Get(context.Background(), "hit", request)
-		if err != nil || value != "value" {
-			b.Fatalf("Get() = %q, %v", value, err)
-		}
+		value, runErr = backend.Get(context.Background(), "hit", request)
+	}
+	b.StopTimer()
+	benchmarkStringSink = value
+	if runErr != nil || value != "value" {
+		b.Fatalf("Get() = %q, %v", value, runErr)
 	}
 }
 
@@ -232,11 +255,15 @@ func BenchmarkLevel2LocalHit(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	var value string
+	var runErr error
 	for i := 0; i < b.N; i++ {
-		value, err := backend.Get(context.Background(), "hit", request)
-		if err != nil || value != "value" {
-			b.Fatalf("Get() = %q, %v", value, err)
-		}
+		value, runErr = backend.Get(context.Background(), "hit", request)
+	}
+	b.StopTimer()
+	benchmarkStringSink = value
+	if runErr != nil || value != "value" {
+		b.Fatalf("Get() = %q, %v", value, runErr)
 	}
 }
 
@@ -256,11 +283,15 @@ func BenchmarkLevel2RemoteHitBackfill(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	var value string
+	var runErr error
 	for i := 0; i < b.N; i++ {
-		value, err := backend.Get(context.Background(), "remote", request)
-		if err != nil || value != "value" {
-			b.Fatalf("Get() = %q, %v", value, err)
-		}
+		value, runErr = backend.Get(context.Background(), "remote", request)
+	}
+	b.StopTimer()
+	benchmarkStringSink = value
+	if runErr != nil || value != "value" {
+		b.Fatalf("Get() = %q, %v", value, runErr)
 	}
 }
 
