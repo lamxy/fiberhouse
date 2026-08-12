@@ -149,6 +149,25 @@ func TestRedisDb_CallerCancellationDoesNotOpenBreaker(t *testing.T) {
 	}
 }
 
+func TestRedisDb_InfrastructureErrorOpensBreaker(t *testing.T) {
+	rd := newTestRedisDb(t)
+	old := rd.Client
+	infraErr := errors.New("redis transport unavailable")
+	rd.Client = newScriptedRedisClient(infraErr, "")
+	require.NoError(t, old.Close())
+	t.Cleanup(func() { _ = rd.Close() })
+	rd.circuitBreaker = cache.NewCircuitBreakerWrap("redis-infra", &gobreaker.Settings{
+		ReadyToTrip: func(counts gobreaker.Counts) bool { return counts.TotalFailures >= 1 },
+	})
+	co := cache.NewCacheOption(rd.Ctx).EnableCircuitBreaker()
+
+	_, err := rd.Get(context.Background(), "unavailable", co)
+	require.ErrorIs(t, err, infraErr)
+	if rd.circuitBreaker.Allow() {
+		t.Fatal("infrastructure failure must open the circuit breaker")
+	}
+}
+
 func TestRedisDb_RebuildClosesOldClient(t *testing.T) {
 	rd := newTestRedisDb(t)
 	old := rd.GetRedisClient()

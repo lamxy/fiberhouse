@@ -109,6 +109,38 @@ func TestCircuitBreakerWrap_AllowReflectsOpenStateAndResetRestoresClosedState(t 
 	}
 }
 
+func TestCircuitBreakerWrap_ConcurrentAllowResetAndCall(t *testing.T) {
+	wrap := NewCircuitBreakerWrap("cb-concurrent", &gobreaker.Settings{
+		ReadyToTrip: func(counts gobreaker.Counts) bool { return counts.TotalFailures >= 1 },
+	})
+
+	const workers = 12
+	const iterations = 200
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for iteration := 0; iteration < iterations; iteration++ {
+				switch (worker + iteration) % 3 {
+				case 0:
+					_ = wrap.Allow()
+				case 1:
+					wrap.Reset()
+				case 2:
+					_, _ = wrap.Call(func() (string, error) { return "", errors.New("infra") })
+				}
+			}
+		}(worker)
+	}
+	wg.Wait()
+
+	wrap.Reset()
+	if !wrap.Allow() {
+		t.Fatal("final Reset must leave the breaker closed")
+	}
+}
+
 // TestShardedBloomFilter_Basic 基本行为
 func TestShardedBloomFilter_Basic(t *testing.T) {
 	bf := NewShardedBloomFilter(0, 1000, 0.01) // shardCount=0 => 默认
