@@ -109,6 +109,25 @@ func TestShardedBloomFilter_Basic(t *testing.T) {
 	}
 }
 
+func TestShardedBloomFilter_ResetClearsEveryShard(t *testing.T) {
+	bf := NewShardedBloomFilter(3, 1000, 0.01)
+	sb := bf.(*ShardedBloomFilter)
+	if got := len(sb.shards); got != 4 {
+		t.Fatalf("shards = %d, want normalized power-of-two 4", got)
+	}
+
+	keys := [][]byte{[]byte("one"), []byte("two"), []byte("three")}
+	for _, key := range keys {
+		sb.Add(key)
+	}
+	sb.Reset()
+	for _, key := range keys {
+		if sb.Test(key) {
+			t.Fatalf("Reset retained key %q", key)
+		}
+	}
+}
+
 // TestShardedBloomFilter_Concurrent 并发安全 & 低误判验证（仅不崩溃）
 func TestShardedBloomFilter_Concurrent(t *testing.T) {
 	bf := NewShardedBloomFilter(32, 5000, 0.01)

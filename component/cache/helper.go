@@ -130,29 +130,33 @@ type shard struct {
 
 // ShardedBloomFilter 分片锁布隆过滤器
 type ShardedBloomFilter struct {
-	shards []shard
-	mask   uint32
+	shards      []shard
+	mask        uint32
+	estPerShard uint
+	fpRate      float64
 }
 
 func NewShardedBloomFilter(shardCount int, estPerShard uint, fpRate float64) CacheBloomFilter {
-	// shardCount 建议为 2 的幂，方便用 mask
+	// The bit-mask index requires a power of two. Preserve the legacy default
+	// for zero while making all positive requests safe for mask indexing.
 	if shardCount <= 0 {
 		shardCount = 16
 	}
+	shardCount = normalizeShardCount(shardCount)
 	sb := &ShardedBloomFilter{
-		shards: make([]shard, shardCount),
-		mask:   uint32(shardCount - 1),
+		shards:      make([]shard, shardCount),
+		mask:        uint32(shardCount - 1),
+		estPerShard: estPerShard,
+		fpRate:      fpRate,
 	}
 	for i := range sb.shards {
-		sb.shards[i].bf = bloom.NewWithEstimates(estPerShard, fpRate)
+		sb.shards[i].bf = newBloomFilter(estPerShard, fpRate)
 	}
 	return sb
 }
 
 func (sb *ShardedBloomFilter) idx(key []byte) int {
-	h := fnv.New32a()
-	_, _ = h.Write(key)
-	return int(h.Sum32() & sb.mask)
+	return bloomShardIndex(key, sb.mask)
 }
 
 func (sb *ShardedBloomFilter) Test(key []byte) bool {
@@ -181,7 +185,33 @@ func (sb *ShardedBloomFilter) TestAndAdd(key []byte) bool {
 }
 
 func (sb *ShardedBloomFilter) Reset() {
-	// 空函数体
+	for i := range sb.shards {
+		s := &sb.shards[i]
+		s.mu.Lock()
+		s.bf = newBloomFilter(sb.estPerShard, sb.fpRate)
+		s.mu.Unlock()
+	}
+}
+
+func newBloomFilter(capacity uint, fpRate float64) *bloom.BloomFilter {
+	return bloom.NewWithEstimates(capacity, fpRate)
+}
+
+func bloomShardIndex(key []byte, mask uint32) int {
+	h := fnv.New32a()
+	_, _ = h.Write(key)
+	return int(h.Sum32() & mask)
+}
+
+func normalizeShardCount(shardCount int) int {
+	if shardCount <= 1 {
+		return 1
+	}
+	count := 1
+	for count < shardCount {
+		count <<= 1
+	}
+	return count
 }
 
 // StableBloomFilter 支持陈旧信息驱逐的稳定布隆过滤器

@@ -26,6 +26,16 @@ const (
 	EventCacheMiss
 	EventCacheError
 	EventFillError
+	EventFilterError
+)
+
+// FilterFailureMode determines the coordinator behavior when an existence
+// filter cannot make a decision.
+type FilterFailureMode uint8
+
+const (
+	FilterFailOpen FilterFailureMode = iota + 1
+	FilterFailClosed
 )
 
 // Observer receives non-critical coordinator events. It must not block.
@@ -43,12 +53,34 @@ func WithObserver(observer Observer) CoordinatorOption {
 	}
 }
 
+// WithExistenceFilter installs the authoritative key existence filter used by
+// Bloom-enabled requests.
+func WithExistenceFilter(filter ExistenceFilter) CoordinatorOption {
+	return func(c *Coordinator) {
+		if filter != nil {
+			c.filter = filter
+		}
+	}
+}
+
+// WithFilterFailureMode configures whether filter errors allow or reject a
+// request. The default remains fail open to preserve availability.
+func WithFilterFailureMode(mode FilterFailureMode) CoordinatorOption {
+	return func(c *Coordinator) {
+		if mode == FilterFailClosed {
+			c.filterFailureMode = mode
+		}
+	}
+}
+
 // Coordinator owns the singleflight group that protects an entire cache-aside
 // operation, not merely the backend Get call.
 type Coordinator struct {
-	cache    Cache
-	flights  singleflight.Group
-	observer Observer
+	cache             Cache
+	flights           singleflight.Group
+	observer          Observer
+	filter            ExistenceFilter
+	filterFailureMode FilterFailureMode
 }
 
 type flightResult[R any] struct {
@@ -61,8 +93,9 @@ func NewCoordinator(backend Cache, options ...CoordinatorOption) (*Coordinator, 
 		return nil, errors.New("cache coordinator requires a backend")
 	}
 	c := &Coordinator{
-		cache:    backend,
-		observer: func(Event) {},
+		cache:             backend,
+		observer:          func(Event) {},
+		filterFailureMode: FilterFailOpen,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -90,6 +123,9 @@ func GetOrLoad[R any](coordinator *Coordinator, request *CacheOption, loader fun
 	}
 	if !request.IsCache() {
 		return loader(request.GetContextCtx())
+	}
+	if err := coordinator.allowByFilter(request); err != nil {
+		return zero, err
 	}
 	sharedRequest := snapshotCacheOption(request)
 
@@ -132,6 +168,10 @@ func GetOrLoad[R any](coordinator *Coordinator, request *CacheOption, loader fun
 		}
 		if err := coordinator.cache.Set(loadCtx, sharedRequest.GetCacheKey(), frameUtils.UnsafeString(encoded), sharedRequest); err != nil {
 			coordinator.observer(EventFillError)
+		} else if sharedRequest.GetBloomFilterState() && coordinator.filter != nil {
+			if err := coordinator.filter.Add(loadCtx, sharedRequest.GetCacheKey()); err != nil {
+				coordinator.observer(EventFilterError)
+			}
 		}
 		return flightResult[R]{value: loaded}, nil
 	})
@@ -149,6 +189,24 @@ func GetOrLoad[R any](coordinator *Coordinator, request *CacheOption, loader fun
 		}
 		return decoded.value, nil
 	}
+}
+
+func (c *Coordinator) allowByFilter(request *CacheOption) error {
+	if !request.GetBloomFilterState() || c.filter == nil || !c.filter.Ready() {
+		return nil
+	}
+	mayContain, err := c.filter.MayContain(request.GetContextCtx(), request.GetCacheKey())
+	if err != nil {
+		c.observer(EventFilterError)
+		if c.filterFailureMode == FilterFailOpen {
+			return nil
+		}
+		return NewErrRejectedByBloomFilter(request.GetCacheKey())
+	}
+	if !mayContain {
+		return NewErrRejectedByBloomFilter(request.GetCacheKey())
+	}
+	return nil
 }
 
 func decodeCached[R any](request *CacheOption, value string) (R, error) {

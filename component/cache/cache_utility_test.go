@@ -360,6 +360,156 @@ func TestCoordinator_AnyNilLoaderValueIsReturned(t *testing.T) {
 	}
 }
 
+func TestCoordinator_BloomColdKeyReachesLoader(t *testing.T) {
+	backend := newCoordinatorFakeCache()
+	filter, err := NewMemoryBloomFilter(100, 0.01, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coord, err := NewCoordinator(backend, WithExistenceFilter(filter))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loads := 0
+	got, err := GetOrLoad(coord, coordinatorRequest(context.Background(), "cold").EnableBloomFilter(), func(context.Context) (coordinatorPayload, error) {
+		loads++
+		return coordinatorPayload{ID: 1}, nil
+	})
+	if err != nil || got.ID != 1 || loads != 1 {
+		t.Fatalf("got=%+v err=%v loads=%d; want loaded value and one loader call", got, err, loads)
+	}
+}
+
+func TestCoordinator_BloomPreloadedKeyReachesCacheAndLoader(t *testing.T) {
+	backend := newCoordinatorFakeCache()
+	filter, err := NewMemoryBloomFilter(100, 0.01, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filter.Preload(context.Background(), []string{"known"}); err != nil {
+		t.Fatal(err)
+	}
+	coord, err := NewCoordinator(backend, WithExistenceFilter(filter))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loads := 0
+	got, err := GetOrLoad(coord, coordinatorRequest(context.Background(), "known").EnableBloomFilter(), func(context.Context) (coordinatorPayload, error) {
+		loads++
+		return coordinatorPayload{ID: 2}, nil
+	})
+	if err != nil || got.ID != 2 || loads != 1 {
+		t.Fatalf("got=%+v err=%v loads=%d; want preloaded key to reach loader", got, err, loads)
+	}
+	backend.mu.Lock()
+	gets := backend.getCount
+	backend.mu.Unlock()
+	if gets == 0 {
+		t.Fatal("preloaded key bypassed cache lookup")
+	}
+}
+
+func TestCoordinator_BloomRejectsAbsentKeyOnlyAfterPreload(t *testing.T) {
+	backend := newCoordinatorFakeCache()
+	filter, err := NewMemoryBloomFilter(100, 0.01, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filter.Preload(context.Background(), []string{"known"}); err != nil {
+		t.Fatal(err)
+	}
+	coord, err := NewCoordinator(backend, WithExistenceFilter(filter))
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	_, err = GetOrLoad(coord, coordinatorRequest(context.Background(), "absent").EnableBloomFilter(), func(context.Context) (coordinatorPayload, error) {
+		called = true
+		return coordinatorPayload{}, nil
+	})
+	var rejected ErrRejectedByBloomFilter
+	if !errors.As(err, &rejected) || called {
+		t.Fatalf("err=%v loader called=%v; want Bloom rejection before loader", err, called)
+	}
+	backend.mu.Lock()
+	gets := backend.getCount
+	backend.mu.Unlock()
+	if gets != 0 {
+		t.Fatalf("cache Get count = %d, want 0 for rejected key", gets)
+	}
+}
+
+type failingExistenceFilter struct{ err error }
+
+func (f failingExistenceFilter) Ready() bool { return true }
+func (f failingExistenceFilter) MayContain(context.Context, string) (bool, error) {
+	return false, f.err
+}
+func (f failingExistenceFilter) Add(context.Context, string) error { return nil }
+
+func TestCoordinator_BloomFilterErrorUsesConfiguredFailureMode(t *testing.T) {
+	filterErr := errors.New("filter unavailable")
+	for _, tc := range []struct {
+		name       string
+		mode       FilterFailureMode
+		wantLoad   bool
+		wantReject bool
+	}{
+		{name: "fail open", mode: FilterFailOpen, wantLoad: true},
+		{name: "fail closed", mode: FilterFailClosed, wantReject: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := newCoordinatorFakeCache()
+			coord, err := NewCoordinator(backend, WithExistenceFilter(failingExistenceFilter{err: filterErr}), WithFilterFailureMode(tc.mode))
+			if err != nil {
+				t.Fatal(err)
+			}
+			loads := 0
+			_, err = GetOrLoad(coord, coordinatorRequest(context.Background(), "error").EnableBloomFilter(), func(context.Context) (coordinatorPayload, error) {
+				loads++
+				return coordinatorPayload{ID: 3}, nil
+			})
+			var rejected ErrRejectedByBloomFilter
+			if tc.wantLoad && (err != nil || loads != 1) {
+				t.Fatalf("err=%v loads=%d; want filter error to fail open", err, loads)
+			}
+			if tc.wantReject && (!errors.As(err, &rejected) || loads != 0) {
+				t.Fatalf("err=%v loads=%d; want filter error to fail closed", err, loads)
+			}
+		})
+	}
+}
+
+type addFailingExistenceFilter struct{ err error }
+
+func (f addFailingExistenceFilter) Ready() bool { return false }
+func (f addFailingExistenceFilter) MayContain(context.Context, string) (bool, error) {
+	return true, nil
+}
+func (f addFailingExistenceFilter) Add(context.Context, string) error { return f.err }
+
+func TestCoordinator_BloomAddFailureOnlyObservesSuccessfulLoad(t *testing.T) {
+	backend := newCoordinatorFakeCache()
+	addErr := errors.New("add unavailable")
+	events := make([]Event, 0, 1)
+	coord, err := NewCoordinator(backend,
+		WithExistenceFilter(addFailingExistenceFilter{err: addErr}),
+		WithObserver(func(event Event) { events = append(events, event) }),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := GetOrLoad(coord, coordinatorRequest(context.Background(), "add-error").EnableBloomFilter(), func(context.Context) (coordinatorPayload, error) {
+		return coordinatorPayload{ID: 4}, nil
+	})
+	if err != nil || got.ID != 4 {
+		t.Fatalf("got=%+v err=%v; want loaded value despite Add error", got, err)
+	}
+	if len(events) != 2 || events[0] != EventCacheMiss || events[1] != EventFilterError {
+		t.Fatalf("events=%v; want cache miss followed by EventFilterError", events)
+	}
+}
+
 type nonComparableValueCache struct{ values map[string]string }
 
 func (c nonComparableValueCache) Get(_ context.Context, key string, _ *CacheOption) (string, error) {
