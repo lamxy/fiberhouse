@@ -9,6 +9,7 @@ package cacheremote
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,20 +33,59 @@ type RedisDb struct {
 	circuitBreaker cache.CacheCircuitBreaker
 }
 
-func NewRedisDb(appCtx fiberhouse.IContext, confPath ...string) (cache.Cache, error) {
-	ca := &RedisDb{
-		Client: NewClient(appCtx, confPath...),
-		Ctx:    appCtx,
-		level:  cache.Remote,
-	}
+type redisOptions struct {
+	confPath       string
+	circuitBreaker cache.CacheCircuitBreaker
+}
 
-	var basePath string
-	if len(confPath) > 0 && confPath[0] != "" {
-		basePath = confPath[0]
-	} else {
-		basePath = constant.DefaultRedisDBConfName
+// RedisOption configures a RedisDb without changing the legacy NewRedisDb
+// constructor signature.
+type RedisOption func(*redisOptions)
+
+// WithRedisConfigPath selects the Redis configuration subtree.
+func WithRedisConfigPath(path string) RedisOption {
+	return func(options *redisOptions) {
+		if path != "" {
+			options.confPath = path
+		}
 	}
-	ca.confPathname = basePath
+}
+
+// WithRedisCircuitBreaker installs the per-instance breaker used by requests
+// that enable circuit-breaker protection.
+func WithRedisCircuitBreaker(breaker cache.CacheCircuitBreaker) RedisOption {
+	return func(options *redisOptions) {
+		if !isNilCircuitBreaker(breaker) {
+			options.circuitBreaker = breaker
+		}
+	}
+}
+
+func NewRedisDb(appCtx fiberhouse.IContext, confPath ...string) (cache.Cache, error) {
+	options := make([]RedisOption, 0, 1)
+	if len(confPath) > 0 {
+		options = append(options, WithRedisConfigPath(confPath[0]))
+	}
+	return NewRedisDbWithOptions(appCtx, options...)
+}
+
+// NewRedisDbWithOptions constructs a Redis backend with explicit optional
+// dependencies. The breaker remains disabled per request unless the caller also
+// enables it on CacheOption.
+func NewRedisDbWithOptions(appCtx fiberhouse.IContext, optionFns ...RedisOption) (*RedisDb, error) {
+	options := redisOptions{confPath: constant.DefaultRedisDBConfName}
+	for _, option := range optionFns {
+		if option != nil {
+			option(&options)
+		}
+	}
+	ca := &RedisDb{
+		Client:         NewClient(appCtx, options.confPath),
+		Ctx:            appCtx,
+		level:          cache.Remote,
+		circuitBreaker: options.circuitBreaker,
+	}
+	ca.confPathname = options.confPath
 	return ca, nil
 }
 
@@ -269,4 +309,17 @@ func normalizeRedisGetError(key string, err error) error {
 func isCallerCancellation(ctx context.Context, err error) bool {
 	ctxErr := ctx.Err()
 	return ctxErr != nil && errors.Is(err, ctxErr)
+}
+
+func isNilCircuitBreaker(breaker cache.CacheCircuitBreaker) bool {
+	if breaker == nil {
+		return true
+	}
+	value := reflect.ValueOf(breaker)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }

@@ -82,7 +82,7 @@ type Cache interface {
 | Backend | 构造函数 | 默认配置路径 |
 |---|---|---|
 | Ristretto local | `cachelocal.NewLocalCache(appCtx, confPath...)` | `cache.local` |
-| Redis | `cacheremote.NewRedisDb(appCtx, confPath...)` | `cache.redis` |
+| Redis | `cacheremote.NewRedisDb(appCtx, confPath...)`；带显式依赖时用 `NewRedisDbWithOptions` | `cache.redis` |
 | L2 | `cache2.NewLevel2CacheWithError(appCtx, local, remote)` | pool 固定读取 `cache.asyncPool.ants.*` |
 
 L2 的 error-returning 构造函数默认拥有传入的 local 和 remote。它的 `Shutdown`/`Close`
@@ -107,6 +107,28 @@ if err != nil {
 }
 coordinator, err := cache.NewCoordinator(l2)
 ```
+
+Redis breaker 是 backend 的可选、per-instance 依赖。新代码通过公开 option 构造，并在希望
+保护的 request 上显式启用；旧 `NewRedisDb(appCtx, confPath...)` 不会隐式读取 deprecated
+protection tree：
+
+```go
+breaker := cache.NewCircuitBreakerWrap("users-redis")
+remote, err := cacheremote.NewRedisDbWithOptions(
+	appCtx,
+	cacheremote.WithRedisConfigPath("cache.redis"),
+	cacheremote.WithRedisCircuitBreaker(breaker),
+)
+if err != nil {
+	return err
+}
+request := cache.NewCacheOption(appCtx).Remote().EnableCircuitBreaker()
+```
+
+breaker 只保护 Redis `Get` 基础设施失败。canonical miss 与 caller cancellation 不计为
+breaker failure；未注入 breaker 或 request 未调用 `EnableCircuitBreaker` 时直接访问 Redis。
+上例只展示 breaker 开关；调用 `GetOrLoad` 前仍需按“快速接入 Coordinator”补齐 request 的
+context、key、codec、TTL 和 load timeout。
 
 应用也可以通过 `cache.NewFactory(appCtx).Lookup(cache.Level2)` 从已经注册的实例中取得
 backend。`Lookup` 返回 error；旧的 `GetCache` 保留 panic-on-failure 行为，仅用于兼容。
@@ -290,7 +312,8 @@ admitted 的 L2 任务会访问 closed backend。
 示例 YAML 中的 `cache.coordinator` 是应用侧配置形状，仅用于说明 namespace、filter、
 breaker 和 jitter policy；FiberHouse 不会自动读取或装配它。应用必须把 namespace 放到
 每个 request 的 `SetDefaultInstanceKey`，把 filter 翻译成 `WithExistenceFilter`，并显式
-应用 backend/wrapper breaker 设置和 TTL option。`NewCoordinator` 不消费 namespace；
+把 breaker 翻译成 `WithRedisCircuitBreaker` 和 request `EnableCircuitBreaker`，再应用 TTL
+option。`NewCoordinator` 不消费 namespace；
 legacy `GetCached` 仍按 application-level cache key 解析 backend。
 
 `cache.redis.protection` 是旧 Redis-owned protection 配置，保留用于兼容已有部署，但已
@@ -304,7 +327,7 @@ deprecated。新代码应由应用显式构造 Coordinator/filter；不要假设
 | `Factory.GetCache` | `Factory.Lookup` | 用 error 处理缺少 context/application/registry key，避免 panic |
 | `cache2.NewLevel2Cache` | `NewLevel2CacheWithError` | 显式返回 pool 配置/创建错误；旧入口失败时只能返回 nil |
 | `EnableSingleFlight` | 直接使用 `GetOrLoad` | Coordinator 总是执行 full-path singleflight；旧 flag 只为 option 兼容保留 |
-| Redis `protection` + `EnableProtectionAll` | `NewCoordinator` + `WithExistenceFilter`，breaker 由 backend/wrapper 显式提供 | 所有权和 failure mode 可见，Bloom readiness 可验证 |
+| Redis `protection` + `EnableProtectionAll` | `NewCoordinator` + `WithExistenceFilter`；Redis 用 `NewRedisDbWithOptions` + `WithRedisCircuitBreaker` 并按 request 启用 | 所有权和 failure mode 可见，Bloom readiness 可验证 |
 | `CacheBloomFilter` | `ExistenceFilter` / `PreloadableFilter` | 新接口携带 context、error 与 authoritative readiness |
 
 `OptionPoolGet`/`OptionPoolPut` 仍受支持，但不是异步共享机制。简单路径优先用
