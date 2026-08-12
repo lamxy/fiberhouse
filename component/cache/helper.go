@@ -22,7 +22,9 @@ import (
 
 // CircuitBreakerWrap gobreaker熔断器封装
 type CircuitBreakerWrap struct {
-	cb *gobreaker.CircuitBreaker[string]
+	mu       sync.RWMutex
+	cb       *gobreaker.CircuitBreaker[string]
+	settings gobreaker.Settings
 }
 
 func NewCircuitBreakerWrap(name string, st ...*gobreaker.Settings) *CircuitBreakerWrap {
@@ -88,12 +90,16 @@ func NewCircuitBreakerWrap(name string, st ...*gobreaker.Settings) *CircuitBreak
 	}
 
 	return &CircuitBreakerWrap{
-		cb: gobreaker.NewCircuitBreaker[string](defaultSettings),
+		cb:       gobreaker.NewCircuitBreaker[string](defaultSettings),
+		settings: defaultSettings,
 	}
 }
 
 func (cbw *CircuitBreakerWrap) Call(fn func() (string, error)) (interface{}, error) {
-	res, err := cbw.cb.Execute(fn)
+	cbw.mu.RLock()
+	breaker := cbw.cb
+	cbw.mu.RUnlock()
+	res, err := breaker.Execute(fn)
 	if err != nil {
 		return "", cbw.ConvertCircuitBreakerOpenError(err)
 	}
@@ -101,11 +107,16 @@ func (cbw *CircuitBreakerWrap) Call(fn func() (string, error)) (interface{}, err
 }
 
 func (cbw *CircuitBreakerWrap) Allow() bool {
-	return true
+	cbw.mu.RLock()
+	breaker := cbw.cb
+	cbw.mu.RUnlock()
+	return breaker.State() != gobreaker.StateOpen
 }
 
 func (cbw *CircuitBreakerWrap) Reset() {
-	// 空函数体
+	cbw.mu.Lock()
+	cbw.cb = gobreaker.NewCircuitBreaker[string](cbw.settings)
+	cbw.mu.Unlock()
 }
 
 // ConvertCircuitBreakerOpenError 转换熔断器打开错误为自定义错误类型

@@ -9,39 +9,33 @@ package cacheremote
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/cache"
 	"github.com/lamxy/fiberhouse/constant"
 	frameUtils "github.com/lamxy/fiberhouse/utils"
 	"github.com/redis/go-redis/v9"
-	"github.com/sony/gobreaker/v2"
-	"golang.org/x/sync/singleflight"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 // RedisDb 实现了 Cache和全局管理器相关 接口
 type RedisDb struct {
 	Client       *redis.Client
 	Ctx          fiberhouse.IContext
-	lock         *sync.RWMutex
+	lock         sync.RWMutex
 	confPathname string
 	// 缓存调用close关闭则阻止所有方法执行逻辑
-	closed atomic.Bool
-	level  cache.Level
-	// 缓存保护组件
-	sf             *singleflight.Group       // 击穿保护
-	bloomFilter    cache.CacheBloomFilter    // 穿透保护
-	circuitBreaker cache.CacheCircuitBreaker // 雪崩熔断保护
+	closed         atomic.Bool
+	level          cache.Level
+	circuitBreaker cache.CacheCircuitBreaker
 }
 
 func NewRedisDb(appCtx fiberhouse.IContext, confPath ...string) (cache.Cache, error) {
 	ca := &RedisDb{
 		Client: NewClient(appCtx, confPath...),
 		Ctx:    appCtx,
-		sf:     &singleflight.Group{},
-		lock:   &sync.RWMutex{},
 		level:  cache.Remote,
 	}
 
@@ -52,44 +46,6 @@ func NewRedisDb(appCtx fiberhouse.IContext, confPath ...string) (cache.Cache, er
 		basePath = constant.DefaultRedisDBConfName
 	}
 	ca.confPathname = basePath
-	aConf := appCtx.GetConfig()
-
-	// 读取缓存保护配置
-	cacheProtection := aConf.Bool(basePath + ".protection.enable")
-
-	if cacheProtection {
-		/**
-		注册默认保护器
-		*/
-		// 注册分片锁的布隆过滤器
-		appCtx.GetContainer().Register(constant.CacheProtectionKeyPrefix+"shardedBloomFilter", func() (interface{}, error) {
-			return cache.NewShardedBloomFilter(aConf.Int(basePath+".protection.shardedBloomFilter.shards", 16),
-				uint(aConf.Int(basePath+".protection.shardedBloomFilter.estPerShard", 100000)),
-				aConf.Float64(basePath+".protection.shardedBloomFilter.fpRate", 0.01),
-			), nil
-		})
-		// 注册包装的熔断器
-		appCtx.GetContainer().Register(constant.CacheProtectionKeyPrefix+"wrapCircuitBreaker", func() (interface{}, error) {
-			name := aConf.String(basePath+".protection.wrapCircuitBreaker.name", "cacheCircuitBreaker")
-			return cache.NewCircuitBreakerWrap(name, &gobreaker.Settings{
-				MaxRequests:  uint32(aConf.Int(basePath+".protection.wrapCircuitBreaker.maxRequests", 5)),
-				Interval:     aConf.Duration(basePath+".protection.wrapCircuitBreaker.interval", 60) * time.Second,
-				Timeout:      aConf.Duration(basePath+".protection.wrapCircuitBreaker.timeout", 30) * time.Second,
-				BucketPeriod: aConf.Duration(basePath+".protection.wrapCircuitBreaker.bucketPeriod", 10) * time.Second,
-			}), nil
-		})
-
-		// 获取配置type
-		bloomFilterType := aConf.String(basePath+".protection.type.bloomFilter.selected", "shardedBloomFilter")       // 默认稳定的布隆过滤器
-		circuitBreakerType := aConf.String(basePath+".protection.type.circuitBreaker.selected", "wrapCircuitBreaker") // 默认包装的熔断器
-
-		appCtx.GetLogger().Info(appCtx.GetConfig().LogOriginCache()).Msgf("Redis Cache Protection enabled, BloomFilter type: %s, CircuitBreaker type: %s", bloomFilterType, circuitBreakerType)
-
-		// 初始化布隆过滤器
-		ca.bloomFilter = fiberhouse.GetMustInstance[cache.CacheBloomFilter](constant.CacheProtectionKeyPrefix + bloomFilterType)
-		// 初始化熔断器
-		ca.circuitBreaker = fiberhouse.GetMustInstance[cache.CacheCircuitBreaker](constant.CacheProtectionKeyPrefix + circuitBreakerType)
-	}
 	return ca, nil
 }
 
@@ -100,7 +56,10 @@ func (rd *RedisDb) GetConfPath() string {
 
 // GetRedisClient 获取底层 Redis 客户端实例
 func (rd *RedisDb) GetRedisClient() *redis.Client {
-	return rd.Client
+	rd.lock.RLock()
+	client := rd.Client
+	rd.lock.RUnlock()
+	return client
 }
 
 // GetLevel 获取缓存级别
@@ -111,10 +70,18 @@ func (rd *RedisDb) GetLevel() cache.Level {
 // Close 关闭 Redis 客户端连接
 // 谨慎使用Close关闭链接
 func (rd *RedisDb) Close() error {
-	if !rd.closed.CompareAndSwap(false, true) {
-		return cache.ErrCacheClosed
+	rd.lock.Lock()
+	defer rd.lock.Unlock()
+	if rd.closed.Load() {
+		return nil
 	}
-	return rd.Client.Close()
+	rd.closed.Store(true)
+	client := rd.Client
+	rd.Client = nil
+	if client == nil {
+		return nil
+	}
+	return client.Close()
 }
 
 // IsHealthy 检查 Redis 客户端连接是否健康
@@ -134,96 +101,43 @@ func (rd *RedisDb) Rebuild(name ...interface{}) (interface{}, error) {
 
 // Get 获取指定 key 的值
 func (rd *RedisDb) Get(ctx context.Context, key string, co *cache.CacheOption) (string, error) {
-	if rd.closed.Load() {
-		return "", cache.ErrCacheClosed
+	client, err := rd.clientSnapshot()
+	if err != nil {
+		return "", err
 	}
-
-	// 布隆过滤器预检查
-	if co.GetBloomFilterState() && rd.bloomFilter != nil {
-		if !rd.bloomFilter.Test(frameUtils.UnsafeBytes(key)) {
-			// 新key值被拦截, 尝试获取一次，在成功时添加key+检查标识到布隆过滤器
-			if co.GetSingleFlightState() && rd.sf != nil {
-				// 开启单飞保护，避免并发穿透
-				value, err, _ := rd.sf.Do(key+"_bloom_check", func() (interface{}, error) {
-					return rd.getWithBloomUpdate(ctx, key, co)
-				})
-				if err != nil {
-					return "", err
-				}
-				return value.(string), nil
-			}
-			return rd.getWithBloomUpdate(ctx, key, co)
-		}
-	}
-
-	// 正常获取流程
-	if co.GetSingleFlightState() && rd.sf != nil {
-		value, err, _ := rd.sf.Do(key, func() (interface{}, error) {
-			return rd.getInternal(ctx, key, co)
-		})
-		if err != nil {
-			return "", err
-		}
-		// 成功获取后添加到布隆过滤器
-		if co.GetBloomFilterState() && rd.bloomFilter != nil {
-			rd.bloomFilter.Add(frameUtils.UnsafeBytes(key))
-		}
-		return value.(string), nil
-	}
-
-	// 直接获取
-	res, err := rd.getInternal(ctx, key, co)
-	if err == nil && co.GetBloomFilterState() && rd.bloomFilter != nil {
-		rd.bloomFilter.Add(frameUtils.UnsafeBytes(key))
-	}
-	return res, err
-}
-
-// getWithBloomUpdate 带布隆过滤器更新的获取内部方法
-func (rd *RedisDb) getWithBloomUpdate(ctx context.Context, key string, co *cache.CacheOption) (string, error) {
-	res, err := rd.getInternal(ctx, key, co)
-	if err == nil {
-		rd.bloomFilter.Add(frameUtils.UnsafeBytes(key))
-		return res, nil
-	}
-
-	var errRedNil cache.ErrRedisNil
-	if errors.As(err, &errRedNil) {
-		return "", cache.NewErrRejectedByBloomFilter(key)
-	}
-	return "", err
+	return rd.getInternal(ctx, client, key, co)
 }
 
 // getInternal 获取缓存内部方法
-func (rd *RedisDb) getInternal(ctx context.Context, key string, co *cache.CacheOption) (string, error) {
+func (rd *RedisDb) getInternal(ctx context.Context, client *redis.Client, key string, co *cache.CacheOption) (string, error) {
 	if co.GetCircuitBreakerState() && rd.circuitBreaker != nil {
-		// 开启熔断保护
+		var operationErr error
 		value, err := rd.circuitBreaker.Call(func() (string, error) {
-			return rd.Client.Get(ctx, key).Result()
+			var value string
+			value, operationErr = client.Get(ctx, key).Result()
+			if errors.Is(operationErr, redis.Nil) || isCallerCancellation(ctx, operationErr) {
+				return "", nil
+			}
+			return value, operationErr
 		})
-
 		if err != nil {
 			return "", err
+		}
+		if operationErr != nil {
+			return "", normalizeRedisGetError(key, operationErr)
 		}
 		return value.(string), nil
 	}
 
-	// 直接获取
-	s, err := rd.Client.Get(ctx, key).Result()
-
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return "", cache.NewErrRedisNil(key)
-		}
-		return "", err
-	}
-	return s, nil
+	s, err := client.Get(ctx, key).Result()
+	return s, normalizeRedisGetError(key, err)
 }
 
 // Set 设置指定 key 的值
 func (rd *RedisDb) Set(ctx context.Context, key string, value interface{}, co *cache.CacheOption) error {
-	if rd.closed.Load() {
-		return cache.ErrCacheClosed
+	client, err := rd.clientSnapshot()
+	if err != nil {
+		return err
 	}
 
 	// 序列化值
@@ -233,16 +147,7 @@ func (rd *RedisDb) Set(ctx context.Context, key string, value interface{}, co *c
 	}
 
 	// 执行设置操作
-	err = rd.setInternal(ctx, key, serializedValue, co)
-	if err != nil {
-		return err
-	}
-
-	// 成功设置后才添加到布隆过滤器
-	if co.GetBloomFilterState() && rd.bloomFilter != nil {
-		rd.bloomFilter.Add(frameUtils.UnsafeBytes(key))
-	}
-	return nil
+	return rd.setInternal(ctx, client, key, serializedValue, co)
 }
 
 // serializeValue 内部对值序列化方法
@@ -262,24 +167,17 @@ func (rd *RedisDb) serializeValue(value interface{}, co *cache.CacheOption) (str
 }
 
 // setInternal 内部设置方法
-func (rd *RedisDb) setInternal(ctx context.Context, key, value string, co *cache.CacheOption) error {
-	// 写入不设置断路保护
-	/*if co.GetCircuitBreakerState() && rd.circuitBreaker != nil {
-		// 开启断路保护
-		_, err := rd.circuitBreaker.Call(func() (string, error) {
-			return "", rd.Client.Set(ctx, key, value, co.GetRemoteTTL()).Err()
-		})
-		return err
-	}*/
-	return rd.Client.Set(ctx, key, value, co.GetRemoteTTL()).Err()
+func (rd *RedisDb) setInternal(ctx context.Context, client *redis.Client, key, value string, co *cache.CacheOption) error {
+	return client.Set(ctx, key, value, co.GetRemoteTTL()).Err()
 }
 
 // Delete 删除指定的 key
 func (rd *RedisDb) Delete(ctx context.Context, keys ...string) error {
-	if rd.closed.Load() {
-		return cache.ErrCacheClosed
+	client, err := rd.clientSnapshot()
+	if err != nil {
+		return err
 	}
-	return rd.Client.Del(ctx, keys...).Err()
+	return client.Del(ctx, keys...).Err()
 }
 
 // Wait Redis 无需等待，直接返回 nil
@@ -319,18 +217,56 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) *redis.Client {
 
 // ReNewClient 重新创建 Redis 客户端连接
 func (rd *RedisDb) ReNewClient(confPath ...string) (*RedisDb, error) {
+	path := rd.confPathname
+	if len(confPath) > 0 && confPath[0] != "" {
+		path = confPath[0]
+	}
+	client := NewClient(rd.Ctx, path)
 	rd.lock.Lock()
 	defer rd.lock.Unlock()
-	rd.Client = NewClient(rd.Ctx, confPath...)
+	if rd.closed.Load() {
+		_ = client.Close()
+		return rd, cache.ErrCacheClosed
+	}
+	old := rd.Client
+	rd.Client = client
+	if old != nil {
+		_ = old.Close()
+	}
 	return rd, nil
 }
 
 // PingTry 尝试 ping Redis 服务器，检查连接是否可用
 func (rd *RedisDb) PingTry(ctx context.Context) bool {
-	_, err := rd.Client.Ping(ctx).Result()
+	client, err := rd.clientSnapshot()
+	if err != nil {
+		return false
+	}
+	_, err = client.Ping(ctx).Result()
 	if err != nil {
 		rd.Ctx.GetLogger().Error(rd.Ctx.GetConfig().LogOriginCache()).Err(err).Msg("Redis PingTry error")
 		return false
 	}
 	return true
+}
+
+func (rd *RedisDb) clientSnapshot() (*redis.Client, error) {
+	rd.lock.RLock()
+	defer rd.lock.RUnlock()
+	if rd.closed.Load() || rd.Client == nil {
+		return nil, cache.ErrCacheClosed
+	}
+	return rd.Client, nil
+}
+
+func normalizeRedisGetError(key string, err error) error {
+	if errors.Is(err, redis.Nil) {
+		return cache.NewErrRedisNil(key)
+	}
+	return err
+}
+
+func isCallerCancellation(ctx context.Context, err error) bool {
+	ctxErr := ctx.Err()
+	return ctxErr != nil && errors.Is(err, ctxErr)
 }

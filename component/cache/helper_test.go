@@ -83,6 +83,32 @@ func TestCircuitBreakerWrap_TripAndRecover(t *testing.T) {
 	}
 }
 
+func TestCircuitBreakerWrap_AllowReflectsOpenStateAndResetRestoresClosedState(t *testing.T) {
+	settings := &gobreaker.Settings{
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.TotalFailures >= 1
+		},
+	}
+	wrap := NewCircuitBreakerWrap("cb-allow-reset", settings)
+
+	if !wrap.Allow() {
+		t.Fatal("new breaker must allow calls")
+	}
+	_, _ = wrap.Call(func() (string, error) { return "", errors.New("infra") })
+	if wrap.Allow() {
+		t.Fatal("open breaker must reject calls")
+	}
+
+	wrap.Reset()
+	if !wrap.Allow() {
+		t.Fatal("Reset must reconstruct a closed breaker from its stored settings")
+	}
+	out, err := wrap.Call(func() (string, error) { return "after-reset", nil })
+	if err != nil || out != "after-reset" {
+		t.Fatalf("call after Reset = (%v, %v), want (after-reset, nil)", out, err)
+	}
+}
+
 // TestShardedBloomFilter_Basic 基本行为
 func TestShardedBloomFilter_Basic(t *testing.T) {
 	bf := NewShardedBloomFilter(0, 1000, 0.01) // shardCount=0 => 默认
