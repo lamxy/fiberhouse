@@ -6,6 +6,8 @@ package cache
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,18 +23,28 @@ type coordinatorPayload struct {
 // coordinatorFakeCache is a deterministic in-memory Cache used to prove the
 // coordinator's observable read-through behavior without a network dependency.
 type coordinatorFakeCache struct {
-	mu        sync.Mutex
-	values    map[string]string
-	getCount  int
-	setCount  int
-	getErr    error
-	setErr    error
-	setSignal chan struct{}
-	getSignal chan struct{}
+	mu            sync.Mutex
+	values        map[string]string
+	getCount      int
+	setCount      int
+	getErr        error
+	setErr        error
+	setSignal     chan struct{}
+	getSignal     chan struct{}
+	expires       map[string]time.Time
+	now           time.Time
+	level         Level
+	lastLocalTTL  time.Duration
+	lastRemoteTTL time.Duration
 }
 
 func newCoordinatorFakeCache() *coordinatorFakeCache {
-	return &coordinatorFakeCache{values: make(map[string]string)}
+	return &coordinatorFakeCache{
+		values:  make(map[string]string),
+		expires: make(map[string]time.Time),
+		now:     time.Unix(1, 0),
+		level:   Local,
+	}
 }
 
 func (c *coordinatorFakeCache) Get(_ context.Context, key string, _ *CacheOption) (string, error) {
@@ -48,6 +60,10 @@ func (c *coordinatorFakeCache) Get(_ context.Context, key string, _ *CacheOption
 	if c.getErr != nil {
 		return "", c.getErr
 	}
+	if expiry, ok := c.expires[key]; ok && !c.now.Before(expiry) {
+		delete(c.values, key)
+		delete(c.expires, key)
+	}
 	value, ok := c.values[key]
 	if !ok {
 		return "", ErrKeyNotFound
@@ -55,7 +71,7 @@ func (c *coordinatorFakeCache) Get(_ context.Context, key string, _ *CacheOption
 	return value, nil
 }
 
-func (c *coordinatorFakeCache) Set(_ context.Context, key string, value interface{}, _ *CacheOption) error {
+func (c *coordinatorFakeCache) Set(_ context.Context, key string, value interface{}, co *CacheOption) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.setCount++
@@ -67,6 +83,24 @@ func (c *coordinatorFakeCache) Set(_ context.Context, key string, value interfac
 		return ErrSerializationFailed
 	}
 	c.values[key] = stringValue
+	c.lastLocalTTL = co.GetLocalTTL()
+	c.lastRemoteTTL = co.GetRemoteTTL()
+	var ttl time.Duration
+	switch c.level {
+	case Local:
+		ttl = c.lastLocalTTL
+	case Remote:
+		ttl = c.lastRemoteTTL
+	case Level2:
+		if c.lastLocalTTL < c.lastRemoteTTL {
+			ttl = c.lastLocalTTL
+		} else {
+			ttl = c.lastRemoteTTL
+		}
+	}
+	if ttl > 0 {
+		c.expires[key] = c.now.Add(ttl)
+	}
 	if c.setSignal != nil {
 		select {
 		case c.setSignal <- struct{}{}:
@@ -85,9 +119,9 @@ func (c *coordinatorFakeCache) Delete(_ context.Context, keys ...string) error {
 	return nil
 }
 
-func (*coordinatorFakeCache) Close() error    { return nil }
-func (*coordinatorFakeCache) Wait() error     { return nil }
-func (*coordinatorFakeCache) GetLevel() Level { return Local }
+func (*coordinatorFakeCache) Close() error      { return nil }
+func (*coordinatorFakeCache) Wait() error       { return nil }
+func (c *coordinatorFakeCache) GetLevel() Level { return c.level }
 
 func coordinatorRequest(ctx context.Context, key string) *CacheOption {
 	return NewCacheOption(newCacheOptionTestContext()).
@@ -95,6 +129,118 @@ func coordinatorRequest(ctx context.Context, key string) *CacheOption {
 		SetCacheKey(key).
 		SetContextCtx(ctx).
 		SetJsonWrapper(jsoncodec.StdJsonDefault())
+}
+
+func TestCoordinator_NegativeMarkerCachesOnlyTypedOriginMissAndExpires(t *testing.T) {
+	backend := newCoordinatorFakeCache()
+	coord, err := NewCoordinator(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := coordinatorRequest(context.Background(), "missing").SetNegativeTTL(50 * time.Millisecond)
+	originErr := fmt.Errorf("user absent: %w", ErrOriginNotFound)
+	loads := 0
+	loader := func(context.Context) (coordinatorPayload, error) {
+		loads++
+		return coordinatorPayload{}, originErr
+	}
+
+	_, err = GetOrLoad(coord, request, loader)
+	if !errors.Is(err, originErr) {
+		t.Fatalf("first error = %v, want original typed origin error", err)
+	}
+	backend.mu.Lock()
+	marker := backend.values["missing"]
+	localTTL, remoteTTL := backend.lastLocalTTL, backend.lastRemoteTTL
+	backend.mu.Unlock()
+	if !strings.HasPrefix(marker, "\x00") || !strings.Contains(marker, "v1") {
+		t.Fatalf("negative marker = %q, want binary-safe versioned prefix", marker)
+	}
+	if localTTL != 50*time.Millisecond || remoteTTL != 0 {
+		t.Fatalf("negative TTLs = local %s remote %s, want 50ms/0 for local backend", localTTL, remoteTTL)
+	}
+
+	_, err = GetOrLoad(coord, request, loader)
+	if !errors.Is(err, ErrOriginNotFound) || loads != 1 {
+		t.Fatalf("negative hit error=%v loads=%d, want origin miss without reload", err, loads)
+	}
+
+	backend.mu.Lock()
+	backend.now = backend.now.Add(51 * time.Millisecond)
+	backend.mu.Unlock()
+	_, err = GetOrLoad(coord, request, loader)
+	if !errors.Is(err, originErr) || loads != 2 {
+		t.Fatalf("expired marker error=%v loads=%d, want loader retry", err, loads)
+	}
+}
+
+func TestCoordinator_NegativeMarkerDoesNotCollideWithHumanReadablePayload(t *testing.T) {
+	backend := newCoordinatorFakeCache()
+	backend.values["sentinel"] = `"origin-not-found:v1"`
+	coord, _ := NewCoordinator(backend)
+	loads := 0
+	got, err := GetOrLoad(coord, coordinatorRequest(context.Background(), "sentinel"), func(context.Context) (string, error) {
+		loads++
+		return "loaded", nil
+	})
+	if err != nil || got != "origin-not-found:v1" || loads != 0 {
+		t.Fatalf("human payload got=%q err=%v loads=%d", got, err, loads)
+	}
+}
+
+func TestCoordinator_NegativeCacheSkipsOrdinaryLoaderErrors(t *testing.T) {
+	backend := newCoordinatorFakeCache()
+	coord, _ := NewCoordinator(backend)
+	request := coordinatorRequest(context.Background(), "failure").SetNegativeTTL(time.Minute)
+	ordinary := errors.New("database unavailable")
+	for i := 0; i < 2; i++ {
+		_, err := GetOrLoad(coord, request, func(context.Context) (coordinatorPayload, error) {
+			return coordinatorPayload{}, ordinary
+		})
+		if !errors.Is(err, ordinary) {
+			t.Fatalf("call %d error=%v", i, err)
+		}
+	}
+	backend.mu.Lock()
+	setCount := backend.setCount
+	backend.mu.Unlock()
+	if setCount != 0 {
+		t.Fatalf("ordinary loader error wrote %d cache entries", setCount)
+	}
+}
+
+func TestCoordinator_NegativeMarkerUsesTTLForBackendLevel(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		level     Level
+		localTTL  time.Duration
+		remoteTTL time.Duration
+	}{
+		{name: "remote", level: Remote, remoteTTL: time.Minute},
+		{name: "level2", level: Level2, localTTL: time.Minute, remoteTTL: time.Minute},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			backend := newCoordinatorFakeCache()
+			backend.level = test.level
+			coord, _ := NewCoordinator(backend)
+			request := coordinatorRequest(context.Background(), "missing-"+test.name).
+				SetCacheLevel(test.level).
+				SetNegativeTTL(time.Minute)
+
+			_, err := GetOrLoad(coord, request, func(context.Context) (coordinatorPayload, error) {
+				return coordinatorPayload{}, ErrOriginNotFound
+			})
+			if !errors.Is(err, ErrOriginNotFound) {
+				t.Fatalf("error = %v, want origin miss", err)
+			}
+			backend.mu.Lock()
+			localTTL, remoteTTL := backend.lastLocalTTL, backend.lastRemoteTTL
+			backend.mu.Unlock()
+			if localTTL != test.localTTL || remoteTTL != test.remoteTTL {
+				t.Fatalf("TTLs = local %s remote %s, want local %s remote %s", localTTL, remoteTTL, test.localTTL, test.remoteTTL)
+			}
+		})
+	}
 }
 
 func TestCoordinator_CoalescesCompleteLoad(t *testing.T) {

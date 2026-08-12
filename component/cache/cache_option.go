@@ -127,9 +127,11 @@ type CacheOption struct {
 	// context
 	ctx context.Context
 	// request-scoped cache failure behavior
-	cacheErrorPolicy CacheErrorPolicy
-	negativeTTL      time.Duration
-	loadTimeout      time.Duration
+	cacheErrorPolicy         CacheErrorPolicy
+	negativeTTL              time.Duration
+	loadTimeout              time.Duration
+	allowLocalTTLAboveRemote bool
+	randInt63n               func(int64) int64
 
 	// 缓存级别： 1本地缓存、2远程缓存、3二级缓存
 	cacheLevel Level
@@ -193,6 +195,8 @@ func (c *CacheOption) Clone(ctx ...context.Context) *CacheOption {
 	coNew.cacheErrorPolicy = c.cacheErrorPolicy
 	coNew.negativeTTL = c.negativeTTL
 	coNew.loadTimeout = c.loadTimeout
+	coNew.allowLocalTTLAboveRemote = c.allowLocalTTLAboveRemote
+	coNew.randInt63n = c.randInt63n
 	coNew.cacheLevel = c.cacheLevel
 	coNew.syncStrategy = c.syncStrategy
 	coNew.singleFlight = c.singleFlight
@@ -229,6 +233,8 @@ func (c *CacheOption) Reset() *CacheOption {
 	c.cacheErrorPolicy = ReturnCacheError
 	c.negativeTTL = 0
 	c.loadTimeout = 30 * time.Second
+	c.allowLocalTTLAboveRemote = false
+	c.randInt63n = nil
 	c.bloomFilter = false
 	c.circuitBreaker = false
 	c.singleFlight = false
@@ -524,6 +530,13 @@ func (c *CacheOption) GetNegativeTTL() time.Duration {
 	return c.negativeTTL
 }
 
+// AllowLocalTTLAboveRemote explicitly permits a Level2 local base TTL that
+// exceeds its remote base TTL.
+func (c *CacheOption) AllowLocalTTLAboveRemote() *CacheOption {
+	c.allowLocalTTLAboveRemote = true
+	return c
+}
+
 // SetLoadTimeout sets the maximum duration allowed for an origin load.
 func (c *CacheOption) SetLoadTimeout(timeout time.Duration) *CacheOption {
 	c.loadTimeout = timeout
@@ -627,13 +640,35 @@ func (c *CacheOption) Valid() error {
 	if c.loadTimeout <= 0 {
 		return errors.New("load timeout must be positive")
 	}
+	if err := validateTTLConfig("local", c.localTTLConfig); err != nil {
+		return err
+	}
+	if err := validateTTLConfig("remote", c.remoteTTLConfig); err != nil {
+		return err
+	}
 
 	if c.localTTLConfig != nil && c.remoteTTLConfig != nil &&
 		c.localTTLConfig.BaseTTL > 0 && c.remoteTTLConfig.BaseTTL > 0 &&
-		c.localTTLConfig.BaseTTL > c.remoteTTLConfig.BaseTTL {
+		c.localTTLConfig.BaseTTL > c.remoteTTLConfig.BaseTTL && !c.allowLocalTTLAboveRemote {
 		return errors.New("local base TTL must not exceed remote base TTL")
 	}
 
+	return nil
+}
+
+func validateTTLConfig(name string, config *TTLConfig) error {
+	if config == nil {
+		return nil
+	}
+	if config.BaseTTL < 0 {
+		return fmt.Errorf("%s base TTL must not be negative", name)
+	}
+	if config.RandomRange < 0 {
+		return fmt.Errorf("%s random TTL range must not be negative", name)
+	}
+	if config.UseRandom && config.BaseTTL == 0 {
+		return fmt.Errorf("%s random TTL base must be positive", name)
+	}
 	return nil
 }
 
@@ -644,20 +679,37 @@ func (c *CacheOption) calculateRandomTTL(config *TTLConfig) time.Duration {
 	if config == nil {
 		return 0
 	}
-	if !config.UseRandom || config.RandomRange <= 0 {
+	if !config.UseRandom || config.RandomRange <= 0 || config.BaseTTL <= 0 {
 		return config.BaseTTL
 	}
 
-	// 生成 [-randomRange, +randomRange] 范围内的随机值
-	randomOffset := time.Duration(rand.Int63n(int64(config.RandomRange*2))) - config.RandomRange
-	finalTTL := config.BaseTTL + randomOffset
-
-	// 确保TTL不会为负数
-	if finalTTL <= 0 {
+	// Select the direction before the magnitude. This avoids doubling the range,
+	// which can overflow time.Duration and turn Int63n's bound non-positive.
+	if c.random(2) == 0 {
+		maxNegative := config.RandomRange
+		if max := config.BaseTTL - 1; maxNegative > max {
+			maxNegative = max
+		}
+		if maxNegative == 0 {
+			return config.BaseTTL
+		}
+		return config.BaseTTL - time.Duration(c.random(int64(maxNegative)+1))
+	}
+	maxPositive := config.RandomRange
+	if max := time.Duration(^uint64(0)>>1) - config.BaseTTL; maxPositive > max {
+		maxPositive = max
+	}
+	if maxPositive == 0 {
 		return config.BaseTTL
 	}
+	return config.BaseTTL + time.Duration(c.random(int64(maxPositive)+1))
+}
 
-	return finalTTL
+func (c *CacheOption) random(n int64) int64 {
+	if c.randInt63n != nil {
+		return c.randInt63n(n)
+	}
+	return rand.Int63n(n)
 }
 
 // IsLocalTTLRandom 检查本地缓存是否启用随机TTL

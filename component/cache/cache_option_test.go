@@ -77,6 +77,45 @@ func TestCacheOption_PolicyValidation(t *testing.T) {
 	assert.NoError(t, valid().Level2().SetLocalTTL(time.Minute).SetRemoteTTL(2*time.Minute).Valid())
 }
 
+func TestCacheOption_TTLValidationRejectsNegativeBaseAndRange(t *testing.T) {
+	valid := func() *CacheOption {
+		return NewCacheOption(newCacheOptionTestContext()).
+			Local().SetCacheKey("key").SetContextCtx(context.Background())
+	}
+
+	assert.Error(t, valid().SetLocalTTL(-time.Second).Valid())
+	assert.Error(t, valid().SetRemoteTTL(-time.Second).Valid())
+	assert.Error(t, valid().SetLocalTTLWithRandom(time.Second, -time.Nanosecond).Valid())
+	assert.Error(t, valid().SetRemoteTTLWithRandom(time.Second, -time.Nanosecond).Valid())
+}
+
+func TestCacheOption_TTLValidationRequiresExplicitLocalAboveRemoteOverride(t *testing.T) {
+	base := NewCacheOption(newCacheOptionTestContext()).Level2().SetCacheKey("key").SetContextCtx(context.Background()).
+		SetLocalTTL(2 * time.Minute).SetRemoteTTL(time.Minute)
+	assert.Error(t, base.Valid())
+	assert.NoError(t, base.AllowLocalTTLAboveRemote().Valid())
+
+	clone := base.Clone()
+	defer clone.Release()
+	assert.NoError(t, clone.Valid(), "Clone must preserve explicit TTL override")
+	base.Reset()
+	base.Level2().SetCacheKey("key").SetContextCtx(context.Background()).SetLocalTTL(2 * time.Minute).SetRemoteTTL(time.Minute)
+	assert.Error(t, base.Valid(), "Reset must clear explicit TTL override")
+}
+
+func TestCacheOption_TTLValidationRandomTTLIsPositiveAndOverflowSafe(t *testing.T) {
+	co := NewCacheOption(nil).SetLocalTTLWithRandom(time.Nanosecond, time.Duration(math.MaxInt64))
+	co.randInt63n = func(n int64) int64 {
+		if n <= 0 {
+			t.Fatalf("random bound = %d, want positive", n)
+		}
+		return n - 1
+	}
+	for i := 0; i < 10; i++ {
+		assert.Greater(t, co.GetLocalTTL(), time.Duration(0))
+	}
+}
+
 // helper: 采样断言
 func sampleRange(t *testing.T, n int, f func() time.Duration, min, max time.Duration) []time.Duration {
 	s := make([]time.Duration, 0, n)

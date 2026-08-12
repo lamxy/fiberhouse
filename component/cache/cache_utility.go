@@ -29,6 +29,8 @@ const (
 	EventFilterError
 )
 
+const negativeOriginMarker = "\x00fiberhouse-cache\x00v1\x00negative\x00origin-not-found"
+
 // FilterFailureMode determines the coordinator behavior when an existence
 // filter cannot make a decision.
 type FilterFailureMode uint8
@@ -160,6 +162,12 @@ func GetOrLoad[R any](coordinator *Coordinator, request *CacheOption, loader fun
 
 		loaded, err := loader(loadCtx)
 		if err != nil {
+			if errors.Is(err, ErrOriginNotFound) && sharedRequest.GetNegativeTTL() > 0 {
+				negativeRequest := negativeCacheOption(sharedRequest)
+				if setErr := coordinator.cache.Set(loadCtx, sharedRequest.GetCacheKey(), negativeOriginMarker, negativeRequest); setErr != nil {
+					coordinator.observer(EventFillError)
+				}
+			}
 			return zero, err
 		}
 		encoded, err := sharedRequest.GetJsonWrapper().Marshal(loaded)
@@ -214,10 +222,27 @@ func (c *Coordinator) allowByFilter(request *CacheOption) error {
 
 func decodeCached[R any](request *CacheOption, value string) (R, error) {
 	var decoded R
+	if value == negativeOriginMarker {
+		return decoded, ErrOriginNotFound
+	}
 	if err := request.GetJsonWrapper().Unmarshal(frameUtils.UnsafeBytes(value), &decoded); err != nil {
 		return decoded, err
 	}
 	return decoded, nil
+}
+
+func negativeCacheOption(request *CacheOption) *CacheOption {
+	option := snapshotCacheOption(request)
+	ttl := request.GetNegativeTTL()
+	switch request.GetCacheLevel() {
+	case Local:
+		option.SetLocalTTL(ttl)
+	case Remote:
+		option.SetRemoteTTL(ttl)
+	case Level2:
+		option.SetLocalTTL(ttl).SetRemoteTTL(ttl).SetSyncStrategyWriteBoth()
+	}
+	return option
 }
 
 // snapshotCacheOption detaches an asynchronous flight from the caller-owned
