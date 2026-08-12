@@ -359,6 +359,66 @@ func TestLevel2Cache_NoStaleBackfillAfterDelete(t *testing.T) {
 	assert.NotContains(t, local.values, "key")
 }
 
+func TestLevel2Cache_UnrelatedSetDoesNotSuppressBackfill(t *testing.T) {
+	releaseGet := make(chan struct{})
+	local := newRecordingCache(cache.Local)
+	remote := &pausedGetCache{
+		recordingCache: newRecordingCache(cache.Remote),
+		readOldValue:   make(chan struct{}),
+		releaseGet:     releaseGet,
+	}
+	remote.values["a"] = "a-old"
+	l2 := newTestLevel2(t, local, remote)
+	t.Cleanup(func() { _ = l2.Close() })
+	co := cache.NewCacheOption(nil).SetSyncStrategyWriteBoth()
+
+	getResult := make(chan string, 1)
+	getErr := make(chan error, 1)
+	go func() {
+		value, err := l2.Get(context.Background(), "a", co)
+		getResult <- value
+		getErr <- err
+	}()
+	<-remote.readOldValue
+	require.NoError(t, l2.Set(context.Background(), "b", "b-new", co))
+	close(releaseGet)
+
+	require.NoError(t, <-getErr)
+	assert.Equal(t, "a-old", <-getResult)
+	assert.Equal(t, "a-old", local.values["a"])
+}
+
+func TestLevel2Cache_UnrelatedDeleteDoesNotSuppressBackfill(t *testing.T) {
+	releaseGet := make(chan struct{})
+	local := newRecordingCache(cache.Local)
+	remote := &pausedGetCache{
+		recordingCache: newRecordingCache(cache.Remote),
+		readOldValue:   make(chan struct{}),
+		releaseGet:     releaseGet,
+	}
+	remote.values["a"] = "a-old"
+	remote.values["b"] = "b-old"
+	local.values["b"] = "b-old"
+	l2 := newTestLevel2(t, local, remote)
+	t.Cleanup(func() { _ = l2.Close() })
+	co := cache.NewCacheOption(nil).SetSyncStrategyWriteBoth()
+
+	getResult := make(chan string, 1)
+	getErr := make(chan error, 1)
+	go func() {
+		value, err := l2.Get(context.Background(), "a", co)
+		getResult <- value
+		getErr <- err
+	}()
+	<-remote.readOldValue
+	require.NoError(t, l2.Delete(context.Background(), "b"))
+	close(releaseGet)
+
+	require.NoError(t, <-getErr)
+	assert.Equal(t, "a-old", <-getResult)
+	assert.Equal(t, "a-old", local.values["a"])
+}
+
 func TestLevel2Cache_FlushWaitsForQueuedAndRunningWork(t *testing.T) {
 	release := make(chan struct{})
 	remote := &gatedSetCache{

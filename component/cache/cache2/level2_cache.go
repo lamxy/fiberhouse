@@ -21,6 +21,26 @@ import (
 	"github.com/panjf2000/ants/v2"
 )
 
+const generationShardCount = 64
+
+type generationEntry struct {
+	mu         sync.Mutex
+	generation uint64
+	refs       int
+}
+
+type generationShard struct {
+	mu      sync.Mutex
+	entries map[string]*generationEntry
+}
+
+type generationToken struct {
+	key        string
+	shard      *generationShard
+	entry      *generationEntry
+	generation uint64
+}
+
 // Level2Cache 二级缓存实现（本地+远程）
 type Level2Cache struct {
 	Ctx    fiberhouse.IContext
@@ -29,11 +49,9 @@ type Level2Cache struct {
 	closed atomic.Bool
 	level  cache.Level
 
-	// generation fences remote read-through backfills against completed synchronous mutations.
-	// A single monotonically increasing value is bounded; unrelated mutations can only skip a
-	// backfill, never make a stale value visible.
-	generationMu sync.RWMutex
-	generation   uint64
+	// Generation entries exist only while an operation for that key is in flight.
+	// Fixed shards bound the permanent coordination state while preserving per-key scope.
+	generationShards [generationShardCount]generationShard
 
 	// 使用ants goroutine池
 	localPool  *ants.Pool
@@ -153,16 +171,13 @@ func (l2c *Level2Cache) getInternal(ctx context.Context, key string, co *cache.C
 		return value, nil
 	}
 
-	// Capture the generation before the remote read. A successful synchronous mutation
-	// advances it before changing L1, so an older remote value cannot be backfilled.
-	l2c.generationMu.RLock()
-	generation := l2c.generation
-	l2c.generationMu.RUnlock()
+	read := l2c.beginGenerationRead(key)
 
 	// 从远程获取
 	value, err := l2c.remote.Get(ctx, key, co)
 
 	if err != nil {
+		l2c.releaseGeneration(read)
 		return "", err
 	}
 
@@ -170,17 +185,64 @@ func (l2c *Level2Cache) getInternal(ctx context.Context, key string, co *cache.C
 	switch co.GetSyncStrategy() {
 	case cache.AsyncWriteBoth, cache.AsyncWriteRemoteOnly:
 		// 异步写入本地缓存
-		l2c.asyncSetLocalIfCurrent(ctx, key, value, co.Clone(), generation)
+		l2c.asyncSetLocalIfCurrent(ctx, key, value, co.Clone(), read)
 	default:
-		l2c.setLocalIfGenerationCurrent(ctx, key, value, co, generation)
+		l2c.setLocalIfGenerationCurrent(ctx, key, value, co, read)
 	}
 	return value, nil
 }
 
-func (l2c *Level2Cache) setLocalIfGenerationCurrent(ctx context.Context, key string, value interface{}, co *cache.CacheOption, generation uint64) {
-	l2c.generationMu.RLock()
-	defer l2c.generationMu.RUnlock()
-	if l2c.generation != generation {
+func (l2c *Level2Cache) generationShard(key string) *generationShard {
+	const (
+		offset32 = uint32(2166136261)
+		prime32  = uint32(16777619)
+	)
+	hash := offset32
+	for i := 0; i < len(key); i++ {
+		hash ^= uint32(key[i])
+		hash *= prime32
+	}
+	return &l2c.generationShards[hash%generationShardCount]
+}
+
+func (l2c *Level2Cache) acquireGeneration(key string) *generationToken {
+	shard := l2c.generationShard(key)
+	shard.mu.Lock()
+	if shard.entries == nil {
+		shard.entries = make(map[string]*generationEntry)
+	}
+	entry := shard.entries[key]
+	if entry == nil {
+		entry = &generationEntry{}
+		shard.entries[key] = entry
+	}
+	entry.refs++
+	shard.mu.Unlock()
+	return &generationToken{key: key, shard: shard, entry: entry}
+}
+
+func (l2c *Level2Cache) releaseGeneration(token *generationToken) {
+	token.shard.mu.Lock()
+	token.entry.refs--
+	if token.entry.refs == 0 && token.shard.entries[token.key] == token.entry {
+		delete(token.shard.entries, token.key)
+	}
+	token.shard.mu.Unlock()
+}
+
+func (l2c *Level2Cache) beginGenerationRead(key string) *generationToken {
+	token := l2c.acquireGeneration(key)
+	token.entry.mu.Lock()
+	token.generation = token.entry.generation
+	token.entry.mu.Unlock()
+	return token
+}
+
+func (l2c *Level2Cache) setLocalIfGenerationCurrent(ctx context.Context, key string, value interface{}, co *cache.CacheOption, token *generationToken) {
+	defer l2c.releaseGeneration(token)
+	token.entry.mu.Lock()
+	defer token.entry.mu.Unlock()
+	if token.entry.generation != token.generation {
 		return
 	}
 	if err := l2c.local.Set(ctx, key, value, co); err != nil {
@@ -197,22 +259,26 @@ func (l2c *Level2Cache) Set(ctx context.Context, key string, value interface{}, 
 	// 根据策略选择写入方式
 	switch co.GetSyncStrategy() {
 	case cache.WriteBoth:
+		mutation := l2c.acquireGeneration(key)
+		defer l2c.releaseGeneration(mutation)
 		if err := l2c.remote.Set(ctx, key, value, co); err != nil {
 			return fmt.Errorf("remote cache set error: %w", err)
 		}
-		l2c.generationMu.Lock()
-		defer l2c.generationMu.Unlock()
-		l2c.generation++
+		mutation.entry.mu.Lock()
+		defer mutation.entry.mu.Unlock()
+		mutation.entry.generation++
 		if err := l2c.local.Set(ctx, key, value, co); err != nil {
 			return fmt.Errorf("local cache set error: %w", err)
 		}
 	case cache.WriteRemoteOnly:
+		mutation := l2c.acquireGeneration(key)
+		defer l2c.releaseGeneration(mutation)
 		if err := l2c.remote.Set(ctx, key, value, co); err != nil {
 			return fmt.Errorf("remote cache set error: %w", err)
 		}
-		l2c.generationMu.Lock()
-		defer l2c.generationMu.Unlock()
-		l2c.generation++
+		mutation.entry.mu.Lock()
+		defer mutation.entry.mu.Unlock()
+		mutation.entry.generation++
 		if err := l2c.local.Delete(ctx, key); err != nil {
 			return fmt.Errorf("local cache invalidate error: %w", err)
 		}
@@ -230,8 +296,9 @@ func (l2c *Level2Cache) Set(ctx context.Context, key string, value interface{}, 
 	return nil
 }
 
-func (l2c *Level2Cache) asyncSetLocalIfCurrent(ctx context.Context, key string, value interface{}, co *cache.CacheOption, generation uint64) {
+func (l2c *Level2Cache) asyncSetLocalIfCurrent(ctx context.Context, key string, value interface{}, co *cache.CacheOption, read *generationToken) {
 	if !l2c.admit() {
+		l2c.releaseGeneration(read)
 		co.Release()
 		return
 	}
@@ -241,10 +308,11 @@ func (l2c *Level2Cache) asyncSetLocalIfCurrent(ctx context.Context, key string, 
 		defer co.Release()
 		timeoutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 		defer cancel()
-		l2c.setLocalIfGenerationCurrent(timeoutCtx, key, value, co, generation)
+		l2c.setLocalIfGenerationCurrent(timeoutCtx, key, value, co, read)
 	})
 	if err != nil {
 		l2c.complete()
+		l2c.releaseGeneration(read)
 		co.Release()
 		l2c.Ctx.GetLogger().Error(l2c.Ctx.GetConfig().LogOriginCache()).
 			Str("key", key).
@@ -327,17 +395,31 @@ func (l2c *Level2Cache) Delete(ctx context.Context, keys ...string) error {
 		return cache.ErrCacheClosed
 	}
 
+	mutations := make([]*generationToken, len(keys))
+	for i, key := range keys {
+		mutations[i] = l2c.acquireGeneration(key)
+	}
+	defer func() {
+		for _, mutation := range mutations {
+			l2c.releaseGeneration(mutation)
+		}
+	}()
+
 	if err := l2c.remote.Delete(ctx, keys...); err != nil {
 		return fmt.Errorf("remote cache delete error: %w", err)
 	}
 
-	l2c.generationMu.Lock()
-	defer l2c.generationMu.Unlock()
-	l2c.generation++
-	if err := l2c.local.Delete(ctx, keys...); err != nil {
-		return fmt.Errorf("local cache delete error: %w", err)
+	var deleteErrors []error
+	for i, key := range keys {
+		mutation := mutations[i]
+		mutation.entry.mu.Lock()
+		mutation.entry.generation++
+		if err := l2c.local.Delete(ctx, key); err != nil {
+			deleteErrors = append(deleteErrors, fmt.Errorf("local cache delete %q error: %w", key, err))
+		}
+		mutation.entry.mu.Unlock()
 	}
-	return nil
+	return errors.Join(deleteErrors...)
 }
 
 // Close 关闭缓存实例，释放资源（应用退出时调用Close关闭资源）
@@ -426,7 +508,6 @@ func (l2c *Level2Cache) beginShutdown() (done, drain chan struct{}, leader bool)
 	l2c.closed.Store(true)
 	return l2c.shutdownDone, l2c.drain, true
 }
-
 
 func (l2c *Level2Cache) finishShutdown(drain chan struct{}) {
 	<-drain
