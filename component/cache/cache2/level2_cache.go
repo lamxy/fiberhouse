@@ -49,8 +49,8 @@ type Level2Cache struct {
 	closed atomic.Bool
 	level  cache.Level
 
-	// Generation entries exist only while an operation for that key is in flight.
-	// Fixed shards bound the permanent coordination state while preserving per-key scope.
+	// 代际条目只在对应键的操作执行期间存在。固定分片限制常驻协调状态，
+	// 同时保持按键隔离。
 	generationShards [generationShardCount]generationShard
 
 	// 使用ants goroutine池

@@ -7,24 +7,22 @@ import (
 	"sync"
 )
 
-// ExistenceFilter decides whether a cache key may exist. Implementations must
-// return true while they are not authoritative, so callers never reject a key
-// from incomplete filter state.
+// ExistenceFilter 判断缓存键是否可能存在。过滤器尚未具备权威状态时必须返回 true，
+// 防止调用方依据不完整数据错误拒绝有效键。
 type ExistenceFilter interface {
 	Ready() bool
 	MayContain(context.Context, string) (bool, error)
 	Add(context.Context, string) error
 }
 
-// PreloadableFilter can atomically replace its authoritative key set.
+// PreloadableFilter 可以原子替换权威键集合。
 type PreloadableFilter interface {
 	ExistenceFilter
 	Preload(context.Context, []string) error
 	Reset()
 }
 
-// MemoryBloomFilter is an in-process authoritative Bloom filter. It is
-// unready until a complete preload succeeds.
+// MemoryBloomFilter 是进程内权威布隆过滤器，完整预加载成功前不会进入就绪状态。
 type MemoryBloomFilter struct {
 	mu          sync.RWMutex
 	preloadMu   sync.Mutex
@@ -39,8 +37,7 @@ type MemoryBloomFilter struct {
 
 const maxMemoryBloomCapacity uint = 1 << 26
 
-// NewMemoryBloomFilter constructs an unready filter. Shard counts are rounded
-// up to a power of two, with zero selecting one shard.
+// NewMemoryBloomFilter 创建未就绪的过滤器。分片数向上取整到 2 的幂，零表示一个分片。
 func NewMemoryBloomFilter(capacity uint, errorRate float64, shardCount int) (*MemoryBloomFilter, error) {
 	if capacity == 0 {
 		return nil, errors.New("memory bloom filter capacity must be positive")
@@ -76,14 +73,14 @@ func newMemoryBloomFilter(capacity uint, errorRate float64, shardCount int) *Mem
 	return filter
 }
 
-// Ready reports whether the filter contains a complete preload.
+// Ready 返回过滤器是否已经完成一次完整预加载。
 func (f *MemoryBloomFilter) Ready() bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.ready
 }
 
-// MayContain returns true until the filter becomes authoritative.
+// MayContain 在过滤器具备权威状态前始终返回 true。
 func (f *MemoryBloomFilter) MayContain(ctx context.Context, key string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return true, err
@@ -96,7 +93,7 @@ func (f *MemoryBloomFilter) MayContain(ctx context.Context, key string) (bool, e
 	return f.test([]byte(key)), nil
 }
 
-// Add records a successfully loaded key but never changes readiness.
+// Add 记录成功加载的键，但不会改变过滤器的就绪状态。
 func (f *MemoryBloomFilter) Add(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -110,13 +107,12 @@ func (f *MemoryBloomFilter) Add(ctx context.Context, key string) error {
 	return nil
 }
 
-// Preload builds a complete replacement before atomically making it visible.
+// Preload 先构建完整替代集合，再以原子方式发布。
 func (f *MemoryBloomFilter) Preload(ctx context.Context, keys []string) error {
 	return f.preload(ctx, keys, nil)
 }
 
-// preload serializes construction and publication with Add. The hook exists
-// only to deterministically exercise that transaction in package tests.
+// preload 将集合构建、发布与 Add 串行协调。hook 仅用于包内测试确定性验证事务过程。
 func (f *MemoryBloomFilter) preload(ctx context.Context, keys []string, hook func()) error {
 	f.preloadMu.Lock()
 	defer f.preloadMu.Unlock()
@@ -168,7 +164,7 @@ func (f *MemoryBloomFilter) finishPreloadFailure() {
 	f.mu.Unlock()
 }
 
-// Reset discards authoritative state and returns to fail-open behavior.
+// Reset 丢弃权威状态并恢复故障开放行为。
 func (f *MemoryBloomFilter) Reset() {
 	f.preloadMu.Lock()
 	defer f.preloadMu.Unlock()

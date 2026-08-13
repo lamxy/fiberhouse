@@ -88,7 +88,7 @@ type Level int8
 // Strategy 缓存在2级缓存的同步策略
 type Strategy int8
 
-// CacheErrorPolicy determines how callers handle cache infrastructure errors.
+// CacheErrorPolicy 决定调用方如何处理缓存基础设施错误。
 type CacheErrorPolicy uint8
 
 // 缓存级别
@@ -124,9 +124,9 @@ type CacheOption struct {
 	AppCtx fiberhouse.IContext
 	// 是否启动缓存
 	enable bool
-	// context
+	// 请求上下文
 	ctx context.Context
-	// request-scoped cache failure behavior
+	// 请求级缓存失败处理策略
 	cacheErrorPolicy         CacheErrorPolicy
 	negativeTTL              time.Duration
 	loadTimeout              time.Duration
@@ -508,42 +508,41 @@ func (c *CacheOption) GetContextCtx() context.Context {
 	return c.ctx
 }
 
-// SetCacheErrorPolicy sets the request's behavior for cache infrastructure errors.
+// SetCacheErrorPolicy 设置当前请求处理缓存基础设施错误的策略。
 func (c *CacheOption) SetCacheErrorPolicy(policy CacheErrorPolicy) *CacheOption {
 	c.cacheErrorPolicy = policy
 	return c
 }
 
-// GetCacheErrorPolicy returns the request's cache error policy.
+// GetCacheErrorPolicy 返回当前请求的缓存错误策略。
 func (c *CacheOption) GetCacheErrorPolicy() CacheErrorPolicy {
 	return c.cacheErrorPolicy
 }
 
-// SetNegativeTTL sets the duration used to cache an origin miss.
+// SetNegativeTTL 设置缓存源数据未命中结果的时长。
 func (c *CacheOption) SetNegativeTTL(ttl time.Duration) *CacheOption {
 	c.negativeTTL = ttl
 	return c
 }
 
-// GetNegativeTTL returns the duration used to cache an origin miss.
+// GetNegativeTTL 返回源数据未命中结果的缓存时长。
 func (c *CacheOption) GetNegativeTTL() time.Duration {
 	return c.negativeTTL
 }
 
-// AllowLocalTTLAboveRemote explicitly permits a Level2 local base TTL that
-// exceeds its remote base TTL.
+// AllowLocalTTLAboveRemote 显式允许二级缓存的本地基础 TTL 大于远程基础 TTL。
 func (c *CacheOption) AllowLocalTTLAboveRemote() *CacheOption {
 	c.allowLocalTTLAboveRemote = true
 	return c
 }
 
-// SetLoadTimeout sets the maximum duration allowed for an origin load.
+// SetLoadTimeout 设置源数据加载允许的最长时间。
 func (c *CacheOption) SetLoadTimeout(timeout time.Duration) *CacheOption {
 	c.loadTimeout = timeout
 	return c
 }
 
-// GetLoadTimeout returns the maximum duration allowed for an origin load.
+// GetLoadTimeout 返回源数据加载允许的最长时间。
 func (c *CacheOption) GetLoadTimeout() time.Duration {
 	return c.loadTimeout
 }
@@ -683,8 +682,8 @@ func (c *CacheOption) calculateRandomTTL(config *TTLConfig) time.Duration {
 		return config.BaseTTL
 	}
 
-	// Select the direction before the magnitude. This avoids doubling the range,
-	// which can overflow time.Duration and turn Int63n's bound non-positive.
+	// 先选择偏移方向再计算幅度，避免将随机范围翻倍后溢出 time.Duration，
+	// 进而使 Int63n 的上界变成非正数。
 	if c.random(2) == 0 {
 		maxNegative := config.RandomRange
 		if max := config.BaseTTL - 1; maxNegative > max {

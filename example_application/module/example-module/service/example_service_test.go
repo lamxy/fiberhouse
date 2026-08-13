@@ -375,6 +375,49 @@ func TestListProductionCacheOptionsLoadStoreOnceAndPreserveCallerContext(t *test
 	}
 }
 
+func TestGetWithCacheLoadsOnceAndPreservesCallerContextValue(t *testing.T) {
+	logger := zerolog.Nop()
+	base := fiberhouse.NewAppContext(appconfig.NewAppConfig(), bootstrap.NewLoggerWrap(&logger))
+	key := globalmanager.KeyName("example-detail-cache-test")
+	codecKey := globalmanager.KeyName("example-detail-codec-test")
+	app := &listTestApplication{level2Key: key, codecKey: codecKey}
+	ctx := &listTestContext{IApplicationContext: base, starter: &listTestStarter{application: app}}
+	memory := &listMemoryCache{values: make(map[string]string)}
+	ctx.GetContainer().Clear(key)
+	ctx.GetContainer().Clear(codecKey)
+	if !ctx.GetContainer().Register(key, func() (interface{}, error) { return memory, nil }) {
+		t.Fatal("register detail cache")
+	}
+	if !ctx.GetContainer().Register(codecKey, func() (interface{}, error) { return jsoncodec.StdJsonDefault(), nil }) {
+		t.Fatal("register detail codec")
+	}
+	t.Cleanup(func() {
+		ctx.GetContainer().Clear(key)
+		ctx.GetContainer().Clear(codecKey)
+	})
+
+	caller := context.WithValue(context.Background(), contextKey("request"), "same")
+	id := bson.NewObjectID()
+	loads := 0
+	store := &fakeExampleStore{getFn: func(got context.Context, rawID string) (*entity.Example, error) {
+		loads++
+		if got.Value(contextKey("request")) != "same" || rawID != id.Hex() {
+			return nil, errors.New("cache loader did not preserve request data")
+		}
+		return &entity.Example{ID: id, Name: "cached example", Status: entity.ExampleStatusActive}, nil
+	}}
+	service := NewExampleService(ctx, store)
+	for i := 0; i < 2; i++ {
+		resp, err := service.GetWithCache(caller, id.Hex())
+		if err != nil || resp.ID != id.Hex() {
+			t.Fatalf("GetWithCache() = %#v, %v", resp, err)
+		}
+	}
+	if loads != 1 {
+		t.Fatalf("store loader calls = %d, want 1", loads)
+	}
+}
+
 func TestDispatchExampleChangedUsesCallerContextAndStableOptions(t *testing.T) {
 	ctx := context.WithValue(context.Background(), contextKey("request"), "same")
 	service := &ExampleService{

@@ -122,6 +122,35 @@ func (h *ExampleHandler) Get(c *fiber.Ctx) error {
 		JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
 }
 
+// GetWithCache 演示使用缓存组件读取单个 example。首次请求从 Store 加载并回填
+// 二级缓存，后续相同请求直接命中缓存；并发未命中由 Coordinator 合并。
+//
+// @Summary      缓存组件使用样例
+// @Description  按 id 读取 example，并演示二级缓存、完整路径单飞、TTL 抖动和请求上下文传播。
+// @Tags         example
+// @Produce      json
+// @Param        id   path      string  true  "example id"
+// @Success      200  {object}  response.RespInfo{data=responsevo.ExampleRespVo}
+// @Failure      400  {object}  response.RespInfo  "id 非法"
+// @Failure      404  {object}  response.RespInfo  "example 不存在"
+// @Failure      500  {object}  response.RespInfo  "缓存或内部错误"
+// @Router       /examples/cache/{id} [get]
+// @ID           fiberGetExampleWithCache
+func (h *ExampleHandler) GetWithCache(c *fiber.Ctx) error {
+	id := c.Params("id")
+	lang := c.Get(moduleconstant.XLanguageFlag, "en")
+	if err := h.validateID(id, lang); err != nil {
+		return err
+	}
+	resp, err := h.UseCase.GetWithCache(c.UserContext(), id)
+	if err != nil {
+		return transport.MapDomainError(err)
+	}
+	return fiberhouse.Response().
+		SuccessWithData(resp).
+		JsonWithCtx(adaptorctx.WithFiberContext(c), fiber.StatusOK)
+}
+
 // List 处理对 example 资源进行分页查询的 GET 请求。
 //
 // @Summary      查询 example 列表

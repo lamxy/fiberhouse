@@ -106,6 +106,25 @@ func (h *ExampleHandler) Get(c *gin.Context) {
 	}
 }
 
+// GetWithCache 处理 GET /examples/cache/{id}，演示与 Fiber 适配器一致的缓存读取流程。
+func (h *ExampleHandler) GetWithCache(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.validateID(id, h.language(c)); err != nil {
+		_ = c.Error(err)
+		return
+	}
+	resp, err := h.UseCase.GetWithCache(c.Request.Context(), id)
+	if err != nil {
+		_ = c.Error(transport.MapDomainError(err))
+		return
+	}
+	if err := fiberhouse.Response().
+		SuccessWithData(resp).
+		JsonWithCtx(adaptorctx.WithGinContext(c), http.StatusOK); err != nil {
+		_ = c.Error(err)
+	}
+}
+
 // List 处理 GET /examples，与 Fiber 的 List 处理器契约一致
 // （swaggo 规范见 example-module/api.ExampleHandler.List）。
 func (h *ExampleHandler) List(c *gin.Context) {

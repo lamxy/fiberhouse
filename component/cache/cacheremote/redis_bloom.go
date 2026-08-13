@@ -12,15 +12,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// ErrRedisBloomUnavailable indicates that the target Redis server has no
-// RedisBloom module installed.
+// ErrRedisBloomUnavailable 表示目标 Redis 服务未安装 RedisBloom 模块。
 var ErrRedisBloomUnavailable = errors.New("redis bloom module is unavailable")
 
 type commandExecutor interface {
 	Do(context.Context, ...interface{}) *redis.Cmd
 }
 
-// RedisBloomConfig defines one namespaced RedisBloom filter.
+// RedisBloomConfig 定义一个带命名空间的 RedisBloom 过滤器。
 type RedisBloomConfig struct {
 	Key           string
 	Capacity      uint
@@ -29,8 +28,8 @@ type RedisBloomConfig struct {
 	AllowExisting bool
 }
 
-// RedisBloomFilter is an optional remote ExistenceFilter backed by RedisBloom.
-// It remains permissive until Preload completes in full.
+// RedisBloomFilter 是由 RedisBloom 支撑的可选远程存在性过滤器。
+// Preload 完整成功前始终保持放行。
 type RedisBloomFilter struct {
 	executor commandExecutor
 	config   RedisBloomConfig
@@ -66,8 +65,7 @@ func NewRedisBloomFilter(executor commandExecutor, config RedisBloomConfig) (*Re
 	return &RedisBloomFilter{executor: executor, config: config}, nil
 }
 
-// Prepare reserves the remote filter. A BUSYKEY response is accepted only when
-// explicitly configured, since an accidental key collision must remain visible.
+// Prepare 创建远程过滤器。只有显式配置后才接受 BUSYKEY 响应，避免隐藏意外的键冲突。
 func (f *RedisBloomFilter) Prepare(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -82,8 +80,8 @@ func (f *RedisBloomFilter) Prepare(ctx context.Context) error {
 	return nil
 }
 
-// Preload fills the remote filter in bounded BF.MADD batches. Readiness changes
-// only after every batch succeeds, so callers never reject from partial state.
+// Preload 使用有界的 BF.MADD 批次填充远程过滤器。全部批次成功后才进入就绪状态，
+// 防止调用方根据部分数据拒绝有效键。
 func (f *RedisBloomFilter) Preload(ctx context.Context, keys []string) error {
 	f.preloadMu.Lock()
 	defer f.preloadMu.Unlock()
@@ -120,7 +118,7 @@ func (f *RedisBloomFilter) Ready() bool {
 	return f.ready
 }
 
-// MayContain is permissive until a complete preload establishes authority.
+// MayContain 在完整预加载建立权威状态前始终放行。
 func (f *RedisBloomFilter) MayContain(ctx context.Context, key string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return true, err
@@ -144,7 +142,7 @@ func (f *RedisBloomFilter) MayContain(ctx context.Context, key string) (bool, er
 	return result != 0, nil
 }
 
-// Add records a key but never makes the filter authoritative.
+// Add 记录单个键，但不会让过滤器进入权威状态。
 func (f *RedisBloomFilter) Add(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -152,8 +150,7 @@ func (f *RedisBloomFilter) Add(ctx context.Context, key string) error {
 	return normalizeRedisBloomError(f.executor.Do(ctx, "BF.ADD", f.config.Key, key).Err())
 }
 
-// Reset removes local authority; it deliberately does not delete a shared
-// remote Redis key.
+// Reset 仅撤销本地权威状态，不会删除共享的远程 Redis 键。
 func (f *RedisBloomFilter) Reset() {
 	f.preloadMu.Lock()
 	defer f.preloadMu.Unlock()

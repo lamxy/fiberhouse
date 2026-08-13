@@ -38,11 +38,10 @@ type redisOptions struct {
 	circuitBreaker cache.CacheCircuitBreaker
 }
 
-// RedisOption configures a RedisDb without changing the legacy NewRedisDb
-// constructor signature.
+// RedisOption 在不改变旧版 NewRedisDb 构造函数签名的前提下配置 RedisDb。
 type RedisOption func(*redisOptions)
 
-// WithRedisConfigPath selects the Redis configuration subtree.
+// WithRedisConfigPath 选择 Redis 配置子树。
 func WithRedisConfigPath(path string) RedisOption {
 	return func(options *redisOptions) {
 		if path != "" {
@@ -51,8 +50,7 @@ func WithRedisConfigPath(path string) RedisOption {
 	}
 }
 
-// WithRedisCircuitBreaker installs the per-instance breaker used by requests
-// that enable circuit-breaker protection.
+// WithRedisCircuitBreaker 设置实例级熔断器，供启用熔断保护的请求使用。
 func WithRedisCircuitBreaker(breaker cache.CacheCircuitBreaker) RedisOption {
 	return func(options *redisOptions) {
 		if !isNilCircuitBreaker(breaker) {
@@ -69,9 +67,8 @@ func NewRedisDb(appCtx fiberhouse.IContext, confPath ...string) (cache.Cache, er
 	return NewRedisDbWithOptions(appCtx, options...)
 }
 
-// NewRedisDbWithOptions constructs a Redis backend with explicit optional
-// dependencies. The breaker remains disabled per request unless the caller also
-// enables it on CacheOption.
+// NewRedisDbWithOptions 使用显式的可选依赖创建 Redis 后端。除非调用方同时在
+// CacheOption 上启用熔断保护，否则请求不会使用熔断器。
 func NewRedisDbWithOptions(appCtx fiberhouse.IContext, optionFns ...RedisOption) (*RedisDb, error) {
 	options := redisOptions{confPath: constant.DefaultRedisDBConfName}
 	for _, option := range optionFns {

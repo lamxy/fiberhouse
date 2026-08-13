@@ -13,12 +13,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Flusher waits until all work admitted before its snapshot has completed.
+// Flusher 等待调用时已经接收的全部任务执行完成。
 type Flusher interface {
 	Flush(ctx context.Context) error
 }
 
-// Shutdowner stops admission, drains work, and releases owned resources.
+// Shutdowner 停止接收新任务，排空已有任务并释放持有的资源。
 type Shutdowner interface {
 	Shutdown(ctx context.Context) error
 }
@@ -32,7 +32,7 @@ type Cache interface {
 	Close() error
 	Wait() error
 	GetLevel() Level
-	// more
+	// 可按需通过独立可选接口扩展能力。
 }
 
 // IRedisClient Redis客户端接口，定义获取Redis客户端的方法

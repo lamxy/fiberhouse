@@ -15,6 +15,7 @@ func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, app gin.IRouter) 
 
 func registerExampleRoutes(router gin.IRouter, handler *ExampleHandler) {
 	router.POST("/examples", handler.Create)
+	router.GET("/examples/cache/:id", handler.GetWithCache)
 	router.GET("/examples/:id", handler.Get)
 	router.GET("/examples", handler.List)
 	router.PUT("/examples/:id", handler.Update)

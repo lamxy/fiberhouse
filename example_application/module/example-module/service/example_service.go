@@ -25,7 +25,11 @@ import (
 	exampletask "github.com/lamxy/fiberhouse/example_application/module/example-module/task"
 )
 
-const exampleListCacheTTL = 30 * time.Second
+const (
+	exampleListCacheTTL         = 30 * time.Second
+	exampleDetailLocalCacheTTL  = 30 * time.Second
+	exampleDetailRemoteCacheTTL = 5 * time.Minute
+)
 
 // ErrInvalidInput 在请求数据未通过业务规则校验时返回（区别于 api 层完成的
 // 传输级结构体 tag 校验）。用 fmt.Errorf("%w: ...", ErrInvalidInput) 包装它，
@@ -53,27 +57,29 @@ type exampleTaskDispatcher interface {
 type ExampleUseCase interface {
 	Create(context.Context, requestvo.CreateExampleReqVo) (*responsevo.ExampleRespVo, error)
 	Get(context.Context, string) (*responsevo.ExampleRespVo, error)
+	GetWithCache(context.Context, string) (*responsevo.ExampleRespVo, error)
 	List(context.Context, requestvo.ListExamplesReqVo) (*responsevo.ExampleListRespVo, error)
 	Update(context.Context, string, requestvo.UpdateExampleReqVo) (*responsevo.ExampleRespVo, error)
 	Delete(context.Context, string) error
 }
 
 // ExampleService 是默认的 ExampleUseCase 实现。它校验并规范化输入，将持久化
-// 委托给 Store，缓存 List 结果，并在写操作成功后尽力（best-effort）派发一条
+// 委托给 Store，缓存 List 结果，并在写操作成功后尽力派发一条
 // 「example changed」异步通知。
 type ExampleService struct {
 	fiberhouse.ServiceLocator // 继承 service 定位层接口
 	Store                     repository.ExampleStore
 	now                       func() time.Time
-	listCoordinator           *cache.Coordinator
-	listCoordinatorOnce       sync.Once
+	cacheCoordinator          *cache.Coordinator
+	cacheBackend              cache.Cache
+	cacheCoordinatorOnce      sync.Once
 
 	listCached        exampleListCache
 	getTaskDispatcher func() (exampleTaskDispatcher, error)
 }
 
 // NewExampleService 构建一个绑定到指定应用上下文与 repository.ExampleStore 的
-// ExampleService，并接入默认的 read-through 列表缓存与 asynq 任务派发器查找。
+// ExampleService，并接入默认的穿透读取列表缓存与 asynq 任务派发器查找。
 func NewExampleService(ctx fiberhouse.IApplicationContext, store repository.ExampleStore) *ExampleService {
 	service := &ExampleService{
 		ServiceLocator: fiberhouse.NewService(ctx).SetName(GetKeyExampleService()),
@@ -133,6 +139,32 @@ func (s *ExampleService) Get(ctx context.Context, id string) (*responsevo.Exampl
 	}
 	resp := toResponse(*example)
 	return &resp, nil
+}
+
+// GetWithCache 演示缓存组件推荐的读取方式：复用长期存活的 Coordinator，
+// 为每次请求创建独立的 CacheOption，并把调用方上下文传给完整的缓存读取、
+// 数据加载和回填流程。相同 id 的并发未命中只会执行一次 Store.Get。
+func (s *ExampleService) GetWithCache(ctx context.Context, id string) (*responsevo.ExampleRespVo, error) {
+	if s.ServiceLocator == nil || s.GetContext() == nil {
+		return s.Get(ctx, id)
+	}
+	appCtx := s.GetContext()
+	option := cache.NewCacheOption(appCtx).
+		Level2().
+		SetDefaultInstanceKey("example-cache-demo").
+		SetCacheKey(exampleDetailCacheKey(id)).
+		SetContextCtx(ctx).
+		SetLocalTTLRandomPercent(exampleDetailLocalCacheTTL, 0.1).
+		SetRemoteTTLRandomPercent(exampleDetailRemoteCacheTTL, 0.1).
+		SetLoadTimeout(3 * time.Second).
+		SetSyncStrategyWriteRemoteOnly()
+	loader := func(loaderCtx context.Context) (*responsevo.ExampleRespVo, error) {
+		return s.Get(loaderCtx, id)
+	}
+	if coordinator := s.resolveCacheCoordinator(appCtx); coordinator != nil {
+		return cache.GetOrLoad(coordinator, option, loader)
+	}
+	return loader(ctx)
 }
 
 // List 以确定性顺序返回一页 example（排序见 ExampleModel.buildFindQuery）。
@@ -195,6 +227,7 @@ func (s *ExampleService) Update(ctx context.Context, id string, req requestvo.Up
 	if err := s.Store.Update(ctx, id, example); err != nil {
 		return nil, err
 	}
+	s.invalidateCachedExample(ctx, id)
 	s.observeDispatchError(s.dispatchExampleChanged(ctx, id, "update"))
 	resp := toResponse(*example)
 	return &resp, nil
@@ -205,6 +238,7 @@ func (s *ExampleService) Delete(ctx context.Context, id string) error {
 	if err := s.Store.Delete(ctx, id); err != nil {
 		return err
 	}
+	s.invalidateCachedExample(ctx, id)
 	s.observeDispatchError(s.dispatchExampleChanged(ctx, id, "delete"))
 	return nil
 }
@@ -215,8 +249,13 @@ func exampleListCacheKey(req requestvo.ListExamplesReqVo) string {
 	return fmt.Sprintf("example:list:page:%d:size:%d:status:%s", req.Page, req.PageSize, req.Status)
 }
 
+// exampleDetailCacheKey 生成缓存样例接口使用的稳定详情键。
+func exampleDetailCacheKey(id string) string {
+	return "example:detail:" + id
+}
+
 // readThroughList 是默认的 exampleListCache 实现：用一个两级（本地 + 远端）
-// single-flight 缓存包裹 loader；当 service 没有应用上下文时（例如轻量单元测试），
+// 单飞缓存包裹 loader；当 service 没有应用上下文时（例如轻量单元测试），
 // 回退为直接调用 loader。
 func (s *ExampleService) readThroughList(ctx context.Context, key string, ttl time.Duration, loader exampleListLoader) (*responsevo.ExampleListRespVo, error) {
 	if s.ServiceLocator == nil {
@@ -236,29 +275,45 @@ func (s *ExampleService) readThroughList(ctx context.Context, key string, ttl ti
 		SetContextCtx(ctx).
 		SetSyncStrategyWriteRemoteOnly().
 		EnableSingleFlight()
-	if coordinator := s.resolveListCoordinator(appCtx); coordinator != nil {
+	if coordinator := s.resolveCacheCoordinator(appCtx); coordinator != nil {
 		return cache.GetOrLoad(coordinator, option, loader)
 	}
 	return s.readThroughListLegacy(option, loader)
 }
 
-// resolveListCoordinator lazily resolves and retains the optional L2 backend.
-// Construction therefore remains safe for contexts that only register routes,
-// while all real list requests share one full-path singleflight coordinator.
-func (s *ExampleService) resolveListCoordinator(appCtx fiberhouse.IContext) *cache.Coordinator {
-	s.listCoordinatorOnce.Do(func() {
+// resolveCacheCoordinator 惰性解析并长期保存可选的二级缓存后端。这样既能让只注册
+// 路由的轻量上下文安全完成构造，也能让真实请求共享同一个完整路径单飞协调器。
+func (s *ExampleService) resolveCacheCoordinator(appCtx fiberhouse.IContext) *cache.Coordinator {
+	s.cacheCoordinatorOnce.Do(func() {
 		backend, err := cache.NewFactory(appCtx).Lookup(cache.Level2)
 		if err != nil {
 			return
 		}
-		s.listCoordinator, _ = cache.NewCoordinator(backend)
+		s.cacheBackend = backend
+		s.cacheCoordinator, _ = cache.NewCoordinator(backend)
 	})
-	return s.listCoordinator
+	return s.cacheCoordinator
 }
 
-// readThroughListLegacy keeps the compatibility path visible for applications
-// that still resolve a backend through CacheOption. New code should retain and
-// inject a Coordinator, as NewExampleService does for its primary path.
+// invalidateCachedExample 在写操作成功后删除详情缓存，避免样例接口返回旧数据。
+// 删除失败只记录警告，不回滚已经成功的持久化操作。
+func (s *ExampleService) invalidateCachedExample(ctx context.Context, id string) {
+	if s.ServiceLocator == nil || s.GetContext() == nil {
+		return
+	}
+	appCtx := s.GetContext()
+	if s.resolveCacheCoordinator(appCtx) == nil || s.cacheBackend == nil {
+		return
+	}
+	if err := s.cacheBackend.Delete(ctx, exampleDetailCacheKey(id)); err != nil {
+		appCtx.GetLogger().WarnWith(appCtx.GetConfig().LogOriginCache()).
+			Err(err).Str("cache_key", exampleDetailCacheKey(id)).
+			Msg("example detail cache was not invalidated")
+	}
+}
+
+// readThroughListLegacy 保留通过 CacheOption 解析后端的兼容路径。新代码应像
+// NewExampleService 的主路径一样长期保存并复用 Coordinator。
 func (s *ExampleService) readThroughListLegacy(option *cache.CacheOption, loader exampleListLoader) (*responsevo.ExampleListRespVo, error) {
 	return cache.GetCached[*responsevo.ExampleListRespVo](option, loader)
 }

@@ -14,18 +14,17 @@ import (
 	"github.com/lamxy/fiberhouse/example_application/module/example-module/transport"
 )
 
-// ExampleHandler 是 example 資源的 hertz 傳輸層。它在完全相同的路徑
-// （POST/GET/PUT/DELETE /examples[/{id}]）上，暴露與 Fiber/Gin 適配器一致的 CRUD 契約。
+// ExampleHandler 是 example 资源的 Hertz 传输层。它在相同路径上暴露与
+// Fiber/Gin 适配器一致的 CRUD 和缓存样例契约。
 //
-// 此處刻意不重複編寫 swaggo 註解：多個適配器宣告相同的 @Router 路徑會導致
-// swag init 衝突。example-module/api 中的 Fiber 處理器是生成 OpenAPI 規範時
-// 唯一帶註解的權威來源。
+// 此处不重复编写 swaggo 注释，避免多个适配器声明相同路径导致生成冲突。
+// example-module/api 中的 Fiber 处理器是生成 OpenAPI 规范的唯一来源。
 type ExampleHandler struct {
 	fiberhouse.ApiLocator
 	UseCase service.ExampleUseCase
 }
 
-// NewExampleHandler 建立 hertz 的 example 處理器
+// NewExampleHandler 创建 Hertz 的 example 处理器。
 func NewExampleHandler(ctx fiberhouse.IApplicationContext, useCase service.ExampleUseCase) *ExampleHandler {
 	return &ExampleHandler{
 		ApiLocator: fiberhouse.NewApi(ctx).SetName(GetKeyExampleHandler()),
@@ -33,7 +32,7 @@ func NewExampleHandler(ctx fiberhouse.IApplicationContext, useCase service.Examp
 	}
 }
 
-// GetKeyExampleHandler 取得 ExampleHandler 註冊到全域管理器的實例 key
+// GetKeyExampleHandler 返回 ExampleHandler 注册到全局管理器的实例键。
 func GetKeyExampleHandler(ns ...string) string {
 	return fiberhouse.RegisterKeyName("ExampleHandler",
 		fiberhouse.GetNamespace([]string{moduleconstant.NameModuleExample}, ns...)...)
@@ -55,93 +54,108 @@ func (h *ExampleHandler) validateID(id, lang string) error {
 	return h.validate(&requestvo.ObjId{ID: id}, lang)
 }
 
-// Create 處理 POST /examples
+// Create 处理 POST /examples。
 func (h *ExampleHandler) Create(c ctxpkg.Context, reqCtx *app.RequestContext) {
 	var req requestvo.CreateExampleReqVo
 	if err := reqCtx.BindJSON(&req); err != nil {
-		respondError(h.GetContext(), reqCtx,err)
+		respondError(h.GetContext(), reqCtx, err)
 		return
 	}
 	if err := h.validate(&req, language(reqCtx)); err != nil {
-		respondError(h.GetContext(), reqCtx,err)
+		respondError(h.GetContext(), reqCtx, err)
 		return
 	}
 	resp, err := h.UseCase.Create(requestContext(c), req)
 	if err != nil {
-		respondError(h.GetContext(), reqCtx,transport.MapDomainError(err))
+		respondError(h.GetContext(), reqCtx, transport.MapDomainError(err))
 		return
 	}
 	respondData(reqCtx, http.StatusCreated, resp)
 }
 
-// Get 處理 GET /examples/{id}
+// Get 处理 GET /examples/{id}。
 func (h *ExampleHandler) Get(c ctxpkg.Context, reqCtx *app.RequestContext) {
 	id := reqCtx.Param("id")
 	if err := h.validateID(id, language(reqCtx)); err != nil {
-		respondError(h.GetContext(), reqCtx,err)
+		respondError(h.GetContext(), reqCtx, err)
 		return
 	}
 	resp, err := h.UseCase.Get(requestContext(c), id)
 	if err != nil {
-		respondError(h.GetContext(), reqCtx,transport.MapDomainError(err))
+		respondError(h.GetContext(), reqCtx, transport.MapDomainError(err))
 		return
 	}
 	respondData(reqCtx, http.StatusOK, resp)
 }
 
-// List 處理 GET /examples
+// GetWithCache 处理 GET /examples/cache/{id}，演示二级缓存和完整路径单飞。
+func (h *ExampleHandler) GetWithCache(c ctxpkg.Context, reqCtx *app.RequestContext) {
+	id := reqCtx.Param("id")
+	if err := h.validateID(id, language(reqCtx)); err != nil {
+		respondError(h.GetContext(), reqCtx, err)
+		return
+	}
+	resp, err := h.UseCase.GetWithCache(requestContext(c), id)
+	if err != nil {
+		respondError(h.GetContext(), reqCtx, transport.MapDomainError(err))
+		return
+	}
+	respondData(reqCtx, http.StatusOK, resp)
+}
+
+// List 处理 GET /examples。
 func (h *ExampleHandler) List(c ctxpkg.Context, reqCtx *app.RequestContext) {
 	var req requestvo.ListExamplesReqVo
 	if err := reqCtx.BindQuery(&req); err != nil {
-		respondError(h.GetContext(), reqCtx,err)
+		respondError(h.GetContext(), reqCtx, err)
 		return
 	}
 	if err := h.validate(&req, language(reqCtx)); err != nil {
-		respondError(h.GetContext(), reqCtx,err)
+		respondError(h.GetContext(), reqCtx, err)
 		return
 	}
 	resp, err := h.UseCase.List(requestContext(c), req)
 	if err != nil {
-		respondError(h.GetContext(), reqCtx,transport.MapDomainError(err))
+		respondError(h.GetContext(), reqCtx, transport.MapDomainError(err))
 		return
 	}
 	respondData(reqCtx, http.StatusOK, resp)
 }
 
-// Update 處理 PUT /examples/{id}
+// Update 处理 PUT /examples/{id}。
 func (h *ExampleHandler) Update(c ctxpkg.Context, reqCtx *app.RequestContext) {
 	var req requestvo.UpdateExampleReqVo
 	if err := reqCtx.BindJSON(&req); err != nil {
-		respondError(h.GetContext(), reqCtx,err)
+		respondError(h.GetContext(), reqCtx, err)
 		return
 	}
 	id := reqCtx.Param("id")
 	lang := language(reqCtx)
 	if err := h.validate(&req, lang); err != nil {
-		respondError(h.GetContext(), reqCtx,err)
+		respondError(h.GetContext(), reqCtx, err)
 		return
 	}
 	if err := h.validateID(id, lang); err != nil {
-		respondError(h.GetContext(), reqCtx,err)
+		respondError(h.GetContext(), reqCtx, err)
 		return
 	}
 	resp, err := h.UseCase.Update(requestContext(c), id, req)
 	if err != nil {
-		respondError(h.GetContext(), reqCtx,transport.MapDomainError(err))
+		respondError(h.GetContext(), reqCtx, transport.MapDomainError(err))
 		return
 	}
 	respondData(reqCtx, http.StatusOK, resp)
 }
 
-// Delete 處理 DELETE /examples/{id}
+// Delete 处理 DELETE /examples/{id}。
 func (h *ExampleHandler) Delete(c ctxpkg.Context, reqCtx *app.RequestContext) {
 	id := reqCtx.Param("id")
 	if err := h.validateID(id, language(reqCtx)); err != nil {
-		respondError(h.GetContext(), reqCtx,err)
+		respondError(h.GetContext(), reqCtx, err)
 		return
 	}
 	if err := h.UseCase.Delete(requestContext(c), id); err != nil {
-		respondError(h.GetContext(), reqCtx,transport.MapDomainError(err))
+		respondError(h.GetContext(), reqCtx, transport.MapDomainError(err))
 		return
 	}
 	reqCtx.SetStatusCode(http.StatusNoContent)

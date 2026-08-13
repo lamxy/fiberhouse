@@ -22,6 +22,7 @@ func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, app fiber.Router)
 // registerExampleRoutes 注册样例模块路由
 func registerExampleRoutes(router fiber.Router, handler *ExampleHandler) {
 	router.Post("/examples", handler.Create)
+	router.Get("/examples/cache/:id", handler.GetWithCache).Name("example_cache_demo")
 	router.Get("/examples/:id", handler.Get)
 	router.Get("/examples", handler.List)
 	router.Put("/examples/:id", handler.Update)

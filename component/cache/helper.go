@@ -153,8 +153,8 @@ const (
 )
 
 func NewShardedBloomFilter(shardCount int, estPerShard uint, fpRate float64) CacheBloomFilter {
-	// The bit-mask index requires a power of two. Preserve the legacy default
-	// for zero while making all positive requests safe for mask indexing.
+	// 位掩码索引要求分片数为 2 的幂。零值继续使用旧版默认值，
+	// 其余正数统一规范化，确保掩码索引安全。
 	if shardCount <= 0 {
 		shardCount = defaultBloomShards
 	}

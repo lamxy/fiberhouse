@@ -160,6 +160,11 @@ func (f *fakeExampleUseCase) Get(ctx context.Context, id string) (*responsevo.Ex
 	return &responsevo.ExampleRespVo{ID: id}, f.err
 }
 
+func (f *fakeExampleUseCase) GetWithCache(ctx context.Context, id string) (*responsevo.ExampleRespVo, error) {
+	f.operation, f.ctx, f.id = "get-with-cache", ctx, id
+	return &responsevo.ExampleRespVo{ID: id}, f.err
+}
+
 func (f *fakeExampleUseCase) List(ctx context.Context, req requestvo.ListExamplesReqVo) (*responsevo.ExampleListRespVo, error) {
 	f.operation, f.ctx, f.listReq = "list", ctx, req
 	return &responsevo.ExampleListRespVo{}, f.err
@@ -175,14 +180,14 @@ func (f *fakeExampleUseCase) Delete(ctx context.Context, id string) error {
 	return f.err
 }
 
-func TestRegisterExampleRoutes_GinCRUDContract(t *testing.T) {
+func TestRegisterExampleRoutes_GinCRUDAndCacheDemoContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	registerExampleRoutes(router, NewExampleHandler(nil, &fakeExampleUseCase{}))
 
 	var got []string
 	for _, route := range router.Routes() {
-		if route.Path == "/examples" || route.Path == "/examples/:id" {
+		if route.Path == "/examples" || route.Path == "/examples/:id" || route.Path == "/examples/cache/:id" {
 			got = append(got, route.Method+" "+route.Path)
 		}
 	}
@@ -191,11 +196,12 @@ func TestRegisterExampleRoutes_GinCRUDContract(t *testing.T) {
 		"DELETE /examples/:id",
 		"GET /examples",
 		"GET /examples/:id",
+		"GET /examples/cache/:id",
 		"POST /examples",
 		"PUT /examples/:id",
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("registered CRUD routes = %v, want %v", got, want)
+		t.Fatalf("registered example routes = %v, want %v", got, want)
 	}
 }
 

@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// Event identifies a cache-aside coordinator outcome that may be observed.
+// Event 表示可被观察的旁路缓存协调结果。
 type Event uint8
 
 const (
@@ -31,8 +31,7 @@ const (
 
 const negativeOriginMarker = "\x00fiberhouse-cache\x00v1\x00negative\x00origin-not-found"
 
-// FilterFailureMode determines the coordinator behavior when an existence
-// filter cannot make a decision.
+// FilterFailureMode 决定存在性过滤器无法完成判断时协调器的处理方式。
 type FilterFailureMode uint8
 
 const (
@@ -40,13 +39,13 @@ const (
 	FilterFailClosed
 )
 
-// Observer receives non-critical coordinator events. It must not block.
+// Observer 接收非关键的协调器事件，实现不得阻塞调用路径。
 type Observer func(Event)
 
-// CoordinatorOption configures a Coordinator.
+// CoordinatorOption 配置 Coordinator。
 type CoordinatorOption func(*Coordinator)
 
-// WithObserver installs an optional observer. A nil observer is ignored.
+// WithObserver 设置可选观察器，nil 会被忽略。
 func WithObserver(observer Observer) CoordinatorOption {
 	return func(c *Coordinator) {
 		if observer != nil {
@@ -55,8 +54,7 @@ func WithObserver(observer Observer) CoordinatorOption {
 	}
 }
 
-// WithExistenceFilter installs the authoritative key existence filter used by
-// Bloom-enabled requests.
+// WithExistenceFilter 设置启用布隆过滤请求所使用的权威键存在性过滤器。
 func WithExistenceFilter(filter ExistenceFilter) CoordinatorOption {
 	return func(c *Coordinator) {
 		if filter != nil {
@@ -65,8 +63,8 @@ func WithExistenceFilter(filter ExistenceFilter) CoordinatorOption {
 	}
 }
 
-// WithFilterFailureMode configures whether filter errors allow or reject a
-// request. The default remains fail open to preserve availability.
+// WithFilterFailureMode 配置过滤器出错时允许还是拒绝请求。默认故障开放，
+// 以优先保证可用性。
 func WithFilterFailureMode(mode FilterFailureMode) CoordinatorOption {
 	return func(c *Coordinator) {
 		if mode == FilterFailClosed {
@@ -75,8 +73,7 @@ func WithFilterFailureMode(mode FilterFailureMode) CoordinatorOption {
 	}
 }
 
-// Coordinator owns the singleflight group that protects an entire cache-aside
-// operation, not merely the backend Get call.
+// Coordinator 持有保护完整旁路缓存流程的单飞组，而不只是保护后端 Get 调用。
 type Coordinator struct {
 	cache             Cache
 	flights           singleflight.Group
@@ -89,7 +86,7 @@ type flightResult[R any] struct {
 	value R
 }
 
-// NewCoordinator constructs a full-path cache-aside coordinator for backend.
+// NewCoordinator 为 backend 创建完整路径的旁路缓存协调器。
 func NewCoordinator(backend Cache, options ...CoordinatorOption) (*Coordinator, error) {
 	if isNilCache(backend) {
 		return nil, errors.New("cache coordinator requires a backend")
@@ -107,8 +104,8 @@ func NewCoordinator(backend Cache, options ...CoordinatorOption) (*Coordinator, 
 	return c, nil
 }
 
-// GetOrLoad returns a decoded cache hit or executes one shared read-through
-// flight for a miss. Go does not permit generic methods, so this is a function.
+// GetOrLoad 在命中时返回解码结果，未命中时执行一次共享的穿透读取流程。
+// Go 不支持泛型方法，因此这里使用泛型函数。
 func GetOrLoad[R any](coordinator *Coordinator, request *CacheOption, loader func(context.Context) (R, error)) (R, error) {
 	var zero R
 	if coordinator == nil || isNilCache(coordinator.cache) {
@@ -245,8 +242,8 @@ func negativeCacheOption(request *CacheOption) *CacheOption {
 	return option
 }
 
-// snapshotCacheOption detaches an asynchronous flight from the caller-owned
-// option, which may be returned to its pool as soon as that caller cancels.
+// snapshotCacheOption 将异步单飞与调用方持有的选项分离，避免调用方取消后
+// 立即把选项放回池中而影响仍在执行的共享流程。
 func snapshotCacheOption(request *CacheOption) *CacheOption {
 	snapshot := *request
 	if request.localTTLConfig != nil {
@@ -283,8 +280,8 @@ func isNilCache(cache Cache) bool {
 
 var coordinatorsByBackend sync.Map
 
-// GetCached is kept for compatibility. New callers should retain a Coordinator
-// and call GetOrLoad directly so all callers share the same full-path flight.
+// GetCached 为兼容旧代码而保留。新调用方应长期保存 Coordinator 并直接调用
+// GetOrLoad，使所有调用方共享同一个完整路径单飞。
 func GetCached[R any](
 	cacheOption *CacheOption,
 	loader func(context.Context) (R, error),
@@ -353,17 +350,17 @@ func cacheIdentity(backend Cache) (any, bool) {
 	return nil, false
 }
 
-// Factory resolves cache backends from the application's registry.
+// Factory 从应用注册表中解析缓存后端。
 type Factory struct {
 	ctx fiberhouse.IContext
 }
 
-// NewFactory creates a cache factory.
+// NewFactory 创建缓存工厂。
 func NewFactory(ctx fiberhouse.IContext) *Factory {
 	return &Factory{ctx: ctx}
 }
 
-// Lookup returns the requested cache backend without compatibility panics.
+// Lookup 返回请求的缓存后端，并以错误代替兼容入口中的 panic。
 func (cf *Factory) Lookup(level Level) (Cache, error) {
 	if cf == nil || cf.ctx == nil {
 		return nil, errors.New("cache factory requires a context")
@@ -387,7 +384,7 @@ func (cf *Factory) Lookup(level Level) (Cache, error) {
 	return fiberhouse.GetInstance[Cache](key)
 }
 
-// GetCache preserves the original panic-on-resolution-failure behavior.
+// GetCache 保留解析失败时 panic 的原有兼容行为。
 func (cf *Factory) GetCache(level Level) Cache {
 	backend, err := cf.Lookup(level)
 	if err != nil {

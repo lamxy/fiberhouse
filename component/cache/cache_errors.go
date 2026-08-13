@@ -19,7 +19,7 @@ var (
 	ErrDeserializationFailed = errors.New("cache: deserialization failed")
 )
 
-// IsMiss reports whether err represents a cache miss.
+// IsMiss 判断 err 是否表示缓存未命中。
 func IsMiss(err error) bool {
 	return errors.Is(err, ErrKeyNotFound)
 }

@@ -5,9 +5,9 @@ import (
 	"github.com/lamxy/fiberhouse"
 )
 
-// RegisterRouteHandlers 註冊 example 模組的 hertz 路由處理器
+// RegisterRouteHandlers 注册 example 模块的 Hertz 路由处理器。
 //
-// 路由路徑與 gin 適配器保持一致，差異僅在於 hertz 的路徑參數語法為 :id（與 gin 相同）。
+// 路由路径与 Gin 适配器保持一致，路径参数语法同样使用 :id。
 func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, router route.IRouter) {
 	exampleAPI, _ := InjectExampleApi(ctx)
 	registerExampleRoutes(router, exampleAPI)
@@ -30,6 +30,7 @@ func registerHealthRoutes(router route.IRouter, handler *HealthHandler) {
 
 func registerExampleRoutes(router route.IRouter, handler *ExampleHandler) {
 	router.POST("/examples", handler.Create)
+	router.GET("/examples/cache/:id", handler.GetWithCache)
 	router.GET("/examples/:id", handler.Get)
 	router.GET("/examples", handler.List)
 	router.PUT("/examples/:id", handler.Update)
