@@ -86,8 +86,8 @@ func TestLive_RedisDb_PingSetGetDeleteClose(t *testing.T) {
 	var errRedisNil cache.ErrRedisNil
 	require.True(t, errors.As(err, &errRedisNil), "expected cache.ErrRedisNil, got %T: %v", err, err)
 
-	// Close 成功后再次调用任意方法（这里再次 Close），验证返回 cache.ErrCacheClosed
+	// Close 可以重复调用且保持幂等；关闭后的缓存操作返回 cache.ErrCacheClosed。
 	require.NoError(t, rd.Close())
-	closeErr := rd.Close()
-	require.ErrorIs(t, closeErr, cache.ErrCacheClosed)
+	require.ErrorIs(t, rd.Delete(context.Background(), key), cache.ErrCacheClosed)
+	require.NoError(t, rd.Close())
 }
