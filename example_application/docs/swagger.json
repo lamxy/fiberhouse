@@ -23,7 +23,7 @@
     "paths": {
         "/examples": {
             "get": {
-                "description": "Paginate example resources, optionally filtered by status.",
+                "description": "分页查询 example 资源，可按 status 过滤。",
                 "consumes": [
                     "application/json"
                 ],
@@ -33,18 +33,18 @@
                 "tags": [
                     "example"
                 ],
-                "summary": "List examples",
+                "summary": "查询 example 列表",
                 "operationId": "fiberListExamples",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "page number (default 1)",
+                        "description": "页码（默认 1）",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "page size, max 100 (default 20)",
+                        "description": "每页数量，最大 100（默认 20）",
                         "name": "page_size",
                         "in": "query"
                     },
@@ -54,7 +54,7 @@
                             "archived"
                         ],
                         "type": "string",
-                        "description": "filter by status",
+                        "description": "按状态过滤",
                         "name": "status",
                         "in": "query"
                     }
@@ -79,13 +79,13 @@
                         }
                     },
                     "400": {
-                        "description": "invalid query parameters",
+                        "description": "查询参数非法",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     },
                     "500": {
-                        "description": "internal error",
+                        "description": "内部错误",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
@@ -93,7 +93,7 @@
                 }
             },
             "post": {
-                "description": "Create a new example resource with name, description, status and tags.",
+                "description": "使用 name、description、status 和 tags 创建一个新的 example 资源。",
                 "consumes": [
                     "application/json"
                 ],
@@ -103,11 +103,11 @@
                 "tags": [
                     "example"
                 ],
-                "summary": "Create an example",
+                "summary": "创建 example",
                 "operationId": "fiberCreateExample",
                 "parameters": [
                     {
-                        "description": "Example to create",
+                        "description": "待创建的 example",
                         "name": "example",
                         "in": "body",
                         "required": true,
@@ -136,13 +136,13 @@
                         }
                     },
                     "400": {
-                        "description": "invalid input / validation error",
+                        "description": "输入非法 / 校验错误",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     },
                     "500": {
-                        "description": "internal error",
+                        "description": "内部错误",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
@@ -150,24 +150,21 @@
                 }
             }
         },
-        "/examples/{id}": {
+        "/examples/cache/{id}": {
             "get": {
-                "description": "Fetch a single example resource by id.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "按 id 读取 example，并演示二级缓存、完整路径单飞、TTL 抖动和请求上下文传播。",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "example"
                 ],
-                "summary": "Get an example",
-                "operationId": "fiberGetExample",
+                "summary": "缓存组件使用样例",
+                "operationId": "fiberGetExampleWithCache",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Example id",
+                        "description": "example id",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -193,27 +190,29 @@
                         }
                     },
                     "400": {
-                        "description": "invalid id",
+                        "description": "id 非法",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     },
                     "404": {
-                        "description": "example not found",
+                        "description": "example 不存在",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     },
                     "500": {
-                        "description": "internal error",
+                        "description": "缓存或内部错误",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     }
                 }
-            },
-            "put": {
-                "description": "Partially update an example resource by id. Only fields present in the request body are changed.",
+            }
+        },
+        "/examples/{id}": {
+            "get": {
+                "description": "按 id 获取单个 example 资源。",
                 "consumes": [
                     "application/json"
                 ],
@@ -223,18 +222,79 @@
                 "tags": [
                     "example"
                 ],
-                "summary": "Update an example",
+                "summary": "获取 example",
+                "operationId": "fiberGetExample",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "example id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.RespInfo"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/responsevo.ExampleRespVo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "id 非法",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "example 不存在",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "内部错误",
+                        "schema": {
+                            "$ref": "#/definitions/response.RespInfo"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "按 id 部分更新 example 资源，仅更新请求体中出现的字段。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "example"
+                ],
+                "summary": "更新 example",
                 "operationId": "fiberUpdateExample",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Example id",
+                        "description": "example id",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "Fields to update",
+                        "description": "待更新的字段",
                         "name": "example",
                         "in": "body",
                         "required": true,
@@ -263,25 +323,25 @@
                         }
                     },
                     "400": {
-                        "description": "invalid input / validation error",
+                        "description": "输入非法 / 校验错误",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     },
                     "404": {
-                        "description": "example not found",
+                        "description": "example 不存在",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     },
                     "409": {
-                        "description": "conflicting or unchanged update",
+                        "description": "更新冲突或内容未变化",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     },
                     "500": {
-                        "description": "internal error",
+                        "description": "内部错误",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
@@ -289,7 +349,7 @@
                 }
             },
             "delete": {
-                "description": "Remove an example resource by id.",
+                "description": "按 id 删除 example 资源。",
                 "consumes": [
                     "application/json"
                 ],
@@ -299,12 +359,12 @@
                 "tags": [
                     "example"
                 ],
-                "summary": "Delete an example",
+                "summary": "删除 example",
                 "operationId": "fiberDeleteExample",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Example id",
+                        "description": "example id",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -312,22 +372,22 @@
                 ],
                 "responses": {
                     "204": {
-                        "description": "no content"
+                        "description": "无内容"
                     },
                     "400": {
-                        "description": "invalid id",
+                        "description": "id 非法",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     },
                     "404": {
-                        "description": "example not found",
+                        "description": "example 不存在",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
                     },
                     "500": {
-                        "description": "internal error",
+                        "description": "内部错误",
                         "schema": {
                             "$ref": "#/definitions/response.RespInfo"
                         }
@@ -344,18 +404,18 @@
             ],
             "properties": {
                 "description": {
-                    "description": "Free-text description, up to 500 characters.\nexample: A short description of the example.",
+                    "description": "自由文本描述，最多 500 个字符。\nexample: A short description of the example.",
                     "type": "string",
                     "maxLength": 500
                 },
                 "name": {
-                    "description": "Display name of the example. Required, 2-80 characters.\nexample: My Example",
+                    "description": "example 的展示名称。必填，2-80 个字符。\nexample: My Example",
                     "type": "string",
                     "maxLength": 80,
                     "minLength": 2
                 },
                 "status": {
-                    "description": "Lifecycle status; one of active/archived. Defaults are applied at the service layer.\nexample: active",
+                    "description": "生命周期状态；取 active/archived 之一。默认值在 service 层应用。\nexample: active",
                     "type": "string",
                     "enum": [
                         "active",
@@ -363,7 +423,7 @@
                     ]
                 },
                 "tags": {
-                    "description": "Up to 10 free-form tags, each 1-30 characters.\nexample: [\"demo\",\"swagger\"]",
+                    "description": "最多 10 个自由标签，每个 1-30 个字符。\nexample: [\"demo\",\"swagger\"]",
                     "type": "array",
                     "maxItems": 10,
                     "items": {
@@ -376,18 +436,18 @@
             "type": "object",
             "properties": {
                 "description": {
-                    "description": "New description, up to 500 characters. Omit to leave unchanged.\nexample: Updated description.",
+                    "description": "新的描述，最多 500 个字符。省略则保持不变。\nexample: Updated description.",
                     "type": "string",
                     "maxLength": 500
                 },
                 "name": {
-                    "description": "New display name, 2-80 characters. Omit to leave unchanged.\nexample: My Renamed Example",
+                    "description": "新的展示名称，2-80 个字符。省略则保持不变。\nexample: My Renamed Example",
                     "type": "string",
                     "maxLength": 80,
                     "minLength": 2
                 },
                 "status": {
-                    "description": "New status; one of active/archived. Omit to leave unchanged.\nexample: archived",
+                    "description": "新的状态；取 active/archived 之一。省略则保持不变。\nexample: archived",
                     "type": "string",
                     "enum": [
                         "active",
@@ -395,7 +455,7 @@
                     ]
                 },
                 "tags": {
-                    "description": "New tag set, up to 10 tags each 1-30 characters. Omit to leave unchanged.\nexample: [\"demo\"]",
+                    "description": "新的标签集合，最多 10 个、每个 1-30 个字符。省略则保持不变。\nexample: [\"demo\"]",
                     "type": "array",
                     "maxItems": 10,
                     "items": {
@@ -420,22 +480,22 @@
             "type": "object",
             "properties": {
                 "items": {
-                    "description": "The examples on this page.",
+                    "description": "本页的 example 列表。",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/responsevo.ExampleRespVo"
                     }
                 },
                 "page": {
-                    "description": "Effective page number returned.\nexample: 1",
+                    "description": "实际返回的页码。\nexample: 1",
                     "type": "integer"
                 },
                 "page_size": {
-                    "description": "Effective page size returned.\nexample: 20",
+                    "description": "实际返回的每页数量。\nexample: 20",
                     "type": "integer"
                 },
                 "total": {
-                    "description": "Total number of examples matching the filter, across all pages.\nexample: 42",
+                    "description": "满足过滤条件的 example 总数（跨所有页）。\nexample: 42",
                     "type": "integer"
                 }
             }
@@ -447,23 +507,23 @@
                     "type": "string"
                 },
                 "description": {
-                    "description": "Free-text description.\nexample: A short description of the example.",
+                    "description": "自由文本描述。\nexample: A short description of the example.",
                     "type": "string"
                 },
                 "id": {
-                    "description": "Unique identifier of the example.\nexample: 01f8h6z8k9q2p3r4s5t6u7v8w9",
+                    "description": "example 的唯一标识。\nexample: 01f8h6z8k9q2p3r4s5t6u7v8w9",
                     "type": "string"
                 },
                 "name": {
-                    "description": "Display name of the example.\nexample: My Example",
+                    "description": "example 的展示名称。\nexample: My Example",
                     "type": "string"
                 },
                 "status": {
-                    "description": "Lifecycle status; one of active/archived.\nexample: active",
+                    "description": "生命周期状态；取 active/archived 之一。\nexample: active",
                     "type": "string"
                 },
                 "tags": {
-                    "description": "Free-form tags associated with the example.\nexample: [\"demo\",\"swagger\"]",
+                    "description": "与该 example 关联的自由标签。\nexample: [\"demo\",\"swagger\"]",
                     "type": "array",
                     "items": {
                         "type": "string"

@@ -6,20 +6,20 @@ definitions:
     properties:
       description:
         description: |-
-          Free-text description, up to 500 characters.
+          自由文本描述，最多 500 个字符。
           example: A short description of the example.
         maxLength: 500
         type: string
       name:
         description: |-
-          Display name of the example. Required, 2-80 characters.
+          example 的展示名称。必填，2-80 个字符。
           example: My Example
         maxLength: 80
         minLength: 2
         type: string
       status:
         description: |-
-          Lifecycle status; one of active/archived. Defaults are applied at the service layer.
+          生命周期状态；取 active/archived 之一。默认值在 service 层应用。
           example: active
         enum:
         - active
@@ -27,7 +27,7 @@ definitions:
         type: string
       tags:
         description: |-
-          Up to 10 free-form tags, each 1-30 characters.
+          最多 10 个自由标签，每个 1-30 个字符。
           example: ["demo","swagger"]
         items:
           type: string
@@ -40,20 +40,20 @@ definitions:
     properties:
       description:
         description: |-
-          New description, up to 500 characters. Omit to leave unchanged.
+          新的描述，最多 500 个字符。省略则保持不变。
           example: Updated description.
         maxLength: 500
         type: string
       name:
         description: |-
-          New display name, 2-80 characters. Omit to leave unchanged.
+          新的展示名称，2-80 个字符。省略则保持不变。
           example: My Renamed Example
         maxLength: 80
         minLength: 2
         type: string
       status:
         description: |-
-          New status; one of active/archived. Omit to leave unchanged.
+          新的状态；取 active/archived 之一。省略则保持不变。
           example: archived
         enum:
         - active
@@ -61,7 +61,7 @@ definitions:
         type: string
       tags:
         description: |-
-          New tag set, up to 10 tags each 1-30 characters. Omit to leave unchanged.
+          新的标签集合，最多 10 个、每个 1-30 个字符。省略则保持不变。
           example: ["demo"]
         items:
           type: string
@@ -79,23 +79,23 @@ definitions:
   responsevo.ExampleListRespVo:
     properties:
       items:
-        description: The examples on this page.
+        description: 本页的 example 列表。
         items:
           $ref: '#/definitions/responsevo.ExampleRespVo'
         type: array
       page:
         description: |-
-          Effective page number returned.
+          实际返回的页码。
           example: 1
         type: integer
       page_size:
         description: |-
-          Effective page size returned.
+          实际返回的每页数量。
           example: 20
         type: integer
       total:
         description: |-
-          Total number of examples matching the filter, across all pages.
+          满足过滤条件的 example 总数（跨所有页）。
           example: 42
         type: integer
     type: object
@@ -105,27 +105,27 @@ definitions:
         type: string
       description:
         description: |-
-          Free-text description.
+          自由文本描述。
           example: A short description of the example.
         type: string
       id:
         description: |-
-          Unique identifier of the example.
+          example 的唯一标识。
           example: 01f8h6z8k9q2p3r4s5t6u7v8w9
         type: string
       name:
         description: |-
-          Display name of the example.
+          example 的展示名称。
           example: My Example
         type: string
       status:
         description: |-
-          Lifecycle status; one of active/archived.
+          生命周期状态；取 active/archived 之一。
           example: active
         type: string
       tags:
         description: |-
-          Free-form tags associated with the example.
+          与该 example 关联的自由标签。
           example: ["demo","swagger"]
         items:
           type: string
@@ -145,18 +145,18 @@ paths:
     get:
       consumes:
       - application/json
-      description: Paginate example resources, optionally filtered by status.
+      description: 分页查询 example 资源，可按 status 过滤。
       operationId: fiberListExamples
       parameters:
-      - description: page number (default 1)
+      - description: 页码（默认 1）
         in: query
         name: page
         type: integer
-      - description: page size, max 100 (default 20)
+      - description: 每页数量，最大 100（默认 20）
         in: query
         name: page_size
         type: integer
-      - description: filter by status
+      - description: 按状态过滤
         enum:
         - active
         - archived
@@ -176,24 +176,23 @@ paths:
                   $ref: '#/definitions/responsevo.ExampleListRespVo'
               type: object
         "400":
-          description: invalid query parameters
+          description: 查询参数非法
           schema:
             $ref: '#/definitions/response.RespInfo'
         "500":
-          description: internal error
+          description: 内部错误
           schema:
             $ref: '#/definitions/response.RespInfo'
-      summary: List examples
+      summary: 查询 example 列表
       tags:
       - example
     post:
       consumes:
       - application/json
-      description: Create a new example resource with name, description, status and
-        tags.
+      description: 使用 name、description、status 和 tags 创建一个新的 example 资源。
       operationId: fiberCreateExample
       parameters:
-      - description: Example to create
+      - description: 待创建的 example
         in: body
         name: example
         required: true
@@ -212,24 +211,24 @@ paths:
                   $ref: '#/definitions/responsevo.ExampleRespVo'
               type: object
         "400":
-          description: invalid input / validation error
+          description: 输入非法 / 校验错误
           schema:
             $ref: '#/definitions/response.RespInfo'
         "500":
-          description: internal error
+          description: 内部错误
           schema:
             $ref: '#/definitions/response.RespInfo'
-      summary: Create an example
+      summary: 创建 example
       tags:
       - example
   /examples/{id}:
     delete:
       consumes:
       - application/json
-      description: Remove an example resource by id.
+      description: 按 id 删除 example 资源。
       operationId: fiberDeleteExample
       parameters:
-      - description: Example id
+      - description: example id
         in: path
         name: id
         required: true
@@ -238,29 +237,29 @@ paths:
       - application/json
       responses:
         "204":
-          description: no content
+          description: 无内容
         "400":
-          description: invalid id
+          description: id 非法
           schema:
             $ref: '#/definitions/response.RespInfo'
         "404":
-          description: example not found
+          description: example 不存在
           schema:
             $ref: '#/definitions/response.RespInfo'
         "500":
-          description: internal error
+          description: 内部错误
           schema:
             $ref: '#/definitions/response.RespInfo'
-      summary: Delete an example
+      summary: 删除 example
       tags:
       - example
     get:
       consumes:
       - application/json
-      description: Fetch a single example resource by id.
+      description: 按 id 获取单个 example 资源。
       operationId: fiberGetExample
       parameters:
-      - description: Example id
+      - description: example id
         in: path
         name: id
         required: true
@@ -278,33 +277,32 @@ paths:
                   $ref: '#/definitions/responsevo.ExampleRespVo'
               type: object
         "400":
-          description: invalid id
+          description: id 非法
           schema:
             $ref: '#/definitions/response.RespInfo'
         "404":
-          description: example not found
+          description: example 不存在
           schema:
             $ref: '#/definitions/response.RespInfo'
         "500":
-          description: internal error
+          description: 内部错误
           schema:
             $ref: '#/definitions/response.RespInfo'
-      summary: Get an example
+      summary: 获取 example
       tags:
       - example
     put:
       consumes:
       - application/json
-      description: Partially update an example resource by id. Only fields present
-        in the request body are changed.
+      description: 按 id 部分更新 example 资源，仅更新请求体中出现的字段。
       operationId: fiberUpdateExample
       parameters:
-      - description: Example id
+      - description: example id
         in: path
         name: id
         required: true
         type: string
-      - description: Fields to update
+      - description: 待更新的字段
         in: body
         name: example
         required: true
@@ -323,22 +321,59 @@ paths:
                   $ref: '#/definitions/responsevo.ExampleRespVo'
               type: object
         "400":
-          description: invalid input / validation error
+          description: 输入非法 / 校验错误
           schema:
             $ref: '#/definitions/response.RespInfo'
         "404":
-          description: example not found
+          description: example 不存在
           schema:
             $ref: '#/definitions/response.RespInfo'
         "409":
-          description: conflicting or unchanged update
+          description: 更新冲突或内容未变化
           schema:
             $ref: '#/definitions/response.RespInfo'
         "500":
-          description: internal error
+          description: 内部错误
           schema:
             $ref: '#/definitions/response.RespInfo'
-      summary: Update an example
+      summary: 更新 example
+      tags:
+      - example
+  /examples/cache/{id}:
+    get:
+      description: 按 id 读取 example，并演示二级缓存、完整路径单飞、TTL 抖动和请求上下文传播。
+      operationId: fiberGetExampleWithCache
+      parameters:
+      - description: example id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.RespInfo'
+            - properties:
+                data:
+                  $ref: '#/definitions/responsevo.ExampleRespVo'
+              type: object
+        "400":
+          description: id 非法
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "404":
+          description: example 不存在
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+        "500":
+          description: 缓存或内部错误
+          schema:
+            $ref: '#/definitions/response.RespInfo'
+      summary: 缓存组件使用样例
       tags:
       - example
 produces:
