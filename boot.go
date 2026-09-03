@@ -39,7 +39,7 @@ func RunApplicationStarter(starter ApplicationStarter, managers ...IProviderMana
 	starter.RegisterModuleInitialize(starter.GetFrameApp(), managers...) // 同上
 	starter.RegisterModuleSwagger(starter.GetFrameApp(), managers...)    // 同上
 	starter.RegisterTaskServer(managers...)                              // 同上
-	starter.RegisterGlobalsKeepalive(managers...)                        // 同上
+	starter.RegisterGlobalsHealthCheck(managers...)                      // 同上
 	return starter.AppCoreRun(managers...)                               // 同上
 }
 
@@ -358,8 +358,8 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	// 异步任务服务器注册执行位置点，完成异步任务注册
 	appStarter.RegisterTaskServer(ProviderLocationDefault().LocationTaskServerInit.GetManagers()...)
 
-	// 全局对象保活注册执行位置点，完成全局对象探测和保活机制
-	appStarter.RegisterGlobalsKeepalive(ProviderLocationDefault().LocationGlobalHealthCheckInit.GetManagers()...)
+	// 全局对象健康检查注册执行位置点，完成全局对象周期性健康观测（不做重建）
+	appStarter.RegisterGlobalsHealthCheck(ProviderLocationDefault().LocationGlobalHealthCheckInit.GetManagers()...)
 
 	// 运行前执行位置点，完成核心应用服务器监听前的必要逻辑（如有）
 	// 该位点允许注册多个管理器并全部执行，不再限制为唯一绑定模式；

@@ -65,9 +65,11 @@ type FrameStarter interface {
 	// 便于获取已附加来源标记的专用日志器实例
 	RegisterLoggerWithOriginToContainer()
 
-	// RegisterGlobalsKeepalive 注册全局对象保活机制
-	// 启动后台健康检测服务，定期检查全局对象状态并自动重建不健康的实例
-	RegisterGlobalsKeepalive(...IProviderManager)
+	// RegisterGlobalsHealthCheck 注册全局对象健康检查
+	// 启动后台健康检查服务，周期性检查全局对象状态并记录不健康的实例。
+	// 仅观测上报，不做任何重建：连接池型对象的失效恢复由驱动层负责。
+	// 由 application.globalManage.healthCheck 开关控制，默认关闭。
+	RegisterGlobalsHealthCheck(...IProviderManager)
 
 	// RegisterTaskServer 注册异步任务服务器
 	// 根据配置启动异步任务服务器，注册任务处理器，运行后台任务worker服务并开始监听任务队列

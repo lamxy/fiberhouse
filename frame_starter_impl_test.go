@@ -284,7 +284,7 @@ func TestFrameApplication_GuardsAvoidStartupSideEffects(t *testing.T) {
 		frame.RegisterValidatorCustomTags()
 		frame.RegisterLoggerWithOriginToContainer()
 		frame.RegisterTaskServer()
-		assert.NotPanics(t, func() { frame.RegisterGlobalsKeepalive() })
+		assert.NotPanics(t, func() { frame.RegisterGlobalsHealthCheck() })
 
 		assert.Nil(t, ctx.GetStarterApp())
 		assert.Zero(t, task.serverRegistrations)
@@ -299,7 +299,7 @@ func TestFrameApplication_GuardsAvoidStartupSideEffects(t *testing.T) {
 		forceFrameTestZeroInterval(t, disabledCtx)
 		disabled := &FrameApplication{Ctx: disabledCtx, task: &frameTestTask{}}
 		disabled.RegisterTaskServer()
-		assert.NotPanics(t, func() { disabled.RegisterGlobalsKeepalive() })
+		assert.NotPanics(t, func() { disabled.RegisterGlobalsHealthCheck() })
 
 		enabledCtx, _ := newFrameTestContext(t, map[string]interface{}{"application.task.enableServer": true})
 		enabled := &FrameApplication{Ctx: enabledCtx}

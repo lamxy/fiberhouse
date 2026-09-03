@@ -81,8 +81,8 @@ func (s *lifecycleRecordingStarter) RegisterTaskServer(managers ...IProviderMana
 	s.record("RegisterTaskServer", managers)
 }
 
-func (s *lifecycleRecordingStarter) RegisterGlobalsKeepalive(managers ...IProviderManager) {
-	s.record("RegisterGlobalsKeepalive", managers)
+func (s *lifecycleRecordingStarter) RegisterGlobalsHealthCheck(managers ...IProviderManager) {
+	s.record("RegisterGlobalsHealthCheck", managers)
 }
 
 func (s *lifecycleRecordingStarter) AppCoreRun(managers ...IProviderManager) error {
@@ -109,7 +109,7 @@ func TestRunApplicationStarter_UsesDocumentedOrderAndSameManagers(t *testing.T) 
 		"RegisterModuleInitialize",
 		"RegisterModuleSwagger",
 		"RegisterTaskServer",
-		"RegisterGlobalsKeepalive",
+		"RegisterGlobalsHealthCheck",
 		"AppCoreRun",
 	}, recorder.stages)
 	for stage, got := range recorder.managerCalls {
