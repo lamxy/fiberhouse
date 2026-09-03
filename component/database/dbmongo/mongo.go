@@ -10,7 +10,6 @@ package dbmongo
 import (
 	"context"
 	"reflect"
-	"sync"
 	"time"
 
 	"github.com/govalues/decimal"
@@ -32,14 +31,11 @@ import (
 // 心跳机制，由 heartbeatInterval 驱动，自动跟随副本集选主与拓扑变化。
 // 主动重建反而会丢弃已探测好的拓扑状态，需重新走一遍服务发现流程。
 //
-// Client 可能被 ReNewClient 并发替换（运维显式调用），因此内部读取一律通过
-// clientSnapshot 获取读锁快照。lock 使用值类型，保证零值可用，
-// 使 &MongoDb{Client: ...} 形式的字面量构造依然安全。
+// Client 在构造后不再被替换，因此无需锁保护：*mongo.Client 自身并发安全，
+// 内部维护连接池与拓扑状态，可被多个 goroutine 直接共享。
 type MongoDb struct {
-	Client       *mongo.Client
-	Ctx          fiberhouse.IContext
-	lock         sync.RWMutex
-	confPathname string
+	Client *mongo.Client
+	Ctx    fiberhouse.IContext
 }
 
 // 契约断言：MongoDb 仅提供关闭与健康观测能力。
@@ -49,14 +45,6 @@ var (
 	_ globalmanager.HealthChecker = (*MongoDb)(nil)
 )
 
-// clientSnapshot 在读锁保护下获取当前 mongo 客户端快照。
-func (md *MongoDb) clientSnapshot() *mongo.Client {
-	md.lock.RLock()
-	client := md.Client
-	md.lock.RUnlock()
-	return client
-}
-
 // NewMongoDb 创建 MongoDb 实例
 // dbConfName 可选，指定配置路径名称，默认 constant.DefaultMongoDBConfName
 func NewMongoDb(appCtx fiberhouse.IContext, confPath ...string) (*MongoDb, error) {
@@ -65,15 +53,10 @@ func NewMongoDb(appCtx fiberhouse.IContext, confPath ...string) (*MongoDb, error
 		appCtx.GetLogger().Error(appCtx.GetConfig().LogOriginMongodb()).Err(err).Msg("initial mongo client failed.")
 		return nil, err
 	}
-	db := &MongoDb{
-		Client:       client,
-		Ctx:          appCtx,
-		confPathname: constant.DefaultMongoDBConfName,
-	}
-	if len(confPath) > 0 {
-		db.confPathname = confPath[0]
-	}
-	return db, nil
+	return &MongoDb{
+		Client: client,
+		Ctx:    appCtx,
+	}, nil
 }
 
 // NewClient 依据配置实例化不同的db连接实例
@@ -122,21 +105,15 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) (*mongo.Client, e
 	return mongo.Connect(clientOptions)
 }
 
-// GetConfPath 获取当前实例使用的配置路径
-func (md *MongoDb) GetConfPath() string {
-	return md.confPathname
-}
-
 // Close 关闭 MongoDB 客户端连接
 // 谨慎使用Close关闭链接
 func (md *MongoDb) Close() error {
-	client := md.clientSnapshot()
-	if client == nil {
+	if md.Client == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return client.Disconnect(ctx)
+	return md.Client.Disconnect(ctx)
 }
 
 // IsHealthy 检查MongoDB连接是否健康
@@ -146,50 +123,16 @@ func (md *MongoDb) IsHealthy() bool {
 	return md.PingTry(ctx)
 }
 
-// ReNewClient 重建 MongoDB 客户端连接。
-//
-// 这是一个供运维场景显式调用的低阶方法（如凭证轮换），不实现 globalmanager.Rebuilder，
-// 因此不会被全局容器的健康检查或 Rebuild 流程自动触发。原因见类型注释。
-//
-// 注意：替换后会立即断开旧客户端，当前没有排空（drain）机制，
-// 正在使用旧连接执行的操作会被中断；且重建会丢弃驱动已探测好的副本集拓扑，
-// 需要重新走一遍服务发现流程。调用方需自行保证时机安全。
-func (md *MongoDb) ReNewClient(confPath ...string) (*MongoDb, error) {
-	md.lock.Lock()
-	defer md.lock.Unlock()
-
-	if len(confPath) == 0 || confPath[0] == "" {
-		confPath = []string{md.confPathname}
-	}
-	client, errNc := NewClient(md.Ctx, confPath...)
-	if errNc != nil {
-		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Err(errNc).Stack().Msg("Mongo ReNewClient error")
-		return md, errNc
-	}
-	old := md.Client
-	md.Client = client
-	// 断开旧客户端，否则每次重建都会泄漏一整池连接（最多 maxPoolSize 条）及其后台监控协程。
-	if old != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := old.Disconnect(ctx); err != nil {
-			md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Err(err).Msg("Mongo disconnect previous client error")
-		}
-	}
-	return md, nil
-}
-
 // PingTry 仅仅用于监控检查
 func (md *MongoDb) PingTry(ctx context.Context) bool {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	client := md.clientSnapshot()
-	if client == nil {
+	if md.Client == nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Msg("Mongo Client is nil, please check if the database connection is established")
 		return false
 	}
-	if sr := client.Database("test").RunCommand(ctx, bson.D{{Key: "ping", Value: 1}}); sr.Err() != nil {
+	if sr := md.Client.Database("test").RunCommand(ctx, bson.D{{Key: "ping", Value: 1}}); sr.Err() != nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Err(sr.Err()).Stack().Msg("Mongo PingTry error")
 		return false
 	}

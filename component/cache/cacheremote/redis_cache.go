@@ -29,10 +29,9 @@ import (
 // 重建 TCP；Sentinel / Cluster 模式下的故障转移同样由驱动自行处理。
 // 应用侧主动重建连接池既无必要，也会中断在途请求。
 type RedisDb struct {
-	Client       *redis.Client
-	Ctx          fiberhouse.IContext
-	lock         sync.RWMutex
-	confPathname string
+	Client *redis.Client
+	Ctx    fiberhouse.IContext
+	lock   sync.RWMutex
 	// 缓存调用close关闭则阻止所有方法执行逻辑
 	closed         atomic.Bool
 	level          cache.Level
@@ -95,13 +94,7 @@ func NewRedisDbWithOptions(appCtx fiberhouse.IContext, optionFns ...RedisOption)
 		level:          cache.Remote,
 		circuitBreaker: options.circuitBreaker,
 	}
-	ca.confPathname = options.confPath
 	return ca, nil
-}
-
-// GetConfPath 获取 Redis 配置路径
-func (rd *RedisDb) GetConfPath() string {
-	return rd.confPathname
 }
 
 // GetRedisClient 获取底层 Redis 客户端实例
@@ -255,33 +248,6 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) *redis.Client {
 		ConnMaxIdleTime: aConf.Duration(basePath+".connMaxIdleTime") * time.Second, // 空闲连接超时时间
 		ConnMaxLifetime: aConf.Duration(basePath+".connMaxLifetime") * time.Second, // 连接的最大生命周期
 	})
-}
-
-// ReNewClient 重新创建 Redis 客户端连接。
-//
-// 这是一个供运维场景显式调用的低阶方法（如凭证轮换），不实现 globalmanager.Rebuilder，
-// 因此不会被全局容器的健康检查或 Rebuild 流程自动触发。原因见类型注释。
-//
-// 注意：替换后会立即关闭旧客户端，当前没有排空（drain）机制，
-// 正在使用旧连接执行的命令会被中断。调用方需自行保证时机安全。
-func (rd *RedisDb) ReNewClient(confPath ...string) (*RedisDb, error) {
-	path := rd.confPathname
-	if len(confPath) > 0 && confPath[0] != "" {
-		path = confPath[0]
-	}
-	client := NewClient(rd.Ctx, path)
-	rd.lock.Lock()
-	defer rd.lock.Unlock()
-	if rd.closed.Load() {
-		_ = client.Close()
-		return rd, cache.ErrCacheClosed
-	}
-	old := rd.Client
-	rd.Client = client
-	if old != nil {
-		_ = old.Close()
-	}
-	return rd, nil
 }
 
 // PingTry 尝试 ping Redis 服务器，检查连接是否可用

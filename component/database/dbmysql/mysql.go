@@ -20,7 +20,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -71,14 +70,11 @@ func (l *GormLoggerAdapter) Printf(format string, v ...interface{}) {
 // 中间设备静默掐断的场景；而实例迁移、主从切换等拓扑变更应由 DNS、VIP 或
 // ProxySQL 等基础设施层处理，应用侧无需也不应自行重建连接池。
 //
-// Client 可能被 ReNewClient 并发替换（运维显式调用），因此内部读取一律通过
-// clientSnapshot 获取读锁快照。lock 使用值类型，保证零值可用，
-// 使 &MysqlDb{Client: ...} 形式的字面量构造依然安全。
+// Client 在构造后不再被替换，因此无需锁保护：*gorm.DB 自身并发安全，
+// 底层 sql.DB 是并发安全的连接池，可被多个 goroutine 直接共享。
 type MysqlDb struct {
-	Client       *gorm.DB
-	Ctx          fiberhouse.IContext
-	lock         sync.RWMutex
-	confPathname string
+	Client *gorm.DB
+	Ctx    fiberhouse.IContext
 }
 
 // 契约断言：MysqlDb 仅提供关闭与健康观测能力。
@@ -88,28 +84,15 @@ var (
 	_ globalmanager.HealthChecker = (*MysqlDb)(nil)
 )
 
-// clientSnapshot 在读锁保护下获取当前 gorm 客户端快照。
-func (md *MysqlDb) clientSnapshot() *gorm.DB {
-	md.lock.RLock()
-	client := md.Client
-	md.lock.RUnlock()
-	return client
-}
-
 func NewMysqlDb(appCtx fiberhouse.IContext, confPath ...string) (*MysqlDb, error) {
 	client, err := NewClient(appCtx, confPath...)
 	if err != nil {
 		return nil, err
 	}
-	db := &MysqlDb{
-		Client:       client,
-		Ctx:          appCtx,
-		confPathname: constant.DefaultMysqlDBConfName,
-	}
-	if len(confPath) > 0 {
-		db.confPathname = confPath[0]
-	}
-	return db, nil
+	return &MysqlDb{
+		Client: client,
+		Ctx:    appCtx,
+	}, nil
 }
 
 // NewClient 创建并返回一个新的 GORM 数据库连接
@@ -220,19 +203,13 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) (*gorm.DB, error)
 	return db, nil
 }
 
-// GetConfPath 获取当前实例使用的配置路径
-func (md *MysqlDb) GetConfPath() string {
-	return md.confPathname
-}
-
 // Close 关闭数据库连接
 // 谨慎使用Close关闭链接
 func (md *MysqlDb) Close() error {
-	client := md.clientSnapshot()
-	if client == nil {
+	if md.Client == nil {
 		return nil
 	}
-	sqlDb, err := client.DB()
+	sqlDb, err := md.Client.DB()
 	if err != nil {
 		return err
 	}
@@ -246,48 +223,13 @@ func (md *MysqlDb) IsHealthy() bool {
 	return md.PingTry(ctx)
 }
 
-// ReNewClient 重新创建并替换当前的数据库客户端连接。
-//
-// 这是一个供运维场景显式调用的低阶方法（如凭证轮换），不实现 globalmanager.Rebuilder，
-// 因此不会被全局容器的健康检查或 Rebuild 流程自动触发。原因见类型注释。
-//
-// 注意：替换后会立即关闭旧连接池，当前没有排空（drain）机制，
-// 正在使用旧连接执行的查询会被中断。调用方需自行保证时机安全。
-func (md *MysqlDb) ReNewClient(confPath ...string) (*MysqlDb, error) {
-	md.lock.Lock()
-	defer md.lock.Unlock()
-
-	if len(confPath) == 0 || confPath[0] == "" {
-		confPath = []string{md.confPathname}
-	}
-	client, errNc := NewClient(md.Ctx, confPath...)
-	if errNc != nil {
-		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMysql()).Err(errNc).Msg("Mysql ReNewClient error")
-		return md, errNc
-	}
-
-	old := md.Client
-	md.Client = client
-	// 关闭旧连接池，否则每次重建都会泄漏一整池连接（最多 maxOpenConns 条），
-	// 在服务端 max_connections 上形成正反馈放大。
-	if old != nil {
-		if oldSqlDb, err := old.DB(); err == nil {
-			if err := oldSqlDb.Close(); err != nil {
-				md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMysql()).Err(err).Msg("Mysql close previous client error")
-			}
-		}
-	}
-	return md, nil
-}
-
 // PingTry 尝试 ping 数据库以检查连接是否可用
 func (md *MysqlDb) PingTry(ctx context.Context) bool {
-	client := md.clientSnapshot()
-	if client == nil {
+	if md.Client == nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMysql()).Msg("Mysql Client is nil, please check if the database connection is established")
 		return false
 	}
-	sqlDb, err := client.DB()
+	sqlDb, err := md.Client.DB()
 	if err != nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMysql()).Err(err).Msg("Get sqlDb error")
 		return false

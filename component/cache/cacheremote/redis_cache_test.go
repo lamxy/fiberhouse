@@ -77,8 +77,7 @@ func TestRedisDb_CloseAndPostCloseErrors(t *testing.T) {
 	assert.ErrorIs(t, err, cache.ErrCacheClosed)
 	assert.ErrorIs(t, rd.Set(context.Background(), "closed", "value", co), cache.ErrCacheClosed)
 	assert.ErrorIs(t, rd.Delete(context.Background(), "closed"), cache.ErrCacheClosed)
-	_, err = rd.ReNewClient()
-	assert.ErrorIs(t, err, cache.ErrCacheClosed)
+	assert.ErrorIs(t, rd.Wait(), cache.ErrCacheClosed)
 	assert.False(t, rd.PingTry(context.Background()))
 }
 
@@ -168,16 +167,6 @@ func TestRedisDb_InfrastructureErrorOpensBreaker(t *testing.T) {
 	}
 }
 
-func TestRedisDb_RebuildClosesOldClient(t *testing.T) {
-	rd := newTestRedisDb(t)
-	old := rd.GetRedisClient()
-	_, err := rd.ReNewClient()
-	require.NoError(t, err)
-	assert.NotSame(t, old, rd.GetRedisClient())
-	assert.ErrorIs(t, old.Close(), redis.ErrClosed)
-	require.NoError(t, rd.Close())
-}
-
 func TestRedisDb_ConcurrentLifecycleIsRaceFree(t *testing.T) {
 	rd := newTestRedisDb(t)
 	co := cache.NewCacheOption(rd.Ctx)
@@ -200,8 +189,7 @@ func TestRedisDb_ConcurrentLifecycleIsRaceFree(t *testing.T) {
 					unexpected.Add(1)
 				}
 			case 3:
-				_, err := rd.ReNewClient()
-				if err != nil && !errors.Is(err, cache.ErrCacheClosed) {
+				if err := rd.Wait(); err != nil && !errors.Is(err, cache.ErrCacheClosed) {
 					unexpected.Add(1)
 				}
 			case 4:
