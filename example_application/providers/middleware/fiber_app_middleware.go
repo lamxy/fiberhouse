@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/monitor"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
@@ -35,6 +36,15 @@ func RegisterAppMiddleware(ctx fiberhouse.IApplicationContext, cs fiberhouse.Cor
 			return !ms
 		},
 	}))
+
+	// 就绪探针：依赖不健康时返回 503，供 K8s readinessProbe 或负载均衡器摘除流量。
+	//
+	// 刻意放在 basicauth 保护的 /uuid 前缀之外——探针由编排系统发起，不带凭证。
+	// 注意不要把该路由同时用作 livenessProbe：liveness 探测外部依赖会在数据库
+	// 抖动时导致全体 Pod 重启，把依赖故障放大成雪崩；liveness 只需检查进程自身。
+	app.Get("/readyz", adaptor.HTTPHandlerFunc(
+		fiberhouse.NewReadinessHandler(ctx.GetContainer()),
+	))
 
 	// etc...
 }

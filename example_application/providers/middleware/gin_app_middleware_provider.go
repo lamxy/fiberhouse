@@ -28,8 +28,6 @@ func NewGinAppMiddlewareProvider() *GinAppMiddlewareProvider {
 // Initialize 初始化并注册中间件到Gin引擎
 // required 注入 fiberhouse.CoreStarter 实例
 func (g *GinAppMiddlewareProvider) Initialize(ctx fiberhouse.IContext, initFunc ...fiberhouse.ProviderInitFunc) (any, error) {
-	_ = ctx
-
 	if len(initFunc) == 0 {
 		return nil, fmt.Errorf("Provider '%s': initFunc must not be empty", g.Name())
 	}
@@ -57,6 +55,13 @@ func (g *GinAppMiddlewareProvider) Initialize(ctx fiberhouse.IContext, initFunc 
 	authorized.Use(gin.BasicAuth(gin.Accounts{
 		"admin": "admin123",
 	}))
+
+	// 就绪探针：依赖不健康时返回 503，供 K8s readinessProbe 或负载均衡器摘除流量。
+	//
+	// 刻意放在 basicauth 保护的 /uuid 分组之外——探针由编排系统发起，不带凭证。
+	// 注意不要把该路由同时用作 livenessProbe：liveness 探测外部依赖会在数据库
+	// 抖动时导致全体 Pod 重启，把依赖故障放大成雪崩；liveness 只需检查进程自身。
+	app.GET("/readyz", gin.WrapF(fiberhouse.NewReadinessHandler(ctx.GetContainer())))
 
 	// 其他中间件...
 
