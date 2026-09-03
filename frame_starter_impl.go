@@ -36,7 +36,7 @@ type FrameApplication struct {
 //
 // configKeyHealthCheckLegacy 是 healthCheck 的旧名。该开关原名 "keepAlive"（保活），
 // 但其行为只是周期性观测上报，从不保持任何连接存活，也不再触发重建，
-// 名实不符易致误解，故更名为 healthCheck。旧键保留读取以兼容既有部署。
+// 旧键保留读取以兼容既有部署。
 const (
 	configKeyHealthCheck         = "application.globalManage.healthCheck"
 	configKeyHealthCheckLegacy   = "application.globalManage.keepAlive"
@@ -358,7 +358,7 @@ func (fa *FrameApplication) RegisterGlobalsHealthCheck(managers ...IProviderMana
 	}
 }
 
-// startHealthCheck 异步检查全局对象是否健康和重建
+// startHealthCheck 异步检查全局对象是否健康
 func (fa *FrameApplication) startHealthCheck(interval time.Duration) {
 	if interval <= 0 {
 		fa.GetContext().GetLogger().ErrorWith(fa.GetContext().GetConfig().LogOriginFrame()).
@@ -417,9 +417,6 @@ func (fa *FrameApplication) recoverHealthCheckPanic() {
 
 // checkGlobalsHealthOnce 遍历全局对象执行一轮健康检查，仅观测与上报，不做任何重建。
 //
-// 此处不会调用 Rebuild：连接池型对象（MySQL/Redis/MongoDB）的驱动层已具备失效连接
-// 自愈能力，配合 connMaxLifetime/connMaxIdleTime 即可覆盖中间设备静默掐断的场景。
-// 健康状态应交由外部编排系统（K8s readiness探针、负载均衡器）决策摘流量；
 // 重建仅保留给配置热更新等场景手动调用。
 func (fa *FrameApplication) checkGlobalsHealthOnce() {
 	gm, log, cfg := fa.GetContext().GetContainer(), fa.GetContext().GetLogger(), fa.GetContext().GetConfig()
