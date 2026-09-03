@@ -95,7 +95,7 @@ APP_CONF_application_appLog_level=debug
 | `application.recover` | debug、堆栈打印和请求调试标识 |
 | `application.trace.requestID` | trace 请求 ID 键；`Initialize` 的源码 fallback 为 `requestId` |
 | `application.middleware` | 初始化时复制到中间件开关 map |
-| `application.globalManage` | `keepAlive` 与健康扫描 `interval`；详见[《GlobalManager》](global-manager.md) |
+| `application.globalManage` | `healthCheck` 与健康检查 `interval`；详见[《GlobalManager》](global-manager.md) |
 | `application.task.enableServer` | 是否在 Web 启动链中启动任务 worker |
 | `application.swagger.enable` | 是否进入模块 Swagger 注册 |
 

@@ -104,7 +104,7 @@ Frame 先把配置中的 `LogOrigin` 子日志器 initializer 注册到 `GlobalM
 3. 对命令启动必需的 key 调用 `Get` 并决定是否失败退出；
 4. 为成功创建的数据库、缓存、client 和 writer 指定关闭所有者。
 
-当 `application.globalManage.keepAlive=true`（默认 false）时，CLI 只在命令运行前同步遍历容器一次，调用 `CheckHealth` 记录不健康的 key；它没有 ticker，也没有后台保活周期，且**不会触发 `Rebuild`**。尚未初始化的 lazy entry 会被视为健康。完整容器限制见[《GlobalManager》](global-manager.md)。
+当 `application.globalManage.healthCheck=true`（默认 false）时，CLI 只在命令运行前同步遍历容器一次，调用 `CheckHealth` 记录不健康的 key；它没有 ticker，也没有后台周期性检查，且**不会触发 `Rebuild`**。尚未初始化的 lazy entry 会被视为健康。完整容器限制见[《GlobalManager》](global-manager.md)。
 
 ## 错误、退出码与清理
 

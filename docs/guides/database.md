@@ -79,7 +79,7 @@ func (app *Application) ConfigGlobalInitializers() globalmanager.InitializerMap 
 | `IsHealthy()` | 10 秒 context，`sql.DB.PingContext` | 10 秒 context，对固定数据库 `test` 执行 `{ping: 1}` |
 | `Close()` | `sql.DB.Close()` | 5 秒 context，`Client.Disconnect()` |
 
-MongoDB health 使用固定的 `test` 数据库，不读取 model 的数据库名。GlobalManager 在未初始化对象上不会触发 health；其 keepalive 也不会主动创建 lazy client。
+MongoDB health 使用固定的 `test` 数据库，不读取 model 的数据库名。GlobalManager 在未初始化对象上不会触发 health；其健康检查也不会主动创建 lazy client。
 
 ### 为什么不实现 Rebuilder
 
@@ -91,10 +91,10 @@ mongo-driver 内建 SDAM 心跳自动跟随副本集拓扑变化。配合 `connM
 换库、换实例、主从切换属于基础设施变更，应由 DNS、VIP 或 Proxy 层处理，应用侧无感。
 因此两个 wrapper 不参与 GlobalManager 的 `Rebuild` 流程，健康检查也不会触发重建。
 
-需要显式重建连接的运维场景（如凭证轮换），可直接调用 `ReNewClient`。
-注意该方法替换后会立即关闭旧 client，**没有排空（drain）机制**，
-正在使用旧连接的在途查询会被中断；`Client` 字段的并发读取已由 `clientSnapshot()`
-读锁快照保护。调用方需自行保证时机安全。
+两个 wrapper 也不提供任何重建连接的方法：凭证轮换等运维场景应在进程外解决
+（Vault Agent / IAM token / sidecar 重写连接串 + 滚动重启）。由应用进程自行替换
+连接池会中断在途请求且缺乏排空（drain）机制。`Client` 在构造后不再被替换，
+因此无需锁保护——`*gorm.DB` 与 `*mongo.Client` 本身即并发安全。
 
 标准 HTTP shutdown 调用 `ClearAll(true)`，不会逐项 `Close`。GlobalManager `Release` 只会重置成功关闭的 `Closable`，也不能替代资源所有者安排数据库 client 的关闭；因此数据库创建者仍应显式关闭 client，不依赖容器清空。详见[《GlobalManager》](global-manager.md)。
 
@@ -132,6 +132,6 @@ m.GetDB().Client.Table(m.GetTable()).Where(...)
 - 根据外部服务容量设置 pool 和 timeout；缺失数值会变成零值，不等于示例默认。
 - 在启动入口决定连接失败是记录后继续还是 fail-fast。
 - 为查询停流、worker 停止、client close 和日志 close 指定顺序；记录关闭错误。
-- 不在有在途查询时调用 `ReNewClient`：它会立即关闭旧 client，没有排空机制。
+- 需要轮换凭证或迁移实例时走进程外方案（配置更新 + 滚动重启），不要期望进程内替换连接池。
 
 源码入口：[`component/database/dbmysql/mysql.go`](../../component/database/dbmysql/mysql.go)、[`component/database/dbmysql/mysql_model_impl.go`](../../component/database/dbmysql/mysql_model_impl.go)、[`component/database/dbmongo/mongo.go`](../../component/database/dbmongo/mongo.go) 与 [`component/database/dbmongo/mongo_model_impl.go`](../../component/database/dbmongo/mongo_model_impl.go)。

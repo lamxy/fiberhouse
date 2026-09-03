@@ -76,12 +76,12 @@ type Rebuilder interface {
   `Rebuilder`——驱动层已具备失效连接自愈能力，而换库、主从切换属于基础设施变更，
   应由 DNS、VIP 或 Proxy 层处理。详见[《数据库指南》](database.md)。
 
-需要显式重建连接的运维场景（如凭证轮换），请直接调用各封装的 `ReNewClient`，
-并自行保证调用时机安全。
+三个封装也不提供任何重建连接的方法：凭证轮换等运维场景应在进程外解决
+（Vault Agent / IAM token / sidecar 重写连接串 + 滚动重启）。
 
-## Web keepalive 扫描
+## Web 健康检查扫描
 
-`FrameApplication.RegisterGlobalsKeepalive` 在 `application.globalManage.keepAlive=true` 时启动 ticker goroutine，**默认为 false**。`application.globalManage.interval` 通过 `Duration(key, 180) * time.Second` 计算，当前约定是正的数值秒；不要传已经带 duration 单位的字符串并期待不再相乘。零或负 interval 会记录错误并跳过启动，不再进入 `time.NewTicker`。
+`FrameApplication.RegisterGlobalsHealthCheck` 在 `application.globalManage.healthCheck=true` 时启动 ticker goroutine，**默认为 false**。`application.globalManage.interval` 通过 `Duration(key, 180) * time.Second` 计算，当前约定是正的数值秒；不要传已经带 duration 单位的字符串并期待不再相乘。零或负 interval 会记录错误并跳过启动，不再进入 `time.NewTicker`。
 
 每次 tick 会 `Range` 全容器：
 
@@ -90,7 +90,27 @@ type Rebuilder interface {
 
 该扫描**只观测上报，不做任何重建**。连接池型对象（MySQL / Redis / MongoDB）的失效连接由驱动层自愈，配合 `connMaxLifetime` / `connMaxIdleTime` 即可覆盖中间设备静默掐断的场景；基于单次探测失败就整池重建，会丢弃正在服务请求的连接并在故障期形成“重建风暴”。因此该开关通常无需开启，健康状态建议交由外部编排系统（K8s readiness 探针、负载均衡器）决策摘流量。
 
-传给 `RegisterGlobalsKeepalive` 的 Provider Manager 参数当前未使用。默认 `FrameApplication` 在内部保存 cancel 函数和 `WaitGroup`；内置 Fiber/Gin 关闭路径会先取消并等待正在执行的健康检查，再以 deletion-only 语义清空容器。该停止入口不是公共 API，自定义 `FrameStarter` 若自行启动 keepalive，仍须自行实现停止与等待。
+## 就绪探针（/readyz）
+
+健康检查只写日志，不改变流量。要让不健康状态真正生效，应把就绪状态暴露给编排系统：
+
+```go
+// 框架提供与引擎无关的 http.HandlerFunc，不自行注册路由
+handler := fiberhouse.NewReadinessHandler(ctx.GetContainer())
+
+app.Get("/readyz", adaptor.HTTPHandlerFunc(handler)) // Fiber
+app.GET("/readyz", gin.WrapF(handler))               // Gin
+```
+
+`CheckReadiness` 复用 `CheckHealth` 语义：不触发 lazy entry 初始化，未实现 `HealthChecker` 的对象视为健康。就绪返回 200，存在不健康依赖返回 503，响应体为 JSON（`ready` / `unhealthy` / `errors`）。
+
+默认对结果缓存 2 秒（`WithReadinessCacheTTL` 可调，传 0 关闭）：探针通常由多个副本高频访问，每次请求都真实 Ping 全部依赖会给数据库带来可观的无效连接压力。
+
+**只用于 readiness，不要挂到 `livenessProbe`**：liveness 探测外部依赖会在数据库抖动时导致全体 Pod 被重启，把单点依赖故障放大成雪崩。liveness 只需检查进程自身存活。
+
+仓库示例在 Fiber 与 Gin 的 app middleware provider 中各挂载一处，且刻意放在 basicauth 保护范围之外——探针由编排系统发起，不带凭证。
+
+传给 `RegisterGlobalsHealthCheck` 的 Provider Manager 参数当前未使用。默认 `FrameApplication` 在内部保存 cancel 函数和 `WaitGroup`；内置 Fiber/Gin 关闭路径会先取消并等待正在执行的健康检查，再以 deletion-only 语义清空容器。该停止入口不是公共 API，自定义 `FrameStarter` 若自行启动健康检查，仍须自行实现停止与等待。
 
 ## Rebuild、Release 与 Clear
 
@@ -108,7 +128,7 @@ type Rebuilder interface {
 
 `ReleaseAll` 和 `ClearAll` 只有显式传入 true 才执行。`sync.Map.Clear` 可与 map 操作并发，但 `ClearAll(true)` 不取消已经取得 entry 并开始执行的 initializer，也不协调调用方已持有的业务引用；它适合已经停流后的最终删除，不是资源关闭或运行期热重置。
 
-当前 Fiber 与 Gin 受控关闭路径先停止并等待默认 keepalive，再调用 `ClearAll(true)`，不是 `ReleaseAll(true)`。因此 GlobalManager 清空不等于数据库、缓存、writer 或 task client 已关闭，资源创建者仍须安排各自的 `Close` / `Disconnect`。
+当前 Fiber 与 Gin 受控关闭路径先停止并等待默认健康检查，再调用 `ClearAll(true)`，不是 `ReleaseAll(true)`。因此 GlobalManager 清空不等于数据库、缓存、writer 或 task client 已关闭，资源创建者仍须安排各自的 `Close` / `Disconnect`。
 
 ## 启动与运行期边界
 
@@ -118,7 +138,7 @@ type Rebuilder interface {
 - 运行期：以 `Get` 和已持有实例的只读访问为主，不动态替换 initializer。
 - 重建期：先停止或隔离流量，由资源所有者创建新实例、切换引用并关闭旧实例；不要假设 `Rebuild` 已完成这些步骤。
 
-默认 `FrameApplication` 的 keepalive 由框架内部持有取消与等待状态；内置 Fiber/Gin 会在清空容器和关闭日志前停止它，重复停止和并发停止均可返回。停止后不会重新启动同一 `FrameApplication` 的健康检查。该契约不扩展到自定义 `FrameStarter`，也不构成通用后台任务取消树。
+默认 `FrameApplication` 的健康检查由框架内部持有取消与等待状态；内置 Fiber/Gin 会在清空容器和关闭日志前停止它，重复停止和并发停止均可返回。停止后不会重新启动同一 `FrameApplication` 的健康检查。该契约不扩展到自定义 `FrameStarter`，也不构成通用后台任务取消树。
 
 框架当前也没有统一逐项关闭链，因此资源回收仍需应用补齐。GlobalManager 的原子字段与 `sync.Map` 保护局部读写，不会让业务对象自身变成线程安全，也不会让 `Rebuild`、`Release`、`ClearAll` 成为无缝并发切换。
 
@@ -129,6 +149,6 @@ type Rebuilder interface {
 - 容器的 `Rebuild` 不关闭旧实例（由 `Rebuilder` 实现方负责），也不与调用方已持有的引用协调；新旧具体类型兼容仍由调用方负责。
 - `Release` 只重置成功关闭的 `Closable`；`Clear` / `ClearAll` 仍完全不关闭资源。
 - 同一 entry generation 的维护门禁不定义删除后同名重注册、普通 `Get` 或业务引用的完整状态机。
-- keepalive 不初始化懒对象；取消与等待只由默认 `FrameApplication` 和内置 Fiber/Gin 关闭路径消费。
+- 健康检查不初始化懒对象；取消与等待只由默认 `FrameApplication` 和内置 Fiber/Gin 关闭路径消费。
 
 因此 [功能状态](../reference/feature-status.md) 将 GlobalManager 归为实验性生命周期能力。源码入口见 [`globalmanager/manager.go`](../../globalmanager/manager.go)、[`globalmanager/interface.go`](../../globalmanager/interface.go)、[`global_utils.go`](../../global_utils.go) 与 [`frame_starter_impl.go`](../../frame_starter_impl.go)。

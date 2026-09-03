@@ -176,7 +176,7 @@ application:
   validate:
     langFlags: [en]
   globalManage:
-    keepAlive: false
+    healthCheck: false
   task:
     enableServer: false
   swagger:

@@ -25,7 +25,7 @@
 
 当前 `BootConfig.CoreType` 明确选择 Hertz（`hertzconst.CoreTypeWithHertz`），用于演示第三方内核接入；改回 `constant.CoreTypeWithFiber` 或 `CoreTypeWithGin` 即可切换。虽然集合里同时放入 Fiber、Gin 与 Hertz 三套 provider，它们只用于演示 target 选择，一次运行只会有一个内核被选中。框架或应用 provider 缺失、类型不匹配、必需全局实例初始化失败时，路径中既有返回错误和日志，也有 fatal/panic；不要把示例的乐观类型断言直接复制到边界不可信的业务代码。
 
-启动顺序还会经过全局实例初始化、core 初始化、hook、中间件、模块路由、Swagger、任务、keepalive、server run 与 shutdown。某个 provider 只有在类型、target 和 location 都匹配时才会参与对应阶段。
+启动顺序还会经过全局实例初始化、core 初始化、hook、中间件、模块路由、Swagger、任务、健康检查、server run 与 shutdown。某个 provider 只有在类型、target 和 location 都匹配时才会参与对应阶段。
 
 `DefaultProviders()` 和 `DefaultPManagers(ctx)` 是进程级集合。示例在启动期一次性合并它们；不要在服务已开始处理请求后继续调用 `Add` 或 `Except` 重配共享集合。
 
@@ -43,7 +43,7 @@ Web 示例的 `ConfigRequiredGlobalKeys` 会在启动期请求 MongoDB、Redis�
 
 配置中的 `application.plugins.engine.servers.gin.tls` 已接入证书加载和 TLS listener：有效证书/私钥会启用 HTTPS，无效的非空路径会 fail-stop；缺失任一路径时仍只记录错误并保留 HTTP 路径。配置形状不等于部署保证，正式环境还应校验证书配置并完成真实握手验证。
 
-缓存保护、L2 异步池和 keepalive 参数也需要结合对应实现理解。示例值不能替代容量评估，开关为 true 更不代表保护和资源回收语义已经完整。
+缓存保护、L2 异步池和健康检查参数也需要结合对应实现理解。示例值不能替代容量评估，开关为 true 更不代表保护和资源回收语义已经完整。
 
 ## CLI 示例入口
 
@@ -81,11 +81,11 @@ MongoDB command service 与 cron wrapper 当前没有入口。若要采用，应
 - CLI 的 MongoDB service、cron wrapper 和若干 command/module 目录没有可达入口，MySQL service 也保留许多未被命令调用的方法。
 - `component/codec/json/gojson.go`、通用 i18n/MQ/RPC 目录以及 plugins loader/registry 没有完整实现；配置或常量名称不改变这一状态。
 - 二进制响应只展示基于 MIME type 的 HTTP 响应选择，不包含 RPC server 生命周期。
-- 任务异步启动、GlobalManager keepalive、日志 writer、缓存/数据库连接的停止顺序没有在示例中形成统一关闭编排。
+- 任务异步启动、GlobalManager 健康检查、日志 writer、缓存/数据库连接的停止顺序没有在示例中形成统一关闭编排。
 
 - provider 初始化失败的处理方式并不统一：有的返回错误，有的记录日志，有的 panic 或 fatal；正式应用需要在入口统一失败策略。
 
-- 示例中的异步 worker、keepalive 与日志 goroutine 没有共同的 context 取消树，不能据此证明进程退出时所有后台工作都已结束。
+- 示例中的异步 worker、健康检查与日志 goroutine 没有共同的 context 取消树，不能据此证明进程退出时所有后台工作都已结束。
 
 - 配置样例包含本地地址、明文凭据形状和调试选项，只能作为字段说明，不能直接进入共享或生产环境。
 

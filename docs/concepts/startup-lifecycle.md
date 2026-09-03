@@ -40,7 +40,7 @@
 | 16 | module middleware + routes | 合并 `LocationModuleMiddlewareInit` 与 `LocationRouteRegisterInit` 的 Manager，再调用 `RegisterModuleInitialize` |
 | 17 | Swagger | 调用 `RegisterModuleSwagger(frame, LocationModuleSwaggerInit.GetManagers()...)` |
 | 18 | task server | 调用 `RegisterTaskServer(LocationTaskServerInit.GetManagers()...)` |
-| 19 | global keepalive | 调用 `RegisterGlobalsKeepalive(LocationGlobalKeepaliveInit.GetManagers()...)` |
+| 19 | global health check | 调用 `RegisterGlobalsHealthCheck(LocationGlobalHealthCheckInit.GetManagers()...)` |
 | 20 | before-run | 读取 `LocationServerRunBefore`；只执行第一个 unique Manager，把 `ApplicationStarter` 传给它，忽略返回值和错误 |
 | 21 | run + shutdown | 合并 `LocationServerRun` 与 `LocationServerShutdown` 的 Manager，传给 `AppCoreRun`；内置 Fiber/Gin 实现当前不读取这些 Manager |
 | 22 | after-run | `AppCoreRun` 返回后读取 `LocationServerRunAfter`；只执行第一个 unique Manager，把 `ApplicationStarter` 传给它，忽略返回值和错误 |
@@ -72,17 +72,17 @@
 - `RegisterAppMiddleware` 先安装框架 recovery、错误处理/请求日志，再调用 `ApplicationRegister.RegisterAppMiddleware(core)`；应用注册器可以自行读取 `LocationAppMiddlewareInit`。
 - `RegisterModuleInitialize` 调用 `ModuleRegister.RegisterModuleRouteHandlers(core)`；模块注册器可以自行读取路由 Location。当前接口没有单独的模块中间件回调。
 - `RegisterModuleSwagger` 只在 `application.swagger.enable` 为 true 且存在模块注册器时调用 `RegisterSwagger`。
-- `RegisterTaskServer` 与 `RegisterGlobalsKeepalive` 由 Frame Starter 直接读取配置和注册器，不使用传入 Manager。
+- `RegisterTaskServer` 与 `RegisterGlobalsHealthCheck` 由 Frame Starter 直接读取配置和注册器，不使用传入 Manager。
 
 这意味着“`RunServer` 把某个 Location 的 Manager 传给方法”不等于“该 Manager 已自动执行”。应用若选择 Provider 化的 hook、中间件或路由，必须在对应注册器实现中显式调用 `LoadProvider`，并处理错误。
 
-## 任务、keepalive 与并发开始点
+## 任务、健康检查与并发开始点
 
 当 `application.task.enableServer` 为 true 且存在 `TaskRegister` 时，Frame Starter 从全局容器取得 task worker、注册 handler map，然后调用 `RunServer()` 启动后台 worker。取得 worker 失败会 panic；worker 异步运行错误当前主要记录在任务实现内部。
 
-当 `application.globalManage.keepAlive` 为 true（默认 false）时，默认 Frame Starter 按 `application.globalManage.interval`（缺省 180 秒）启动 ticker goroutine，遍历全局容器并对实现 `HealthChecker` 的实例执行检查。该检查**只观测上报，不做重建**。它在内部持有取消与等待状态；内置 Fiber/Gin 关闭路径会在清空容器和关闭日志前停止并等待检查退出。自定义 `FrameStarter` 的 keepalive 生命周期仍由自定义实现负责。
+当 `application.globalManage.healthCheck` 为 true（默认 false）时，默认 Frame Starter 按 `application.globalManage.interval`（缺省 180 秒）启动 ticker goroutine，遍历全局容器并对实现 `HealthChecker` 的实例执行检查。该检查**只观测上报，不做重建**。它在内部持有取消与等待状态；内置 Fiber/Gin 关闭路径会在清空容器和关闭日志前停止并等待检查退出。自定义 `FrameStarter` 的健康检查生命周期仍由自定义实现负责。
 
-因此并发并不只从 HTTP 监听开始：task server 与 keepalive goroutine 在 `AppCoreRun` 之前就可能启动。Provider、Manager、Location、默认集合、validator 注册表以及应用 initializer 列表都应在此之前冻结。
+因此并发并不只从 HTTP 监听开始：task server 与健康检查 goroutine 在 `AppCoreRun` 之前就可能启动。Provider、Manager、Location、默认集合、validator 注册表以及应用 initializer 列表都应在此之前冻结。
 
 ## 监听、信号与关闭
 
@@ -90,8 +90,8 @@ Fiber 与 Gin 都在 goroutine 中启动 HTTP server，在调用 `AppCoreRun` �
 
 | Core | 运行 | 收到信号后 | 当前限制 |
 |---|---|---|---|
-| Fiber | `fiber.App.Listen(host + ":" + port)` | 调用 `fiber.App.Shutdown()`；`OnShutdown` hook 停止并等待默认 keepalive，随后清空 `GlobalManager`、记录日志并关闭日志器 | `RegisterAppState(true)` 在 `Listen` 返回后才执行，并非“开始监听成功”标志；清空容器不逐项关闭资源 |
-| Gin | 无 TLS 配置时调用 `http.Server.ListenAndServe()`；已加载 TLS 配置时调用 `ListenAndServeTLS("", "")` | 最多等待 30 秒 `Shutdown`，随后停止并等待默认 keepalive、清空容器、记录日志并关闭日志器 | TLS 证书加载已有单元/契约测试，但没有真实 listener/握手集成验证；应用状态同样在 server 返回后才写入 |
+| Fiber | `fiber.App.Listen(host + ":" + port)` | 调用 `fiber.App.Shutdown()`；`OnShutdown` hook 停止并等待默认健康检查，随后清空 `GlobalManager`、记录日志并关闭日志器 | `RegisterAppState(true)` 在 `Listen` 返回后才执行，并非“开始监听成功”标志；清空容器不逐项关闭资源 |
+| Gin | 无 TLS 配置时调用 `http.Server.ListenAndServe()`；已加载 TLS 配置时调用 `ListenAndServeTLS("", "")` | 最多等待 30 秒 `Shutdown`，随后停止并等待默认健康检查、清空容器、记录日志并关闭日志器 | TLS 证书加载已有单元/契约测试，但没有真实 listener/握手集成验证；应用状态同样在 server 返回后才写入 |
 
 `LocationServerRun` 与 `LocationServerShutdown` 的 Manager 虽被传给 `AppCoreRun`，当前两种 Core 都不读取它们。`LocationServerRunAfter` 只有在 `AppCoreRun` 返回后才执行；如果 fatal/panic/进程强退阻断返回，after-run 也没有保证。
 
@@ -102,7 +102,7 @@ Fiber 与 Gin 都在 goroutine 中启动 HTTP server，在调用 `AppCoreRun` �
 | 分类 | Location |
 |---|---|
 | zero-location 判定 | `ZeroLocation`（通过比较 Manager 的 Location ID，不读取其 Manager 列表） |
-| `RunServer` 直接读取 | `LocationBootStrapConfig`、`LocationFrameStarterOptionInit`、`LocationCoreStarterOptionInit`、`LocationFrameStarterCreate`、`LocationCoreStarterCreate`、`LocationGlobalInit`、`LocationCoreEngineInit`、`LocationCoreHookInit`、`LocationAppMiddlewareInit`、`LocationModuleMiddlewareInit`、`LocationRouteRegisterInit`、`LocationModuleSwaggerInit`、`LocationTaskServerInit`、`LocationGlobalKeepaliveInit`、`LocationServerRunBefore`、`LocationServerRun`、`LocationServerShutdown`、`LocationServerRunAfter` |
+| `RunServer` 直接读取 | `LocationBootStrapConfig`、`LocationFrameStarterOptionInit`、`LocationCoreStarterOptionInit`、`LocationFrameStarterCreate`、`LocationCoreStarterCreate`、`LocationGlobalInit`、`LocationCoreEngineInit`、`LocationCoreHookInit`、`LocationAppMiddlewareInit`、`LocationModuleMiddlewareInit`、`LocationRouteRegisterInit`、`LocationModuleSwaggerInit`、`LocationTaskServerInit`、`LocationGlobalHealthCheckInit`、`LocationServerRunBefore`、`LocationServerRun`、`LocationServerShutdown`、`LocationServerRunAfter` |
 | 已声明但 `RunServer` 不读取 | `LocationAdaptCoreCtxChoose`、`LocationServerShutdownBefore`、`LocationServerShutdownAfter`、`LocationResponseInfoInit` |
 
 `LocationResponseInfoInit` 由响应 facade 在响应路径单独读取，不属于启动顺序。`LocationAdaptCoreCtxChoose` 当前没有启动链消费者；适配 Fiber/Gin context 仍需显式选择。`LocationServerShutdownBefore` 与 `LocationServerShutdownAfter` 只有声明，不能当作可用关闭 hook。

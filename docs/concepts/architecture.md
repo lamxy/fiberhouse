@@ -28,7 +28,7 @@ FiberHouse 是一个用 Go 组装 Web 应用的框架。它把配置与日志引
 |---|---|---|
 | `BootConfig` / `FiberHouse` | 选择 `FrameType`、`CoreType`、`TrafficCodec` 和配置、日志路径；保存 Options、Providers、Managers | `Default()` 只提供默认 `BootConfig`，不会自动调用默认 Provider/Manager 集合 |
 | `IApplicationContext` | 暴露配置、日志、`GlobalManager`、验证器、Boot 配置、应用状态和 Starter 回指 | `New()` 创建进程级 `AppContext`，并把它注册到全局容器 |
-| `FrameStarter` | 持有 `ApplicationRegister`、`ModuleRegister`、`TaskRegister`；初始化全局对象、验证器、任务和 keepalive | 默认实现是 `FrameApplication`；创建时至少需要有效的 `FrameStarterOption` 注入注册器 |
+| `FrameStarter` | 持有 `ApplicationRegister`、`ModuleRegister`、`TaskRegister`；初始化全局对象、验证器、任务和健康检查 | 默认实现是 `FrameApplication`；创建时至少需要有效的 `FrameStarterOption` 注入注册器 |
 | `CoreStarter` | 初始化 Fiber/Gin，安装内置与应用中间件、模块路由、Swagger 和 hook，负责监听与关闭 | 由 `BootConfig.CoreType`、core Provider/Manager 和 core Options 选择 |
 | `ApplicationStarter` | `FrameStarter` 与 `CoreStarter` 的组合接口 | `RunServer` 创建 `WebApplication` 并注册回 `AppContext` |
 | Provider / Manager / Location | Provider 封装扩展，Manager 按类型收集并选择/执行 Provider，Location 标识生命周期位置 | 集合必须通过 `WithProviders` / `WithPManagers` 显式交给 `FiberHouse` |
@@ -95,7 +95,7 @@ flowchart LR
 
 - [`boot.go`](../../boot.go)：`New`、`Default`、`RunServer`、`WebApplication` 与顶层动态分派。
 - [`application_interface.go`](../../application_interface.go)：`FrameStarter`、`CoreStarter`、`ApplicationStarter` 及应用/模块/任务注册器。
-- [`frame_starter_impl.go`](../../frame_starter_impl.go)：全局对象、验证器、任务与 keepalive 的默认 Frame 实现。
+- [`frame_starter_impl.go`](../../frame_starter_impl.go)：全局对象、验证器、任务与健康检查的默认 Frame 实现。
 - [`core_fiber_starter_impl.go`](../../core_fiber_starter_impl.go) 与 [`core_gin_starter_impl.go`](../../core_gin_starter_impl.go)：HTTP Core 的初始化、回调、监听和关闭。
 - [`provider_interface.go`](../../provider_interface.go)、[`provider_type.go`](../../provider_type.go)、[`provider_location.go`](../../provider_location.go)：Provider 扩展契约。
 - [`context_interface.go`](../../context_interface.go)、[`context_impl.go`](../../context_impl.go)、[`locator_interface.go`](../../locator_interface.go)：上下文与 Locator。

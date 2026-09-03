@@ -80,7 +80,7 @@ worker 和 dispatcher 都依赖调用方传入的 `*redis.Client`。框架不验
 - `TaskWorker` 没有自己的 `Close`/`Shutdown` 方法，但 `GetServer()` 返回原始 `*asynq.Server`；应用可使用底层 API 建立停止与等待协议。
 - `TaskDispatcher` 没有 wrapper 级 `Close`，但公开 `Client *asynq.Client`；创建者仍需按 asynq/Redis 的所有权规则回收。
 - 标准 Fiber/Gin shutdown 不会停止 worker 或 dispatcher，只会清空 GlobalManager；清空不调用资源关闭方法。
-- async worker goroutine、GlobalManager keepalive 和日志 writer 不共享统一 cancel tree。
+- async worker goroutine、GlobalManager 健康检查和日志 writer 不共享统一 cancel tree。
 
 建议的应用关闭顺序是：先停止新请求和新入队，停止 worker 接收并等待在途 handler，关闭 dispatcher，最后按所有权关闭 Redis 与日志。若 Redis 同时供缓存使用，应在所有消费者都停止后才关闭。当前框架没有替应用执行或验证这条顺序。
 
