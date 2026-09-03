@@ -235,7 +235,17 @@ func (md *MysqlDb) ReNewClient(confPath ...string) (*MysqlDb, error) {
 		return md, errNc
 	}
 
+	old := md.Client
 	md.Client = client
+	// 关闭旧连接池，否则每次重建都会泄漏一整池连接（最多 maxOpenConns 条），
+	// 在服务端 max_connections 上形成正反馈放大。
+	if old != nil {
+		if oldSqlDb, err := old.DB(); err == nil {
+			if err := oldSqlDb.Close(); err != nil {
+				md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMysql()).Err(err).Msg("Mysql close previous client error")
+			}
+		}
+	}
 	return md, nil
 }
 

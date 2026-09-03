@@ -135,7 +135,16 @@ func (md *MongoDb) ReNewClient(confPath ...string) (*MongoDb, error) {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Err(errNc).Stack().Msg("Mongo ReNewClient error")
 		return md, errNc
 	}
+	old := md.Client
 	md.Client = client
+	// 断开旧客户端，否则每次重建都会泄漏一整池连接（最多 maxPoolSize 条）及其后台监控协程。
+	if old != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := old.Disconnect(ctx); err != nil {
+			md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Err(err).Msg("Mongo disconnect previous client error")
+		}
+	}
 	return md, nil
 }
 
