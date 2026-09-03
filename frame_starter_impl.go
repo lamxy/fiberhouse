@@ -15,7 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lamxy/fiberhouse/appconfig"
+	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component/validate"
+	"github.com/lamxy/fiberhouse/constant"
 )
 
 // FrameApplication 框架应用启动器实现，实现了 fiberhouse.ApplicationStarter 接口
@@ -27,6 +30,39 @@ type FrameApplication struct {
 	healthMu     sync.Mutex
 	healthCancel context.CancelFunc
 	healthWG     sync.WaitGroup
+}
+
+// 全局对象健康检查的配置键。
+//
+// configKeyHealthCheckLegacy 是 healthCheck 的旧名。该开关原名 "keepAlive"（保活），
+// 但其行为只是周期性观测上报，从不保持任何连接存活，也不再触发重建，
+// 名实不符易致误解，故更名为 healthCheck。旧键保留读取以兼容既有部署。
+const (
+	configKeyHealthCheck         = "application.globalManage.healthCheck"
+	configKeyHealthCheckLegacy   = "application.globalManage.keepAlive"
+	configKeyHealthCheckInterval = "application.globalManage.interval"
+)
+
+// GlobalsHealthCheckEnabled 判断是否启用全局对象健康检查。
+//
+// 新键 application.globalManage.healthCheck 优先；未启用时回退读取已废弃的
+// application.globalManage.keepAlive，并记录一条 deprecation 警告。
+// 两个键的默认值均为 false，因此"未配置"与"显式关闭"在此语义等价。
+func GlobalsHealthCheckEnabled(cfg appconfig.IAppConfig, log bootstrap.LoggerWrapper) bool {
+	if cfg == nil {
+		return false
+	}
+	if cfg.Bool(configKeyHealthCheck) {
+		return true
+	}
+	if cfg.Bool(configKeyHealthCheckLegacy) {
+		if log != nil {
+			log.WarnWith(cfg.LogOriginFrame()).
+				Msgf("config key '%s' is deprecated, please rename it to '%s'", configKeyHealthCheckLegacy, configKeyHealthCheck)
+		}
+		return true
+	}
+	return false
 }
 
 type healthCheckStopper interface {
@@ -315,9 +351,9 @@ func (fa *FrameApplication) RegisterGlobalsKeepalive(managers ...IProviderManage
 		return
 	}
 
-	// 全局对象健康检测和保活
-	if fa.GetContext().GetConfig().Bool("application.globalManage.keepAlive") {
-		d := fa.GetContext().GetConfig().Duration("application.globalManage.interval", 180) * time.Second
+	// 全局对象健康检查（仅观测上报，不做重建）
+	if GlobalsHealthCheckEnabled(fa.GetContext().GetConfig(), fa.GetContext().GetLogger()) {
+		d := fa.GetContext().GetConfig().Duration(configKeyHealthCheckInterval, constant.DefaultHealthCheckInterval) * time.Second
 		fa.startHealthCheck(d)
 	}
 }

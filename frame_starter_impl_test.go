@@ -267,8 +267,8 @@ func TestFrameApplication_GuardsAvoidStartupSideEffects(t *testing.T) {
 
 	t.Run("started application returns early", func(t *testing.T) {
 		ctx, _ := newFrameTestContext(t, map[string]interface{}{
-			"application.task.enableServer":      true,
-			"application.globalManage.keepAlive": true,
+			"application.task.enableServer":        true,
+			"application.globalManage.healthCheck": true,
 		})
 		ctx.RegisterAppState(true)
 		forceFrameTestZeroInterval(t, ctx)
@@ -293,8 +293,8 @@ func TestFrameApplication_GuardsAvoidStartupSideEffects(t *testing.T) {
 
 	t.Run("disabled and nil task paths do not start servers", func(t *testing.T) {
 		disabledCtx, _ := newFrameTestContext(t, map[string]interface{}{
-			"application.task.enableServer":      false,
-			"application.globalManage.keepAlive": false,
+			"application.task.enableServer":        false,
+			"application.globalManage.healthCheck": false,
 		})
 		forceFrameTestZeroInterval(t, disabledCtx)
 		disabled := &FrameApplication{Ctx: disabledCtx, task: &frameTestTask{}}
@@ -304,6 +304,35 @@ func TestFrameApplication_GuardsAvoidStartupSideEffects(t *testing.T) {
 		enabledCtx, _ := newFrameTestContext(t, map[string]interface{}{"application.task.enableServer": true})
 		enabled := &FrameApplication{Ctx: enabledCtx}
 		enabled.RegisterTaskServer()
+	})
+}
+
+func TestGlobalsHealthCheckEnabled_PrefersNewKeyAndFallsBackToLegacy(t *testing.T) {
+	t.Run("new key enables without deprecation warning", func(t *testing.T) {
+		ctx, logs := newFrameTestContext(t, map[string]interface{}{
+			"application.globalManage.healthCheck": true,
+		})
+		assert.True(t, GlobalsHealthCheckEnabled(ctx.GetConfig(), ctx.GetLogger()))
+		assert.NotContains(t, logs.String(), "deprecated")
+	})
+
+	t.Run("legacy keepAlive key still enables and warns", func(t *testing.T) {
+		ctx, logs := newFrameTestContext(t, map[string]interface{}{
+			"application.globalManage.keepAlive": true,
+		})
+		assert.True(t, GlobalsHealthCheckEnabled(ctx.GetConfig(), ctx.GetLogger()))
+		assert.Contains(t, logs.String(), "deprecated")
+		assert.Contains(t, logs.String(), "application.globalManage.healthCheck")
+	})
+
+	t.Run("both keys absent stays disabled", func(t *testing.T) {
+		ctx, logs := newFrameTestContext(t, nil)
+		assert.False(t, GlobalsHealthCheckEnabled(ctx.GetConfig(), ctx.GetLogger()))
+		assert.NotContains(t, logs.String(), "deprecated")
+	})
+
+	t.Run("nil config is treated as disabled", func(t *testing.T) {
+		assert.False(t, GlobalsHealthCheckEnabled(nil, nil))
 	})
 }
 

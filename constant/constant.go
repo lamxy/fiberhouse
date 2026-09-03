@@ -48,8 +48,8 @@ const (
 	// DefaultRedisDBIndex redis的默认DB索引号
 	DefaultRedisDBIndex = 0
 
-	// DefaultKeepaliveTime 默认全局实例保活检查间隔
-	DefaultKeepaliveTime = 180
+	// DefaultHealthCheckInterval 默认全局对象健康检查间隔（单位：秒）
+	DefaultHealthCheckInterval = 180
 
 	// DefaultPageSize 默认分页大小
 	DefaultPageSize = 20

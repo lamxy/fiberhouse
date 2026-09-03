@@ -99,12 +99,12 @@ func (c *commandTestContext) GetStarterApp() fiberhouse.CommandStarter { return 
 func newCommandTestContext() fiberhouse.ICommandContext {
 	cfg := appconfig.NewAppConfig()
 	cfg.LoadDefault(map[string]interface{}{
-		"command.name":                       "task7-command",
-		"command.usage":                      "exercise lifecycle",
-		"command.version":                    "7.0.0",
-		"command.sortFlagsByName":            true,
-		"command.sortCommandsByName":         true,
-		"application.globalManage.keepAlive": false,
+		"command.name":                         "task7-command",
+		"command.usage":                        "exercise lifecycle",
+		"command.version":                      "7.0.0",
+		"command.sortFlagsByName":              true,
+		"command.sortCommandsByName":           true,
+		"application.globalManage.healthCheck": false,
 	})
 	cfg.Initialize()
 	logger := zerolog.Nop()

@@ -65,7 +65,7 @@ func (fca *FrameCmdApplication) RegisterApplicationGlobals() {
 	fca.GetApplication().(fiberhouse.ApplicationCmdRegister).RegisterApplicationGlobals()
 
 	// 全局对象健康检查（仅观测上报，不做重建）
-	if fca.GetContext().GetConfig().Bool("application.globalManage.keepAlive") {
+	if fiberhouse.GlobalsHealthCheckEnabled(fca.GetContext().GetConfig(), fca.GetContext().GetLogger()) {
 		fca.startHealthCheck()
 	}
 }
