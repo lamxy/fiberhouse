@@ -144,8 +144,8 @@ cache:
     readTimeout: 3                           # 读操作超时时间
     writeTimeout: 3                          # 写操作超时时间
     poolTimeout: 4                           # 连接池最大等待时间
-    connMaxIdleTime: 1800                    # 空闲连接最长时间，单位秒（精确配置键）
-    connMaxLifetime: 0                       # 连接最长生命周期，单位秒；0 表示不限制
+    connMaxIdleTime: 300                     # 空闲连接最长时间，单位秒（精确配置键）；空闲连接超时后主动淘汰，驱动层据此自愈
+    connMaxLifetime: 600                     # 连接最长生命周期，单位秒；0 表示不限制，但云上 NAT/LB 会静默掐断长连接，建议设为小于其空闲超时的有限值
     pingTry: true                            # 启动时ping尝试连接
     protection:                              # 已弃用：仅保留 Redis 自有保护层的兼容配置
       enable: true                           # 开启缓存保护措施
@@ -208,8 +208,8 @@ database:
     gorm:
       maxIdleConns: 10                       # 最大空闲连接数
       maxOpenConns: 100                      # 最大打开连接数
-      connMaxLifetime: 3600                  # 连接最大生命周期，单位秒
-      connMaxIdleTime: 300                   # 连接最大空闲时间，单位秒
+      connMaxLifetime: 600                   # 连接最大生命周期，单位秒；必须小于 MySQL wait_timeout 与云上 NAT/LB 空闲超时，否则连接会被中间设备静默掐断
+      connMaxIdleTime: 300                   # 连接最大空闲时间，单位秒；空闲连接超时后主动淘汰，驱动层据此自愈，无需业务侧定时 Ping
       logger:
           level: info                        # 日志级别: silent、error、warn、info
           slowThreshold: 200 * time.Millisecond # 慢SQL阈值，建议 200 * time.Millisecond，根据实际业务调整
