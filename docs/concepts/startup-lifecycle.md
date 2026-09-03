@@ -80,7 +80,7 @@
 
 当 `application.task.enableServer` 为 true 且存在 `TaskRegister` 时，Frame Starter 从全局容器取得 task worker、注册 handler map，然后调用 `RunServer()` 启动后台 worker。取得 worker 失败会 panic；worker 异步运行错误当前主要记录在任务实现内部。
 
-当 `application.globalManage.keepAlive` 为 true 时，默认 Frame Starter 按 `application.globalManage.interval`（缺省 180 秒）启动 ticker goroutine，遍历全局容器并对实现健康检查/重建接口的实例执行检查。它在内部持有取消与等待状态；内置 Fiber/Gin 关闭路径会在清空容器和关闭日志前停止并等待检查退出。自定义 `FrameStarter` 的 keepalive 生命周期仍由自定义实现负责。
+当 `application.globalManage.keepAlive` 为 true（默认 false）时，默认 Frame Starter 按 `application.globalManage.interval`（缺省 180 秒）启动 ticker goroutine，遍历全局容器并对实现 `HealthChecker` 的实例执行检查。该检查**只观测上报，不做重建**。它在内部持有取消与等待状态；内置 Fiber/Gin 关闭路径会在清空容器和关闭日志前停止并等待检查退出。自定义 `FrameStarter` 的 keepalive 生命周期仍由自定义实现负责。
 
 因此并发并不只从 HTTP 监听开始：task server 与 keepalive goroutine 在 `AppCoreRun` 之前就可能启动。Provider、Manager、Location、默认集合、validator 注册表以及应用 initializer 列表都应在此之前冻结。
 

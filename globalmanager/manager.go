@@ -224,7 +224,10 @@ func (gm *GlobalManager) CheckHealth(name KeyName) (bool, error) {
 	return true, nil
 }
 
-// Rebuild 重建全局对象
+// Rebuild 重建全局对象，用于配置热更新等需要替换底层客户端的场景。
+//
+// 仅供显式手动调用：框架的周期性健康检查不会自动触发重建，
+// 连接池型对象的失效恢复由驱动层负责。详见 Rebuilder 接口说明。
 func (gm *GlobalManager) Rebuild(name KeyName) error {
 	origin, ok := gm.container.Load(name)
 	if !ok {

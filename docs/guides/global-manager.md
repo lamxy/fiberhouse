@@ -64,17 +64,20 @@ type Rebuilder interface {
 
 `CheckHealth(key)` 不会触发 initializer。尚未经过 `Get` 的 entry 没有实例，不实现 `HealthChecker`，因此被视为健康；未实现该接口的已初始化对象也默认健康。只有已初始化并实现 `HealthChecker` 的对象会调用 `IsHealthy()`。
 
-`Rebuild(key)` 要求对象已经初始化且实现 `Rebuilder`。它调用当前实例的 `Rebuild(current.GetConfPath())`，然后把返回值直接替换到 entry。容器不会更新 initializer，不会先关闭旧实例，也不会等待旧引用停止使用；数据库 client 等资源必须由应用定义停流、迁移和关闭顺序。
+`Rebuild(key)` 要求对象已经初始化且实现 `Rebuilder`。它调用当前实例的 `Rebuild(current.GetConfPath())`，然后把返回值直接替换到 entry。容器本身不会更新 initializer，也不会等待旧引用停止使用；关闭旧客户端是 `Rebuilder` 实现方的责任（内置的 MySQL / Redis / MongoDB 封装已在替换后关闭旧客户端）。数据库 client 等资源的停流与迁移顺序仍须由应用定义。
+
+`Rebuild` 定位为**配置热更新等场景的手动入口**，健康检查不会自动调用它。
 
 ## Web keepalive 扫描
 
-`FrameApplication.RegisterGlobalsKeepalive` 在 `application.globalManage.keepAlive=true` 时启动 ticker goroutine。`application.globalManage.interval` 通过 `Duration(key, 180) * time.Second` 计算，当前约定是正的数值秒；不要传已经带 duration 单位的字符串并期待不再相乘。零或负 interval 会记录错误并跳过启动，不再进入 `time.NewTicker`。
+`FrameApplication.RegisterGlobalsKeepalive` 在 `application.globalManage.keepAlive=true` 时启动 ticker goroutine，**默认为 false**。`application.globalManage.interval` 通过 `Duration(key, 180) * time.Second` 计算，当前约定是正的数值秒；不要传已经带 duration 单位的字符串并期待不再相乘。零或负 interval 会记录错误并跳过启动，不再进入 `time.NewTicker`。
 
 每次 tick 会 `Range` 全容器：
 
 1. 调用 `CheckHealth`；错误只记录后继续下一个 key。
-2. 健康结果为 false 时记录错误并调用 `Rebuild`。
-3. 重建错误记录为失败并继续下一个 key；只有成功重建才记录“rebuild success”。
+2. 健康结果为 false 时记录一条 `is unhealthy` 错误日志，然后继续下一个 key。
+
+该扫描**只观测上报，不做任何重建**。连接池型对象（MySQL / Redis / MongoDB）的失效连接由驱动层自愈，配合 `connMaxLifetime` / `connMaxIdleTime` 即可覆盖中间设备静默掐断的场景；基于单次探测失败就整池重建，会丢弃正在服务请求的连接并在故障期形成“重建风暴”。因此该开关通常无需开启，健康状态建议交由外部编排系统（K8s readiness 探针、负载均衡器）决策摘流量。
 
 传给 `RegisterGlobalsKeepalive` 的 Provider Manager 参数当前未使用。默认 `FrameApplication` 在内部保存 cancel 函数和 `WaitGroup`；内置 Fiber/Gin 关闭路径会先取消并等待正在执行的健康检查，再以 deletion-only 语义清空容器。该停止入口不是公共 API，自定义 `FrameStarter` 若自行启动 keepalive，仍须自行实现停止与等待。
 

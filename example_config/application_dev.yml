@@ -119,8 +119,8 @@ application:
     requestId: true                          # 开启requestId链路追踪
     monitor: true                            # 开启指标监控(/uuid/metrics)；实测占全进程约20%内存分配，压测或高负载时建议关闭
   globalManage:                              # 全局对象管理
-    keepAlive: true                          # 全局对象保活
-    interval: 300                            # 单位s，间隔xx秒进行健康检查
+    keepAlive: false                         # 全局对象健康检查（仅观测上报，不做重建）；连接池自愈依赖驱动层与 connMaxLifetime/connMaxIdleTime，通常无需开启
+    interval: 300                            # 单位s，间隔xx秒进行一轮健康检查；仅在 keepAlive 为 true 时生效
   validate:                                  # 验证器，默认支持：zh-CN、zh-TW、en，更多语言支持见官方库: https://github.com/go-playground/validator
     langFlags:                               # 设置验证器启用的语言列表
       - zh-CN

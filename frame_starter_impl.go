@@ -292,7 +292,10 @@ func (fa *FrameApplication) RegisterTaskServer(managers ...IProviderManager) {
 	}
 }
 
-// RegisterGlobalsKeepalive 注册需要保活的全局对象后台健康检测
+// RegisterGlobalsKeepalive 注册全局对象的后台健康检测（仅观测上报，不做重建）。
+//
+// 默认关闭（application.globalManage.keepAlive）。连接池型对象的失效恢复依赖驱动层
+// 与 connMaxLifetime/connMaxIdleTime 配置，通常无需开启；开启后仅用于日志观测。
 func (fa *FrameApplication) RegisterGlobalsKeepalive(managers ...IProviderManager) {
 	if fa.GetContext().GetAppState() {
 		return
