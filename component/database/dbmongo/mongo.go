@@ -24,11 +24,24 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
 )
 
+// MongoDb mongodb 数据库操作封装
+//
+// Client 可能被 ReNewClient 并发替换（配置热更新场景），因此内部读取一律通过
+// clientSnapshot 获取读锁快照。lock 使用值类型，保证零值可用，
+// 使 &MongoDb{Client: ...} 形式的字面量构造依然安全。
 type MongoDb struct {
 	Client       *mongo.Client
 	Ctx          fiberhouse.IContext
-	lock         *sync.RWMutex
+	lock         sync.RWMutex
 	confPathname string
+}
+
+// clientSnapshot 在读锁保护下获取当前 mongo 客户端快照。
+func (md *MongoDb) clientSnapshot() *mongo.Client {
+	md.lock.RLock()
+	client := md.Client
+	md.lock.RUnlock()
+	return client
 }
 
 // NewMongoDb 创建 MongoDb 实例
@@ -42,7 +55,6 @@ func NewMongoDb(appCtx fiberhouse.IContext, confPath ...string) (*MongoDb, error
 	db := &MongoDb{
 		Client:       client,
 		Ctx:          appCtx,
-		lock:         &sync.RWMutex{},
 		confPathname: constant.DefaultMongoDBConfName,
 	}
 	if len(confPath) > 0 {
@@ -105,9 +117,13 @@ func (md *MongoDb) GetConfPath() string {
 // Close 关闭 MongoDB 客户端连接
 // 谨慎使用Close关闭链接
 func (md *MongoDb) Close() error {
+	client := md.clientSnapshot()
+	if client == nil {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return md.Client.Disconnect(ctx)
+	return client.Disconnect(ctx)
 }
 
 // IsHealthy 检查MongoDB连接是否健康
@@ -153,7 +169,12 @@ func (md *MongoDb) PingTry(ctx context.Context) bool {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if sr := md.Client.Database("test").RunCommand(ctx, bson.D{{Key: "ping", Value: 1}}); sr.Err() != nil {
+	client := md.clientSnapshot()
+	if client == nil {
+		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Msg("Mongo Client is nil, please check if the database connection is established")
+		return false
+	}
+	if sr := client.Database("test").RunCommand(ctx, bson.D{{Key: "ping", Value: 1}}); sr.Err() != nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Err(sr.Err()).Stack().Msg("Mongo PingTry error")
 		return false
 	}

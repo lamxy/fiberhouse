@@ -63,11 +63,23 @@ func (l *GormLoggerAdapter) Printf(format string, v ...interface{}) {
 }
 
 // MysqlDb mysql数据库操作封装
+//
+// Client 可能被 ReNewClient 并发替换（配置热更新场景），因此内部读取一律通过
+// clientSnapshot 获取读锁快照。lock 使用值类型，保证零值可用，
+// 使 &MysqlDb{Client: ...} 形式的字面量构造依然安全。
 type MysqlDb struct {
 	Client       *gorm.DB
 	Ctx          fiberhouse.IContext
-	lock         *sync.RWMutex
+	lock         sync.RWMutex
 	confPathname string
+}
+
+// clientSnapshot 在读锁保护下获取当前 gorm 客户端快照。
+func (md *MysqlDb) clientSnapshot() *gorm.DB {
+	md.lock.RLock()
+	client := md.Client
+	md.lock.RUnlock()
+	return client
 }
 
 func NewMysqlDb(appCtx fiberhouse.IContext, confPath ...string) (*MysqlDb, error) {
@@ -78,7 +90,6 @@ func NewMysqlDb(appCtx fiberhouse.IContext, confPath ...string) (*MysqlDb, error
 	db := &MysqlDb{
 		Client:       client,
 		Ctx:          appCtx,
-		lock:         &sync.RWMutex{},
 		confPathname: constant.DefaultMysqlDBConfName,
 	}
 	if len(confPath) > 0 {
@@ -202,7 +213,11 @@ func (md *MysqlDb) GetConfPath() string {
 // Close 关闭数据库连接
 // 谨慎使用Close关闭链接
 func (md *MysqlDb) Close() error {
-	sqlDb, err := md.Client.DB()
+	client := md.clientSnapshot()
+	if client == nil {
+		return nil
+	}
+	sqlDb, err := client.DB()
 	if err != nil {
 		return err
 	}
@@ -251,11 +266,12 @@ func (md *MysqlDb) ReNewClient(confPath ...string) (*MysqlDb, error) {
 
 // PingTry 尝试 ping 数据库以检查连接是否可用
 func (md *MysqlDb) PingTry(ctx context.Context) bool {
-	if md.Client == nil {
+	client := md.clientSnapshot()
+	if client == nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMysql()).Msg("Mysql Client is nil, please check if the database connection is established")
 		return false
 	}
-	sqlDb, err := md.Client.DB()
+	sqlDb, err := client.DB()
 	if err != nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMysql()).Err(err).Msg("Get sqlDb error")
 		return false
