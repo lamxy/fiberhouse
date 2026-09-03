@@ -125,7 +125,7 @@ type DefaultPLocation struct {
 	LocationFrameStarterCreate     IProviderLocation // 创建框架启动器位点
 	LocationCoreStarterCreate      IProviderLocation // 创建核心引擎启动器位点
 	LocationGlobalInit             IProviderLocation // 全局初始化位点
-	LocationGlobalKeepaliveInit    IProviderLocation // 全局对象保活初始化位点
+	LocationGlobalHealthCheckInit  IProviderLocation // 全局对象健康检查初始化位点
 	LocationCoreEngineInit         IProviderLocation // 核心引擎初始化位点
 	LocationCoreCodecInit          IProviderLocation // 核心编解码初始化位点
 	LocationCoreHookInit           IProviderLocation // 核心引擎生命周期钩子（如有）初始化位点
@@ -161,7 +161,7 @@ func ProviderLocationDefault() *DefaultPLocation {
 			LocationFrameStarterCreate:     registry.MustDefault("FrameStarterCreate"),     // 创建框架启动器位点
 			LocationCoreStarterCreate:      registry.MustDefault("CoreStarterCreate"),      // 创建核心引擎启动器位点
 			LocationGlobalInit:             registry.MustDefault("GlobalInit"),             // 全局初始化位点
-			LocationGlobalKeepaliveInit:    registry.MustDefault("GlobalKeepaliveInit"),    // 全局对象保活初始化位点
+			LocationGlobalHealthCheckInit:  registry.MustDefault("GlobalHealthCheckInit"),  // 全局对象健康检查初始化位点
 			LocationCoreEngineInit:         registry.MustDefault("CoreEngineInit"),         // 核心引擎初始化位点
 			LocationCoreCodecInit:          registry.MustDefault("CoreCodecInit"),          // 核心编解码初始化位点
 			LocationCoreHookInit:           registry.MustDefault("CoreHookInit"),           // 核心引擎钩子（如有）初始化位点

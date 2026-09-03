@@ -359,7 +359,7 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	appStarter.RegisterTaskServer(ProviderLocationDefault().LocationTaskServerInit.GetManagers()...)
 
 	// 全局对象保活注册执行位置点，完成全局对象探测和保活机制
-	appStarter.RegisterGlobalsKeepalive(ProviderLocationDefault().LocationGlobalKeepaliveInit.GetManagers()...)
+	appStarter.RegisterGlobalsKeepalive(ProviderLocationDefault().LocationGlobalHealthCheckInit.GetManagers()...)
 
 	// 运行前执行位置点，完成核心应用服务器监听前的必要逻辑（如有）
 	// 该位点允许注册多个管理器并全部执行，不再限制为唯一绑定模式；

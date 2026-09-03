@@ -339,7 +339,7 @@ func (fa *FrameApplication) RegisterGlobalsKeepalive(managers ...IProviderManage
 
 	if len(managers) > 0 {
 		for _, manager := range managers {
-			if manager != nil && manager.Location().GetLocationID() == ProviderLocationDefault().LocationGlobalKeepaliveInit.GetLocationID() {
+			if manager != nil && manager.Location().GetLocationID() == ProviderLocationDefault().LocationGlobalHealthCheckInit.GetLocationID() {
 				_, err := manager.LoadProvider(func(manager IProviderManager) (any, error) {
 					return fa, nil
 				})

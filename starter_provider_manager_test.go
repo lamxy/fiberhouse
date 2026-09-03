@@ -33,7 +33,7 @@ func task7DefaultLocations(t *testing.T) []*PLocation {
 		locations.LocationFrameStarterCreate,
 		locations.LocationCoreStarterCreate,
 		locations.LocationGlobalInit,
-		locations.LocationGlobalKeepaliveInit,
+		locations.LocationGlobalHealthCheckInit,
 		locations.LocationCoreEngineInit,
 		locations.LocationCoreHookInit,
 		locations.LocationAppMiddlewareInit,
