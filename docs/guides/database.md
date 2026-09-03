@@ -70,19 +70,31 @@ func (app *Application) ConfigGlobalInitializers() globalmanager.InitializerMap 
 
 [`example_application`](../../example_application/) 的 `Application.ConfigRequiredGlobalKeys` 把 MySQL、MongoDB 都列为 required，因而完整 Web 示例启动会依赖两者。这不是最小 FiberHouse 应用要求，也不是生产环境必须同时采用两种数据库。
 
-## Health、Rebuild 与 Close
+## Health 与 Close
 
-两种 wrapper 都实现 GlobalManager 的 `HealthChecker`、`Rebuilder` 和 `Closable`：
+两种 wrapper 都实现 GlobalManager 的 `HealthChecker` 和 `Closable`，但**刻意不实现 `Rebuilder`**：
 
 | 操作 | MySQL | MongoDB |
 |---|---|---|
 | `IsHealthy()` | 10 秒 context，`sql.DB.PingContext` | 10 秒 context，对固定数据库 `test` 执行 `{ping: 1}` |
-| `Rebuild(...)` | 重新 `NewClient`，替换 `Client` | 重新 `NewClient`，替换 `Client` |
 | `Close()` | `sql.DB.Close()` | 5 秒 context，`Client.Disconnect()` |
 
 MongoDB health 使用固定的 `test` 数据库，不读取 model 的数据库名。GlobalManager 在未初始化对象上不会触发 health；其 keepalive 也不会主动创建 lazy client。
 
-两个 `ReNewClient` 只在写替换时持有 wrapper 的 mutex，业务读取 `Client` 不持有同一读锁；重建没有等待旧查询结束，也没有关闭旧 client。GlobalManager 的 `Rebuild` 再次把同一个 wrapper 存回 entry，同样不补齐迁移和关闭。把重建用于生产前，应用必须建立停流、切换、等待和旧 client 回收协议。
+### 为什么不实现 Rebuilder
+
+连接池型对象的失效恢复由驱动层负责：`database/sql` 取到坏连接会自动淘汰重建，
+mongo-driver 内建 SDAM 心跳自动跟随副本集拓扑变化。配合 `connMaxLifetime` /
+`connMaxIdleTime`（须小于 DB `wait_timeout` 与云上 NAT/LB 空闲超时）即可覆盖
+连接被中间设备静默掐断的场景。
+
+换库、换实例、主从切换属于基础设施变更，应由 DNS、VIP 或 Proxy 层处理，应用侧无感。
+因此两个 wrapper 不参与 GlobalManager 的 `Rebuild` 流程，健康检查也不会触发重建。
+
+需要显式重建连接的运维场景（如凭证轮换），可直接调用 `ReNewClient`。
+注意该方法替换后会立即关闭旧 client，**没有排空（drain）机制**，
+正在使用旧连接的在途查询会被中断；`Client` 字段的并发读取已由 `clientSnapshot()`
+读锁快照保护。调用方需自行保证时机安全。
 
 标准 HTTP shutdown 调用 `ClearAll(true)`，不会逐项 `Close`。GlobalManager `Release` 只会重置成功关闭的 `Closable`，也不能替代资源所有者安排数据库 client 的关闭；因此数据库创建者仍应显式关闭 client，不依赖容器清空。详见[《GlobalManager》](global-manager.md)。
 
@@ -120,6 +132,6 @@ m.GetDB().Client.Table(m.GetTable()).Where(...)
 - 根据外部服务容量设置 pool 和 timeout；缺失数值会变成零值，不等于示例默认。
 - 在启动入口决定连接失败是记录后继续还是 fail-fast。
 - 为查询停流、worker 停止、client close 和日志 close 指定顺序；记录关闭错误。
-- 不在有并发读者时直接调用当前 `Rebuild`。
+- 不在有在途查询时调用 `ReNewClient`：它会立即关闭旧 client，没有排空机制。
 
 源码入口：[`component/database/dbmysql/mysql.go`](../../component/database/dbmysql/mysql.go)、[`component/database/dbmysql/mysql_model_impl.go`](../../component/database/dbmysql/mysql_model_impl.go)、[`component/database/dbmongo/mongo.go`](../../component/database/dbmongo/mongo.go) 与 [`component/database/dbmongo/mongo_model_impl.go`](../../component/database/dbmongo/mongo_model_impl.go)。

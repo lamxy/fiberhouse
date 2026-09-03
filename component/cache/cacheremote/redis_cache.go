@@ -17,11 +17,17 @@ import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/cache"
 	"github.com/lamxy/fiberhouse/constant"
+	"github.com/lamxy/fiberhouse/globalmanager"
 	frameUtils "github.com/lamxy/fiberhouse/utils"
 	"github.com/redis/go-redis/v9"
 )
 
-// RedisDb 实现了 Cache和全局管理器相关 接口
+// RedisDb 实现了 Cache 和全局管理器相关接口。
+//
+// 该类型实现 globalmanager.Closable 与 globalmanager.HealthChecker，但**不实现**
+// globalmanager.Rebuilder：go-redis 内建连接池管理与重试，取到失效连接会自动
+// 重建 TCP；Sentinel / Cluster 模式下的故障转移同样由驱动自行处理。
+// 应用侧主动重建连接池既无必要，也会中断在途请求。
 type RedisDb struct {
 	Client       *redis.Client
 	Ctx          fiberhouse.IContext
@@ -32,6 +38,13 @@ type RedisDb struct {
 	level          cache.Level
 	circuitBreaker cache.CacheCircuitBreaker
 }
+
+// 契约断言：RedisDb 仅提供关闭与健康观测能力。
+// 刻意不断言 globalmanager.Rebuilder —— 见类型注释。
+var (
+	_ globalmanager.Closable      = (*RedisDb)(nil)
+	_ globalmanager.HealthChecker = (*RedisDb)(nil)
+)
 
 type redisOptions struct {
 	confPath       string
@@ -126,14 +139,6 @@ func (rd *RedisDb) IsHealthy() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return rd.PingTry(ctx)
-}
-
-// Rebuild 重建 Redis 客户端连接
-func (rd *RedisDb) Rebuild(name ...interface{}) (interface{}, error) {
-	if len(name) > 0 {
-		return rd.ReNewClient(name[0].(string))
-	}
-	return rd.ReNewClient()
 }
 
 // Get 获取指定 key 的值
@@ -252,7 +257,13 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) *redis.Client {
 	})
 }
 
-// ReNewClient 重新创建 Redis 客户端连接
+// ReNewClient 重新创建 Redis 客户端连接。
+//
+// 这是一个供运维场景显式调用的低阶方法（如凭证轮换），不实现 globalmanager.Rebuilder，
+// 因此不会被全局容器的健康检查或 Rebuild 流程自动触发。原因见类型注释。
+//
+// 注意：替换后会立即关闭旧客户端，当前没有排空（drain）机制，
+// 正在使用旧连接执行的命令会被中断。调用方需自行保证时机安全。
 func (rd *RedisDb) ReNewClient(confPath ...string) (*RedisDb, error) {
 	path := rd.confPathname
 	if len(confPath) > 0 && confPath[0] != "" {

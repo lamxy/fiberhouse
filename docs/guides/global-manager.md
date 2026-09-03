@@ -64,9 +64,20 @@ type Rebuilder interface {
 
 `CheckHealth(key)` 不会触发 initializer。尚未经过 `Get` 的 entry 没有实例，不实现 `HealthChecker`，因此被视为健康；未实现该接口的已初始化对象也默认健康。只有已初始化并实现 `HealthChecker` 的对象会调用 `IsHealthy()`。
 
-`Rebuild(key)` 要求对象已经初始化且实现 `Rebuilder`。它调用当前实例的 `Rebuild(current.GetConfPath())`，然后把返回值直接替换到 entry。容器本身不会更新 initializer，也不会等待旧引用停止使用；关闭旧客户端是 `Rebuilder` 实现方的责任（内置的 MySQL / Redis / MongoDB 封装已在替换后关闭旧客户端）。数据库 client 等资源的停流与迁移顺序仍须由应用定义。
+`Rebuild(key)` 要求对象已经初始化且实现 `Rebuilder`。它调用当前实例的 `Rebuild(current.GetConfPath())`，然后把返回值直接替换到 entry。容器本身不会更新 initializer，也不会等待旧引用停止使用；释放旧资源是 `Rebuilder` 实现方的责任。
 
-`Rebuild` 定位为**配置热更新等场景的手动入口**，健康检查不会自动调用它。
+### Rebuilder 的适用范围
+
+`Rebuild` 定位为**配置类全局对象的热更新入口**，仅供显式手动调用，健康检查不会触发它。
+
+- **适用**：持有业务配置、规则表、模板、特性开关等内存态数据的全局对象。
+  这类「重建」是纯内存替换，无在途请求，语义清晰且代价可控。
+- **不适用**：连接池型对象。内置的 MySQL / Redis / MongoDB 封装均**刻意不实现**
+  `Rebuilder`——驱动层已具备失效连接自愈能力，而换库、主从切换属于基础设施变更，
+  应由 DNS、VIP 或 Proxy 层处理。详见[《数据库指南》](database.md)。
+
+需要显式重建连接的运维场景（如凭证轮换），请直接调用各封装的 `ReNewClient`，
+并自行保证调用时机安全。
 
 ## Web keepalive 扫描
 
@@ -87,7 +98,7 @@ type Rebuilder interface {
 
 | 操作 | key | initializer | 实例/资源 |
 |---|---|---|---|
-| `Rebuild(key)` | 保留 | 保留旧 initializer | 用 `Rebuilder` 返回值替换实例；不关闭旧实例 |
+| `Rebuild(key)` | 保留 | 保留旧 initializer | 用 `Rebuilder` 返回值替换实例；容器不关闭旧实例，释放旧资源由实现方负责 |
 | `Release(key)` | 保留 | 对 `Closable` 成功关闭后保留并重置 `sync.Once` | `Closable` 成功关闭后清空实例，后续 `Get` 可重新初始化；非 `Closable` 不重置 |
 | `ReleaseAll(true)` | 保留 | 保留 | 遍历调用 `Release`；单项错误打印到 stdout |
 | `Clear(key)` / `Unregister(key)` | 删除 | 删除 | 不调用 `Close` |
@@ -115,7 +126,7 @@ type Rebuilder interface {
 
 - 默认容器是进程级单例；Web、CLI、配置、日志 writer 和泛型 helper 可能共享同一 key 空间。
 - 批量注册和根 package 注册 helper 丢弃重复注册结果。
-- `Rebuild` 不关闭旧实例，也不与调用方已持有的引用协调；新旧具体类型兼容仍由调用方负责。
+- 容器的 `Rebuild` 不关闭旧实例（由 `Rebuilder` 实现方负责），也不与调用方已持有的引用协调；新旧具体类型兼容仍由调用方负责。
 - `Release` 只重置成功关闭的 `Closable`；`Clear` / `ClearAll` 仍完全不关闭资源。
 - 同一 entry generation 的维护门禁不定义删除后同名重注册、普通 `Get` 或业务引用的完整状态机。
 - keepalive 不初始化懒对象；取消与等待只由默认 `FrameApplication` 和内置 Fiber/Gin 关闭路径消费。

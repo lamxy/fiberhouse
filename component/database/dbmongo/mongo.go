@@ -17,6 +17,7 @@ import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/database/dbmongo/internal/mongodecimal"
 	"github.com/lamxy/fiberhouse/constant"
+	"github.com/lamxy/fiberhouse/globalmanager"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -26,7 +27,12 @@ import (
 
 // MongoDb mongodb 数据库操作封装
 //
-// Client 可能被 ReNewClient 并发替换（配置热更新场景），因此内部读取一律通过
+// 该类型实现 globalmanager.Closable 与 globalmanager.HealthChecker，但**不实现**
+// globalmanager.Rebuilder：mongo-driver 内建 SDAM（Server Discovery and Monitoring）
+// 心跳机制，由 heartbeatInterval 驱动，自动跟随副本集选主与拓扑变化。
+// 主动重建反而会丢弃已探测好的拓扑状态，需重新走一遍服务发现流程。
+//
+// Client 可能被 ReNewClient 并发替换（运维显式调用），因此内部读取一律通过
 // clientSnapshot 获取读锁快照。lock 使用值类型，保证零值可用，
 // 使 &MongoDb{Client: ...} 形式的字面量构造依然安全。
 type MongoDb struct {
@@ -35,6 +41,13 @@ type MongoDb struct {
 	lock         sync.RWMutex
 	confPathname string
 }
+
+// 契约断言：MongoDb 仅提供关闭与健康观测能力。
+// 刻意不断言 globalmanager.Rebuilder —— 见类型注释。
+var (
+	_ globalmanager.Closable      = (*MongoDb)(nil)
+	_ globalmanager.HealthChecker = (*MongoDb)(nil)
+)
 
 // clientSnapshot 在读锁保护下获取当前 mongo 客户端快照。
 func (md *MongoDb) clientSnapshot() *mongo.Client {
@@ -133,19 +146,21 @@ func (md *MongoDb) IsHealthy() bool {
 	return md.PingTry(ctx)
 }
 
-// Rebuild 重建MongoDB客户端连接
-func (md *MongoDb) Rebuild(confPath ...interface{}) (interface{}, error) {
-	if len(confPath) > 0 {
-		return md.ReNewClient(confPath[0].(string))
-	}
-	return md.ReNewClient()
-}
-
-// ReNewClient 重建MongoDB客户端连接
+// ReNewClient 重建 MongoDB 客户端连接。
+//
+// 这是一个供运维场景显式调用的低阶方法（如凭证轮换），不实现 globalmanager.Rebuilder，
+// 因此不会被全局容器的健康检查或 Rebuild 流程自动触发。原因见类型注释。
+//
+// 注意：替换后会立即断开旧客户端，当前没有排空（drain）机制，
+// 正在使用旧连接执行的操作会被中断；且重建会丢弃驱动已探测好的副本集拓扑，
+// 需要重新走一遍服务发现流程。调用方需自行保证时机安全。
 func (md *MongoDb) ReNewClient(confPath ...string) (*MongoDb, error) {
 	md.lock.Lock()
 	defer md.lock.Unlock()
 
+	if len(confPath) == 0 || confPath[0] == "" {
+		confPath = []string{md.confPathname}
+	}
 	client, errNc := NewClient(md.Ctx, confPath...)
 	if errNc != nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMongodb()).Err(errNc).Stack().Msg("Mongo ReNewClient error")

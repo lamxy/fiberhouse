@@ -77,7 +77,7 @@ func TestRedisDb_CloseAndPostCloseErrors(t *testing.T) {
 	assert.ErrorIs(t, err, cache.ErrCacheClosed)
 	assert.ErrorIs(t, rd.Set(context.Background(), "closed", "value", co), cache.ErrCacheClosed)
 	assert.ErrorIs(t, rd.Delete(context.Background(), "closed"), cache.ErrCacheClosed)
-	_, err = rd.Rebuild()
+	_, err = rd.ReNewClient()
 	assert.ErrorIs(t, err, cache.ErrCacheClosed)
 	assert.False(t, rd.PingTry(context.Background()))
 }

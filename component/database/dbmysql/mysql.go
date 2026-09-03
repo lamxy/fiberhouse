@@ -14,6 +14,7 @@ import (
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/constant"
+	"github.com/lamxy/fiberhouse/globalmanager"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -64,7 +65,13 @@ func (l *GormLoggerAdapter) Printf(format string, v ...interface{}) {
 
 // MysqlDb mysql数据库操作封装
 //
-// Client 可能被 ReNewClient 并发替换（配置热更新场景），因此内部读取一律通过
+// 该类型实现 globalmanager.Closable 与 globalmanager.HealthChecker，但**不实现**
+// globalmanager.Rebuilder：连接池型对象的失效恢复由 database/sql 驱动层负责
+// （取到坏连接自动淘汰重建），配合 connMaxLifetime / connMaxIdleTime 即可覆盖
+// 中间设备静默掐断的场景；而实例迁移、主从切换等拓扑变更应由 DNS、VIP 或
+// ProxySQL 等基础设施层处理，应用侧无需也不应自行重建连接池。
+//
+// Client 可能被 ReNewClient 并发替换（运维显式调用），因此内部读取一律通过
 // clientSnapshot 获取读锁快照。lock 使用值类型，保证零值可用，
 // 使 &MysqlDb{Client: ...} 形式的字面量构造依然安全。
 type MysqlDb struct {
@@ -73,6 +80,13 @@ type MysqlDb struct {
 	lock         sync.RWMutex
 	confPathname string
 }
+
+// 契约断言：MysqlDb 仅提供关闭与健康观测能力。
+// 刻意不断言 globalmanager.Rebuilder —— 见类型注释。
+var (
+	_ globalmanager.Closable      = (*MysqlDb)(nil)
+	_ globalmanager.HealthChecker = (*MysqlDb)(nil)
+)
 
 // clientSnapshot 在读锁保护下获取当前 gorm 客户端快照。
 func (md *MysqlDb) clientSnapshot() *gorm.DB {
@@ -206,6 +220,7 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) (*gorm.DB, error)
 	return db, nil
 }
 
+// GetConfPath 获取当前实例使用的配置路径
 func (md *MysqlDb) GetConfPath() string {
 	return md.confPathname
 }
@@ -231,19 +246,20 @@ func (md *MysqlDb) IsHealthy() bool {
 	return md.PingTry(ctx)
 }
 
-// Rebuild 重新构建数据库连接，可以选择传入新的配置路径
-func (md *MysqlDb) Rebuild(name ...interface{}) (interface{}, error) {
-	if len(name) > 0 {
-		return md.ReNewClient(name[0].(string))
-	}
-	return md.ReNewClient()
-}
-
-// ReNewClient 重新创建并替换当前的数据库客户端连接
+// ReNewClient 重新创建并替换当前的数据库客户端连接。
+//
+// 这是一个供运维场景显式调用的低阶方法（如凭证轮换），不实现 globalmanager.Rebuilder，
+// 因此不会被全局容器的健康检查或 Rebuild 流程自动触发。原因见类型注释。
+//
+// 注意：替换后会立即关闭旧连接池，当前没有排空（drain）机制，
+// 正在使用旧连接执行的查询会被中断。调用方需自行保证时机安全。
 func (md *MysqlDb) ReNewClient(confPath ...string) (*MysqlDb, error) {
 	md.lock.Lock()
 	defer md.lock.Unlock()
 
+	if len(confPath) == 0 || confPath[0] == "" {
+		confPath = []string{md.confPathname}
+	}
 	client, errNc := NewClient(md.Ctx, confPath...)
 	if errNc != nil {
 		md.Ctx.GetLogger().Error(md.Ctx.GetConfig().LogOriginMysql()).Err(errNc).Msg("Mysql ReNewClient error")
