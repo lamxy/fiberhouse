@@ -7,7 +7,6 @@
 package utils
 
 import (
-	"github.com/tidwall/gjson"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,6 +16,8 @@ import (
 	"strings"
 	"unicode"
 	"unsafe"
+
+	"github.com/tidwall/gjson"
 )
 
 // GetExecPath 获取当前可执行文件执行时目录
@@ -127,6 +128,7 @@ func CaptureStack() string {
 	frames := runtime.CallersFrames(pcs[:n])
 
 	var strBuilder strings.Builder
+	strBuilder.Grow(64 * 64) // 預估分配，減少擴容
 	strBuilder.WriteString("stack trace:\n")
 
 	for {

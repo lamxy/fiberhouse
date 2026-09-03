@@ -96,6 +96,7 @@ func (app *Application) RegisterCommands(core interface{}) {
 
 	cmdGetters := []fiberhouse.CommandGetter{
 		commands.NewExampleCommand(app.Ctx),
+		commands.NewBenchCommand(app.Ctx),
 		// TODO 收集更多的实现了CommandGetter接口的命令...
 
 	}

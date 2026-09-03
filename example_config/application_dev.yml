@@ -58,13 +58,13 @@ application:
     enableAlertHook: false                   # TODO 告警钩子设置
     level: debug                             # 日志级别
     asyncConf:                               # 异步日志相关配置
-      enable: false                           # 是否启用异步日志
+      enable: true                           # 是否启用异步日志；同步写日志会形成全局锁，高并发下 p50 可劣化数百倍
       type: "diode"                          # 异步日志类型，支持chan、diode
       chanConf:                              # 通道相关配置
         chanSize: 8                          # 通道数
         bufferSize: 8192                     # buffer缓冲 8k
       diodeConf:                             # 二极管
-        size: 33554432                       # 二极管大小 32M
+        size: 262144                         # 二极管slot大小 262144/256k；实测 1M/4M 无额外收益，32M 需常驻 256MB
         bufferSize: 4096                     # buffer缓冲 4k
         flushInterval: 1000                  # 毫秒
     rollConf:                                # 日志滚动相关配置
@@ -98,12 +98,26 @@ application:
   swagger:
     type: 1                                  # swagger方式1: 注释
     enable: true                             # 是否启用swagger
+  pprof:                                     # 性能剖析诊断服务，独立端口监听，与业务引擎无关
+    enable: false                            # 总开关；false时不监听任何端口，零开销
+    host: "127.0.0.1"                        # 监听地址；默认仅回环，生产环境勿轻易改为0.0.0.0
+    port: 6060                               # 诊断端口，与业务端口分离
+    prefix: "/debug/pprof"                   # 路由前缀
+    blockRate: 0                             # 阻塞采样率(纳秒)；0关闭，典型值10000；未开启时block profile为空
+    mutexFraction: 0                         # 锁竞争采样分母；0关闭，典型值100；未开启时mutex profile为空
+    readTimeout: 10                          # 单位s，读超时
+    writeTimeout: 120                        # 单位s，写超时；必须大于CPU profile的seconds参数，否则采集被截断
+    shutdownTimeout: 5                       # 单位s，优雅关闭等待超时
+    auth:                                    # 绑定非回环地址时务必开启
+      enable: false                          # 是否启用BasicAuth鉴权
+      username: ""
+      password: ""
   middleware:
     coreHttp: true                           # 开启fiber http请求日志
     swaggerRegister: true                    # 开启swagger路由注册
     basicAuth: true                          # 开启http请求基本认证
     requestId: true                          # 开启requestId链路追踪
-    monitor: true                            # 开启指标监控
+    monitor: true                            # 开启指标监控(/uuid/metrics)；实测占全进程约20%内存分配，压测或高负载时建议关闭
   globalManage:                              # 全局对象管理
     keepAlive: true                          # 全局对象保活
     interval: 300                            # 单位s，间隔xx秒进行健康检查

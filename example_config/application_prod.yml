@@ -9,7 +9,7 @@ application:
     port: 8080                               # 监听端口
     appConcurrency: 524288                   # 512 * 1024
     proxyHeader: "X-Forwarded-For"           # 代理头部字段
-    enablePrintRoutes: true                  # 是否打印所有注册的路由
+    enablePrintRoutes: false                 # 是否打印所有注册的路由；生产环境无需在启动日志中暴露完整路由表
     readBufferSize: 4096                     # 读取缓冲区大小
     writeBufferSize: 4096                    # 写入缓冲区大小
     bodyLimit: 4096                          # 单位B，body最大限制
@@ -51,20 +51,20 @@ application:
             keyFile: ""                       # 密钥文件路径
   appLog:
     filename: "app.log"                      # 日志文件名
-    enableConsole: true                      # 增加控制台输出
+    enableConsole: false                     # 增加控制台输出；生产环境建议关闭，同步写 stdout 不经异步队列，会成为全局串行点
     consoleJSON: true                        # 控制台输出json格式
     enableFile: true                         # 增加输出到日志文件
     enableMetrics: false                     # TODO 指标开关
     enableAlertHook: false                   # TODO 告警钩子设置
-    level: debug                             # 日志级别
+    level: info                              # 日志级别: trace、debug、info、warn、error、fatal、panic；生产环境勿用 debug，每请求构造 event 有额外开销
     asyncConf:                               # 异步日志相关配置
-      enable: true                           # 是否启用异步日志
+      enable: true                           # 是否启用异步日志；同步写日志会形成全局锁，高并发下 p50 可劣化数百倍
       type: "diode"                          # 异步日志类型，支持chan、diode
       chanConf:                              # 通道相关配置
         chanSize: 8                          # 通道数
         bufferSize: 8192                     # buffer缓冲 8k
       diodeConf:                             # 二极管
-        size: 33554432                       # 二极管大小 32M
+        size: 262144                         # 二极管slot大小 262144/256k；实测 1M/4M 无额外收益，32M 需常驻 256MB
         bufferSize: 4096                     # buffer缓冲 4k
         flushInterval: 1000                  # 毫秒
     rollConf:                                # 日志滚动相关配置
@@ -90,7 +90,7 @@ application:
     debugFlagValue: f0dc4970-ed31-4598-acd8-b5c5fd66c12e
     enableDebugFlag: false                   # true，表示请求头部字段debugFlag配置生效，当其值等于debugFlagValue时，不论环境及enablePrintStack影响，都在服务端打印日志栈信息
     enablePrintStack: false                  # true，表示启动打印栈信息，对于当前环境为非调式模式的生产环境时，false可关闭生产环境服务端的日志栈信息打印，节省服务器资源
-    debugMode: true                          # true，表示更详细的接口异常响应信息、且不受限制地在服务端打印日志栈信息以及在接口响应中显示详细的错误信息，生产环境该配置务必设置为false
+    debugMode: false                         # true，表示更详细的接口异常响应信息、且不受限制地在服务端打印日志栈信息以及在接口响应中显示详细的错误信息，生产环境该配置务必设置为false
   trace:
     requestID: traceId                       # 请求ID头部字段
   task:
@@ -98,12 +98,26 @@ application:
   swagger:
     type: 1                                  # swagger方式1: 注释
     enable: true                             # 是否启用swagger
+  pprof:                                     # 性能剖析诊断服务，独立端口监听，与业务引擎无关
+    enable: false                            # 生产环境务必保持false；仅在需要诊断时临时开启
+    host: "127.0.0.1"                        # 生产环境务必保持回环地址，禁止改为0.0.0.0对公网暴露
+    port: 6060                               # 诊断端口，与业务端口分离
+    prefix: "/debug/pprof"                   # 路由前缀
+    blockRate: 0                             # 阻塞采样率(纳秒)；开启后有运行时开销，仅诊断期间启用
+    mutexFraction: 0                         # 锁竞争采样分母；开启后有运行时开销，仅诊断期间启用
+    readTimeout: 10                          # 单位s，读超时
+    writeTimeout: 120                        # 单位s，写超时；必须大于CPU profile的seconds参数
+    shutdownTimeout: 5                       # 单位s，优雅关闭等待超时
+    auth:                                    # 若确需绑定非回环地址，务必开启鉴权
+      enable: false                          # 是否启用BasicAuth鉴权
+      username: ""
+      password: ""
   middleware:
     coreHttp: true                           # 开启fiber http请求日志
     swaggerRegister: true                    # 开启swagger路由注册
     basicAuth: true                          # 开启http请求基本认证
     requestId: true                          # 开启requestId链路追踪
-    monitor: true                            # 开启指标监控
+    monitor: true                            # 开启指标监控(/uuid/metrics)；实测占全进程约20%内存分配(gopsutil扫描/proc/net)，若不依赖该面板建议关闭
   globalManage:                              # 全局对象管理
     keepAlive: true                          # 全局对象保活
     interval: 300                            # 单位s，间隔xx秒进行健康检查

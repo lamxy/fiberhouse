@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/example_application/module/command-module/model"
@@ -17,23 +18,41 @@ import (
 
 // exampleCommand 为「example」CLI 命令组实现 fiberhouse.CommandGetter，
 // 将全部业务逻辑委托给 service.ExampleUseCase。
+//
+// useCase 通过 resolve 惰性获取：MySQL 栈的构造在缺少数据库配置时会 panic，
+// 若在命令注册期就构造，会导致整个 CLI（含与 MySQL 无关的命令）无法启动。
 type exampleCommand struct {
 	useCase service.ExampleUseCase
+	resolve func() service.ExampleUseCase
+	once    sync.Once
 }
 
-// NewExampleCommand 从 ctx 接线完整的 command-module 栈（model、repository、
-// service），并返回构建出的「example」CLI 命令。
+// NewExampleCommand 返回「example」CLI 命令，command-module 栈（model、
+// repository、service）延迟到子命令实际执行时才接线。
 func NewExampleCommand(ctx fiberhouse.ICommandContext) fiberhouse.CommandGetter {
-	mysqlModel := model.NewExampleMysqlModel(ctx)
-	repo := repository.NewExampleRepository(mysqlModel)
-	useCase := service.NewExampleMysqlService(repo)
-	return newExampleCommand(useCase)
+	return &exampleCommand{
+		resolve: func() service.ExampleUseCase {
+			mysqlModel := model.NewExampleMysqlModel(ctx)
+			repo := repository.NewExampleRepository(mysqlModel)
+			return service.NewExampleMysqlService(repo)
+		},
+	}
 }
 
 // newExampleCommand 围绕一个已构造好的 use case 构建 exampleCommand，
 // 使测试可以注入 fake/mock 而无需触碰 ctx 接线。
 func newExampleCommand(useCase service.ExampleUseCase) fiberhouse.CommandGetter {
 	return &exampleCommand{useCase: useCase}
+}
+
+// uc 返回 use case，必要时惰性完成接线。
+func (c *exampleCommand) uc() service.ExampleUseCase {
+	c.once.Do(func() {
+		if c.useCase == nil && c.resolve != nil {
+			c.useCase = c.resolve()
+		}
+	})
+	return c.useCase
 }
 
 // GetCommand 返回「example」CLI 命令组的 urfave/cli 命令树
@@ -58,7 +77,7 @@ func (c *exampleCommand) migrateCommand() *cli.Command {
 		Name:  "migrate",
 		Usage: "create or update the example_records table",
 		Action: func(cliCtx *cli.Context) error {
-			if err := c.useCase.Migrate(cliCtx.Context); err != nil {
+			if err := c.uc().Migrate(cliCtx.Context); err != nil {
 				return err
 			}
 			return writeJSON(cliCtx.App.Writer, map[string]string{"status": "ok"})
@@ -80,7 +99,7 @@ func (c *exampleCommand) createCommand() *cli.Command {
 			if !validCLIStatus(status) {
 				return fmt.Errorf("status must be active or archived")
 			}
-			record, err := c.useCase.Create(cliCtx.Context, service.CreateInput{
+			record, err := c.uc().Create(cliCtx.Context, service.CreateInput{
 				Name:        cliCtx.String("name"),
 				Description: cliCtx.String("description"),
 				Status:      status,
@@ -103,7 +122,7 @@ func (c *exampleCommand) getCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			record, err := c.useCase.Get(cliCtx.Context, id)
+			record, err := c.uc().Get(cliCtx.Context, id)
 			if err != nil {
 				return err
 			}
@@ -132,7 +151,7 @@ func (c *exampleCommand) listCommand() *cli.Command {
 			if status != "" && !validCLIStatus(status) {
 				return fmt.Errorf("status must be active or archived")
 			}
-			result, err := c.useCase.List(cliCtx.Context, service.ListInput{
+			result, err := c.uc().List(cliCtx.Context, service.ListInput{
 				Page: page, PageSize: pageSize, Status: status,
 			})
 			if err != nil {
@@ -177,7 +196,7 @@ func (c *exampleCommand) updateCommand() *cli.Command {
 			if input.Name == nil && input.Description == nil && input.Status == nil {
 				return fmt.Errorf("at least one update flag is required")
 			}
-			record, err := c.useCase.Update(cliCtx.Context, id, input)
+			record, err := c.uc().Update(cliCtx.Context, id, input)
 			if err != nil {
 				return err
 			}
@@ -196,7 +215,7 @@ func (c *exampleCommand) deleteCommand() *cli.Command {
 			if err != nil {
 				return err
 			}
-			if err := c.useCase.Delete(cliCtx.Context, id); err != nil {
+			if err := c.uc().Delete(cliCtx.Context, id); err != nil {
 				return err
 			}
 			return writeJSON(cliCtx.App.Writer, map[string]string{"status": "ok"})

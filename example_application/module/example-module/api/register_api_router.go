@@ -1,10 +1,7 @@
 package api
 
 import (
-	"time"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/lamxy/fiberhouse"
 )
 
@@ -38,14 +35,15 @@ func registerHealthRoutes(router fiber.Router, handler *HealthHandler) {
 // registerCommonRoutes 注册公共部分的路由
 func registerCommonRoutes(router fiber.Router, handler *CommonHandler) {
 	// 限流中间件
-	commonGroup := router.Group("/common", limiter.New(limiter.Config{
-		Max:        5,
-		Expiration: 30 * time.Second,
-		KeyGenerator: func(*fiber.Ctx) string {
-			return "limiter_key_unique"
-		},
-		LimiterMiddleware: limiter.SlidingWindow{},
-	}))
+	//limiter.New(limiter.Config{
+	//	Max:        5,
+	//	Expiration: 30 * time.Second,
+	//	KeyGenerator: func(*fiber.Ctx) string {
+	//		return "limiter_key_unique"
+	//	},
+	//	LimiterMiddleware: limiter.SlidingWindow{},
+	//})
+	commonGroup := router.Group("/common")
 	commonGroup.Get("/test/get-instance", handler.TestGetInstance).Name("common_get_instance")
 	commonGroup.Get("/test/get-must-instance", handler.TestGetMustInstance).Name("common_get_must_instance")
 	commonGroup.Get("/test/get-must-instance-failed", handler.TestGetMustInstanceFailed).Name("common_get_must_instance_failed")

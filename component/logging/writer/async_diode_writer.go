@@ -38,7 +38,7 @@ func NewAsyncDiodeWriter(cfg appconfig.IAppConfig, filename string) *AsyncDiodeW
 	maxBackups := cfg.Int("application.appLog.rollConf.maxBackups")
 	maxAge := cfg.Int("application.appLog.rollConf.maxAge")
 	compress := cfg.Bool("application.appLog.rollConf.compress")
-	diodeSize := cfg.Int("application.appLog.asyncConf.diodeConf.size", 33554432) // 必要配置，否则报错: 除数为0 panic
+	diodeSize := cfg.Int("application.appLog.asyncConf.diodeConf.size", 262144) // 必要配置，否则报错: 除数为0 panic 默認 256k
 	diodeBuf := cfg.Int("application.appLog.asyncConf.diodeConf.bufferSize", 4096)
 	diodeInterval := cfg.Duration("application.appLog.asyncConf.diodeConf.flushInterval", 1000) * time.Millisecond
 

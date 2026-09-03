@@ -24,6 +24,7 @@ graphify_evaluation_report.md
 __pycache__/
 *.pyc
 .codegraph-qa-out/todo.md
+.codegraph-qa-out/local/
 .agent-rules/
 docs/superpowers/
 .superpowers/

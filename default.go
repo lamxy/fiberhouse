@@ -45,6 +45,8 @@ func DefaultProviders() *DefaultProviderCollection {
 			NewGinRecoveryProvider(),      // Gin恢复提供者（框架默认提供）、及其他更多的基于自定义框架的恢复提供者
 			NewRespInfoProtobufProvider(), // Protobuf响应编解码提供者
 			NewRespInfoMsgpackProvider(),  // Msgpack响应编解码提供者
+			NewPprofStartProvider(),       // pprof诊断服务启动提供者（由application.pprof.enable开关控制）
+			NewPprofShutdownProvider(),    // pprof诊断服务关闭提供者
 			// more...
 		)
 	})
@@ -152,6 +154,9 @@ func DefaultPManagers(ctx IApplicationContext) *DefaultPManagerCollection {
 			NewRecoveryPManagerOnce(ctx),
 			// 响应编解码管理器
 			NewRespInfoPManager(ctx),
+			// pprof诊断服务管理器（启动/关闭分处两个位点）
+			NewPprofStartPManager(ctx),
+			NewPprofShutdownPManager(ctx),
 			// more...
 		)
 	})

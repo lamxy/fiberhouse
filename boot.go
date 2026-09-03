@@ -303,8 +303,8 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
 					return fh, nil // 向当前管理器加载提供者函数中注入当前执行位点的FiberHouse实例
 				})
+				break
 			}
-			break
 		}
 	}
 
@@ -362,16 +362,15 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	appStarter.RegisterGlobalsKeepalive(ProviderLocationDefault().LocationGlobalKeepaliveInit.GetManagers()...)
 
 	// 运行前执行位置点，完成核心应用服务器监听前的必要逻辑（如有）
-	runBeforeManagers := ProviderLocationDefault().LocationServerRunBefore.GetManagers()
-	if len(runBeforeManagers) > 0 {
-		for _, m := range runBeforeManagers {
-			if m.IsUnique() { // 只允许唯一绑定单一提供者的管理器
-				_, _ = m.LoadProvider(func(manager IProviderManager) (any, error) {
-					return appStarter, nil // 向当前管理器加载提供者函数中注入当前执行位点的应用启动器实例
-				})
-				break
-			}
-		}
+	// 该位点允许注册多个管理器并全部执行，不再限制为唯一绑定模式；
+	// 复用统一的位点分派函数以获得与其他位点一致的 GroupExtendReplace 替代语义。
+	if _, _, err := LoadProviderManagersAtLocation(
+		ProviderLocationDefault().LocationServerRunBefore.GetManagers(),
+		ProviderLocationDefault().LocationServerRunBefore,
+		appStarter, // 向当前管理器加载提供者函数中注入当前执行位点的应用启动器实例
+	); err != nil {
+		_, runBeforeCfg, runBeforeLogger := fh.resolveGlobalTools()
+		runBeforeLogger.ErrorWith(runBeforeCfg.LogOriginFrame()).Err(err).Msg("ServerRunBefore providers failed")
 	}
 
 	// 监听系统信号，处理应用优雅关闭逻辑
