@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"sync/atomic"
 	"testing"
 
 	"github.com/lamxy/fiberhouse"
@@ -68,10 +69,12 @@ func (a *commandTestApplication) RegisterApplicationGlobals() { a.applicationGlo
 
 type failingCommandHealthResource struct {
 	rebuildErr error
+	rebuilt    atomic.Bool
 }
 
 func (r *failingCommandHealthResource) IsHealthy() bool { return false }
 func (r *failingCommandHealthResource) Rebuild(...interface{}) (interface{}, error) {
+	r.rebuilt.Store(true)
 	return nil, r.rebuildErr
 }
 func (r *failingCommandHealthResource) GetConfPath() string { return "" }
@@ -224,7 +227,7 @@ func TestFrameCmdApplication_RegistrationLoggerOriginsAndGlobals(t *testing.T) {
 	}
 }
 
-func TestFrameCmdApplication_StartHealthCheckDoesNotLogSuccessWhenRebuildFails(t *testing.T) {
+func TestFrameCmdApplication_StartHealthCheckReportsWithoutRebuilding(t *testing.T) {
 	const resourceKey = "failing-command-health-resource"
 	rebuildErr := errors.New("sentinel rebuild failure")
 	var logs bytes.Buffer
@@ -241,8 +244,9 @@ func TestFrameCmdApplication_StartHealthCheckDoesNotLogSuccessWhenRebuildFails(t
 	frame := &FrameCmdApplication{Ctx: ctx}
 	frame.startHealthCheck()
 
+	// 健康检查只负责观测上报，重建交由驱动层自愈或热更新场景手动触发。
 	output := logs.String()
-	assert.Contains(t, output, rebuildErr.Error())
-	assert.Contains(t, output, "global resource '"+resourceKey+"' rebuild failed.")
-	assert.NotContains(t, output, "global resource '"+resourceKey+"' rebuild success.")
+	assert.Contains(t, output, "global resource '"+resourceKey+"' is unhealthy")
+	assert.False(t, resource.rebuilt.Load(), "health check must not trigger Rebuild")
+	assert.NotContains(t, output, "rebuild")
 }

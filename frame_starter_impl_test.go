@@ -101,11 +101,14 @@ type frameCustomStarterWithoutHealthStop struct{ FrameStarter }
 
 func (s *frameCustomStarterWithoutHealthStop) GetFrameApp() FrameStarter { return s }
 
-type frameFailingHealthRebuilder struct{}
+type frameFailingHealthRebuilder struct {
+	rebuilt atomic.Bool
+}
 
 func (*frameFailingHealthRebuilder) IsHealthy() bool { return false }
 
-func (*frameFailingHealthRebuilder) Rebuild(...interface{}) (interface{}, error) {
+func (r *frameFailingHealthRebuilder) Rebuild(...interface{}) (interface{}, error) {
+	r.rebuilt.Store(true)
 	return nil, errors.New("frame rebuild failed")
 }
 
@@ -401,11 +404,12 @@ func TestFrameApplication_StartHealthCheckRejectsInvalidInterval(t *testing.T) {
 	assert.Contains(t, logs.String(), "health check interval must be positive")
 }
 
-func TestFrameApplication_CheckGlobalsHealthOnceDoesNotLogSuccessAfterRebuildFailure(t *testing.T) {
+func TestFrameApplication_CheckGlobalsHealthOnceReportsWithoutRebuilding(t *testing.T) {
 	ctx, logs := newFrameTestContext(t, nil)
 	manager := isolateFrameHealthManager(t, ctx)
+	resource := &frameFailingHealthRebuilder{}
 	manager.Register("unhealthy", func() (interface{}, error) {
-		return &frameFailingHealthRebuilder{}, nil
+		return resource, nil
 	})
 	_, err := manager.Get("unhealthy")
 	require.NoError(t, err)
@@ -413,8 +417,10 @@ func TestFrameApplication_CheckGlobalsHealthOnceDoesNotLogSuccessAfterRebuildFai
 
 	frame.checkGlobalsHealthOnce()
 
-	assert.Contains(t, logs.String(), "rebuild failed")
-	assert.NotContains(t, logs.String(), "rebuild success")
+	// 健康检查只负责观测上报，重建交由驱动层自愈或热更新场景手动触发。
+	assert.Contains(t, logs.String(), "is unhealthy")
+	assert.False(t, resource.rebuilt.Load(), "health check must not trigger Rebuild")
+	assert.NotContains(t, logs.String(), "rebuild")
 }
 
 func TestClearApplicationGlobalsStopsMountedFrameBeforeClearingContainer(t *testing.T) {

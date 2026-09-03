@@ -64,13 +64,16 @@ func (fca *FrameCmdApplication) RegisterApplicationGlobals() {
 	// 注册自定义的应用全局初始化器和启动必要的全局单例
 	fca.GetApplication().(fiberhouse.ApplicationCmdRegister).RegisterApplicationGlobals()
 
-	// 全局对象健康检查和重建
+	// 全局对象健康检查（仅观测上报，不做重建）
 	if fca.GetContext().GetConfig().Bool("application.globalManage.keepAlive") {
 		fca.startHealthCheck()
 	}
 }
 
-// StartHealthCheck 异步检查全局对象是否健康和重建
+// startHealthCheck 同步执行一轮全局对象健康检查，仅观测与上报，不做任何重建。
+//
+// 命令行应用为一次性执行模型，此处不启动后台 ticker，仅在注册阶段检查一次。
+// 不做重建的原因参见 FrameApplication.checkGlobalsHealthOnce 的说明。
 func (fca *FrameCmdApplication) startHealthCheck() {
 	gm, log, cfg := fca.GetContext().GetContainer(), fca.GetContext().GetLogger(), fca.GetContext().GetConfig()
 	defer func() {
@@ -91,13 +94,7 @@ func (fca *FrameCmdApplication) startHealthCheck() {
 			return true
 		}
 		if !ret {
-			log.Error(cfg.LogOriginCMD()).Msgf("global resource '%s' is unhealthy, rebuilding...", name)
-			err = gm.Rebuild(name)
-			if err != nil {
-				log.Error(cfg.LogOriginCMD()).Err(err).Msgf("global resource '%s' rebuild failed.", name)
-				return true
-			}
-			log.Info(cfg.LogOriginCMD()).Err(err).Msgf("global resource '%s' rebuild success.", name)
+			log.Error(cfg.LogOriginCMD()).Msgf("global resource '%s' is unhealthy, waiting for driver-level recovery", name)
 		}
 		return true
 	})

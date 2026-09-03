@@ -376,6 +376,13 @@ func (fa *FrameApplication) recoverHealthCheckPanic() {
 	}
 }
 
+// checkGlobalsHealthOnce 遍历全局对象执行一轮健康检查，仅观测与上报，不做任何重建。
+//
+// 此处刻意不调用 Rebuild：连接池型对象（MySQL/Redis/MongoDB）的驱动层已具备失效连接
+// 自愈能力，配合 connMaxLifetime/connMaxIdleTime 即可覆盖中间设备静默掐断的场景。
+// 单次 Ping 失败（瞬时抖动、主从切换）就整池重建，会丢弃正在服务请求的连接，
+// 且在故障期形成"重建风暴"放大故障。健康状态应交由外部编排系统（K8s readiness
+// 探针、负载均衡器）决策摘流量；重建仅保留给配置热更新等场景手动调用。
 func (fa *FrameApplication) checkGlobalsHealthOnce() {
 	gm, log, cfg := fa.GetContext().GetContainer(), fa.GetContext().GetLogger(), fa.GetContext().GetConfig()
 	gm.Range(func(key, value interface{}) bool {
@@ -386,13 +393,7 @@ func (fa *FrameApplication) checkGlobalsHealthOnce() {
 			return true
 		}
 		if !ret {
-			log.Error(cfg.LogOriginFrame()).Msgf("global resource '%s' is unhealthy, rebuilding...", name)
-			err = gm.Rebuild(name)
-			if err != nil {
-				log.Error(cfg.LogOriginFrame()).Err(err).Msgf("global resource '%s' rebuild failed.", name)
-				return true
-			}
-			log.Info(cfg.LogOriginFrame()).Msgf("global resource '%s' rebuild success.", name)
+			log.Error(cfg.LogOriginFrame()).Msgf("global resource '%s' is unhealthy, waiting for driver-level recovery", name)
 		}
 		return true
 	})
