@@ -7,6 +7,8 @@
 package dbmongo
 
 import (
+	"fmt"
+
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/exception"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -24,23 +26,45 @@ type MongoModel struct {
 	name   string
 }
 
-// NewMongoModel 创建并返回一个MongoModel实例
-// 未注册或名称错误会panic
+// NewMongoModel 创建并返回一个MongoModel实例。
+//
+// 若未找到对应 MongoDb 实例，或该 key 下注册的不是 *MongoDb，将 panic。
+// 本变体用于装配期的链式调用；需要处理错误请使用 NewMongoModelWithError。
 func NewMongoModel(ctx fiberhouse.IContext, instanceKey ...fiberhouse.InstanceKey) *MongoModel {
+	model, err := NewMongoModelWithError(ctx, instanceKey...)
+	if err != nil {
+		panic(err)
+	}
+	return model
+}
+
+// NewMongoModelWithError 创建 MongoModel 实例，解析失败时返回错误而非 panic。
+//
+// 两种失败都是**可恢复**的装配错误，调用方应当能够处理而不是被 panic 中断：
+// key 未注册（应用没有注册该 Mongo 实例），或 key 下注册的对象不是 *MongoDb
+// （key 冲突或注册了错误的类型）。后者尤其需要显式检查——容器的 Get 会成功返回，
+// 未经检查的类型断言会在这里 panic，且 panic 信息不包含 key 名，难以定位。
+//
+// 返回的错误始终包含 key 名，并对 Get 失败保留原始错误链。
+func NewMongoModelWithError(ctx fiberhouse.IContext, instanceKey ...fiberhouse.InstanceKey) (*MongoModel, error) {
 	var key string
 	if len(instanceKey) > 0 {
 		key = instanceKey[0].String()
 	} else {
 		key = ctx.GetStarter().GetApplication().GetDBMongoKey()
 	}
-	db, err := ctx.GetContainer().Get(key)
+	instance, err := ctx.GetContainer().Get(key)
 	if err != nil {
-		panic(err.Error())
+		return nil, fmt.Errorf("resolve MongoDB instance '%s' for model: %w", key, err)
+	}
+	db, ok := instance.(*MongoDb)
+	if !ok {
+		return nil, fmt.Errorf("global object '%s' is %T, want *dbmongo.MongoDb", key, instance)
 	}
 	return &MongoModel{
 		Ctx: ctx,
-		Db:  db.(*MongoDb),
-	}
+		Db:  db,
+	}, nil
 }
 
 // GetContext 获取应用上下文
