@@ -205,6 +205,12 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) (*gorm.DB, error)
 
 // Close 关闭数据库连接
 // 谨慎使用Close关闭链接
+//
+// 幂等：关闭路径上同一个资源可能被关闭多次（别名 key、组合对象持有子资源）。
+// 这里不额外加 closed 标志，因为幂等性由 database/sql 保证——sql.DB.Close 对已关闭
+// 的连接池重复调用返回 nil。这与 MongoDb / RedisDb 需要自带标志的原因不同：
+// mongo.Client.Disconnect 重复调用会返回 ErrClientDisconnected，
+// go-redis 的 Client.Close 也会返回错误，两者都必须由封装层吸收。
 func (md *MysqlDb) Close() error {
 	if md.Client == nil {
 		return nil

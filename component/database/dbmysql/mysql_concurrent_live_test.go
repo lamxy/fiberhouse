@@ -9,6 +9,7 @@
 package dbmysql
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -16,6 +17,27 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+// TestLive_MysqlDb_CloseIsIdempotent 针对真实容器验证 Close 幂等。
+//
+// MysqlDb 不带自己的 closed 标志，依赖 database/sql 保证 sql.DB.Close 幂等。
+// 那是一个外部契约，关闭路径上重复关闭又是常态（别名 key、组合对象持有子资源），
+// 因此必须实测而不是假定。
+func TestLive_MysqlDb_CloseIsIdempotent(t *testing.T) {
+	dsn := "root:root@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=True&loc=Local&timeout=5s"
+	ctx := newTestMysqlAppContext(t, dsn)
+
+	db, err := NewMysqlDb(ctx, "test.mysql")
+	require.NoError(t, err, "must be able to connect to the live MySQL container")
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	require.True(t, db.PingTry(pingCtx), "client must be live before closing")
+
+	require.NoError(t, db.Close(), "first Close must succeed")
+	require.NoError(t, db.Close(), "second Close must be a no-op")
+	require.NoError(t, db.Close(), "third Close must remain a no-op")
+}
 
 // TestLive_MysqlDb_ConcurrentReadWriteWithHealthCheck 针对真实 MySQL 容器验证并发
 // 读写与并发健康检查同时进行时的行为。
