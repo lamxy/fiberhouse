@@ -18,8 +18,13 @@ import (
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/component/cache"
 	"github.com/lamxy/fiberhouse/component/cache/cachelocal"
+	"github.com/lamxy/fiberhouse/globalmanager"
 	"github.com/panjf2000/ants/v2"
 )
+
+// Level2Cache 持有 local 与 remote 两个子缓存的关闭责任，必须先于子缓存各自的
+// 全局 key 被释放，否则排空期间的异步写入会打在已关闭的子缓存上。
+var _ globalmanager.CompositeClosable = (*Level2Cache)(nil)
 
 const generationShardCount = 64
 
@@ -436,6 +441,18 @@ func (l2c *Level2Cache) Close() error {
 	err := l2c.shutdownErr
 	l2c.lifecycleMu.Unlock()
 	return err
+}
+
+// OwnsChildren 实现 globalmanager.CompositeClosable。
+//
+// 返回 true 表示本实例负责关闭 local 与 remote 两个子缓存，因此全局容器必须先释放
+// 本对象、再释放子缓存各自的 key：finishShutdown 会先等待在途异步写入排空，再关闭
+// 子缓存；若容器先关掉了 remote（同一个 Redis 客户端也注册在别的 key 下），排空期间
+// 的写入就会打在已关闭的客户端上。
+func (l2c *Level2Cache) OwnsChildren() bool {
+	l2c.lifecycleMu.Lock()
+	defer l2c.lifecycleMu.Unlock()
+	return l2c.ownChildren
 }
 
 func (l2c *Level2Cache) initLifecycle(ownChildren bool) {

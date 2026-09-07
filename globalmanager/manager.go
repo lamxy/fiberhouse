@@ -343,18 +343,79 @@ func (e *entry) resetToUninitialized() {
 	e.once.Store(&sync.Once{})
 }
 
-// ReleaseAll 释放所有已注册对象的资源，仅仅释放，支持get时重建对象
+// ReleaseAll 释放所有已注册对象的资源，仅仅释放，支持get时重建对象。
+//
+// 需要显式传入 true 才会执行，避免误调用清空整个容器。
+//
+// 关闭顺序：先释放实现了 CompositeClosable 且 OwnsChildren() 为 true 的组合对象，
+// 再释放其余对象。组合对象需要先排空在途异步操作再关闭子资源，若容器先关掉子资源，
+// 组合对象排空期间就会打在已关闭的资源上。遍历顺序本身不确定（sync.Map.Range 未定义
+// 迭代顺序），所以这个约束必须显式表达而不能依赖运气。详见 CompositeClosable。
+//
+// 别名与共享子资源天然会被关闭多次（同一个 Redis 客户端既在 KEY_REDIS 下，又在
+// KEY_REMOTE_CACHE 下，还被 Level2Cache 持有），因此实现方必须保证 Close 幂等。
+//
+// 释放错误通过 ReleaseAllWithObserver 上报；本方法丢弃错误，仅用于不关心失败的场景。
 func (gm *GlobalManager) ReleaseAll(conform ...bool) {
-	if len(conform) > 0 && conform[0] {
-		gm.container.Range(func(key, value interface{}) bool {
-			name := key.(string)
-			err := gm.Release(name)
-			if err != nil {
-				fmt.Printf("failed to release global object '%s': %v.\n", name, err)
-			}
-			return true
-		})
+	gm.ReleaseAllWithObserver(nil, conform...)
+}
+
+// ReleaseAllWithObserver 与 ReleaseAll 相同，但把每个释放失败交给 observer 上报。
+//
+// globalmanager 不依赖任何日志实现，因此错误上报由调用方注入：框架侧传入一个写入
+// 框架日志器的回调即可。observer 为 nil 时错误被丢弃。
+//
+// observer 在释放循环内同步调用，实现应保持轻量且不得再次调用本容器的维护方法。
+func (gm *GlobalManager) ReleaseAllWithObserver(observer func(name KeyName, err error), conform ...bool) {
+	if len(conform) == 0 || !conform[0] {
+		return
 	}
+
+	report := func(name KeyName, err error) {
+		if err != nil && observer != nil {
+			observer(name, err)
+		}
+	}
+
+	// 第一轮：组合对象。它们负责排空在途操作并关闭自己持有的子资源。
+	var deferred []KeyName
+	gm.container.Range(func(key, _ interface{}) bool {
+		name, ok := key.(string)
+		if !ok {
+			return true
+		}
+		if gm.ownsChildren(name) {
+			report(name, gm.Release(name))
+		} else {
+			deferred = append(deferred, name)
+		}
+		return true
+	})
+
+	// 第二轮：其余对象。此时组合对象已排空，子资源的重复关闭由幂等 Close 吸收。
+	for _, name := range deferred {
+		report(name, gm.Release(name))
+	}
+}
+
+// ownsChildren 判断某个 key 当前的实例是否为负责关闭子资源的组合对象。
+//
+// 未初始化的 entry 返回 false：没有实例就没有子资源，放进第二轮即可。
+func (gm *GlobalManager) ownsChildren(name KeyName) bool {
+	origin, ok := gm.container.Load(name)
+	if !ok {
+		return false
+	}
+	entity, ok := origin.(*entry)
+	if !ok {
+		return false
+	}
+	stored := entity.instance.Load()
+	if stored == nil {
+		return false
+	}
+	composite, ok := stored.value.(CompositeClosable)
+	return ok && composite.OwnsChildren()
 }
 
 // Clear 直接永久删除key，后续无法Get()，只能重新注册

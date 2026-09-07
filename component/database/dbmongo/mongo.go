@@ -10,6 +10,7 @@ package dbmongo
 import (
 	"context"
 	"reflect"
+	"sync/atomic"
 	"time"
 
 	"github.com/govalues/decimal"
@@ -36,6 +37,9 @@ import (
 type MongoDb struct {
 	Client *mongo.Client
 	Ctx    fiberhouse.IContext
+	// closed 保证 Close 幂等。容器允许同一个底层资源以别名注册在多个 key 下，
+	// 也允许组合对象持有并关闭子资源，因此关闭路径上重复 Close 是常态而非异常。
+	closed atomic.Bool
 }
 
 // 契约断言：MongoDb 仅提供关闭与健康观测能力。
@@ -107,8 +111,15 @@ func NewClient(appCtx fiberhouse.IContext, confPath ...string) (*mongo.Client, e
 
 // Close 关闭 MongoDB 客户端连接
 // 谨慎使用Close关闭链接
+//
+// 幂等：重复调用直接返回 nil。关闭路径上同一个资源可能被关闭多次（别名 key、
+// 组合对象持有子资源），第二次 Disconnect 会返回 mongo.ErrClientDisconnected，
+// 这是一个已完成的关闭而非失败，不应上报为错误。
 func (md *MongoDb) Close() error {
 	if md.Client == nil {
+		return nil
+	}
+	if !md.closed.CompareAndSwap(false, true) {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

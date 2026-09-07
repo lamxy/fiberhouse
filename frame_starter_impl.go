@@ -19,6 +19,7 @@ import (
 	"github.com/lamxy/fiberhouse/bootstrap"
 	"github.com/lamxy/fiberhouse/component/validate"
 	"github.com/lamxy/fiberhouse/constant"
+	"github.com/lamxy/fiberhouse/globalmanager"
 )
 
 // FrameApplication 框架应用启动器实现，实现了 fiberhouse.ApplicationStarter 接口
@@ -83,9 +84,42 @@ func stopFrameHealthCheck(ctx IApplicationContext) {
 	}
 }
 
+// clearApplicationGlobals 在应用关闭时停止健康检查并回收全局对象。
+//
+// 顺序是三步，缺一不可：
+//
+//  1. 停止健康检查，并等待进行中的那一轮退出。stopHealthCheck 会阻塞在
+//     healthWG.Wait() 上，因此后续步骤不会与探测并发。
+//  2. 释放全局对象持有的资源。ReleaseAllWithObserver 会先关组合对象再关普通对象，
+//     并把失败交给框架日志器上报。
+//  3. 清空容器条目。ClearAll 只删除条目、不做关闭，资源已在第 2 步释放。
+//
+// 第 2 步长期缺失：关闭路径只调用 ClearAll，MySQL 连接池、Mongo 客户端与 Redis
+// 客户端被直接丢弃而从未 Close，连接会一直保持到进程退出。
 func clearApplicationGlobals(ctx IApplicationContext) {
 	stopFrameHealthCheck(ctx)
+	releaseApplicationGlobals(ctx)
 	ctx.GetContainer().ClearAll(true)
+}
+
+// releaseApplicationGlobals 释放容器内全部全局对象，并按 key 上报关闭失败。
+//
+// 关闭失败不中断回收：一个资源关不掉不应阻止其余资源被释放，因此这里只上报、
+// 不返回错误。上报走框架日志器，而不是标准输出——容器化部署下 stdout 的关闭错误
+// 通常不会进入日志聚合，等于不可见。
+func releaseApplicationGlobals(ctx IApplicationContext) {
+	container := ctx.GetContainer()
+	if container == nil {
+		return
+	}
+	logger, cfg := ctx.GetLogger(), ctx.GetConfig()
+	container.ReleaseAllWithObserver(func(name globalmanager.KeyName, err error) {
+		if logger == nil || cfg == nil {
+			return
+		}
+		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).
+			Msgf("failed to release global object '%s' during shutdown", name)
+	}, true)
 }
 
 // NewFrameApplication 创建一个应用启动器对象
