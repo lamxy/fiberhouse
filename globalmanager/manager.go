@@ -276,7 +276,26 @@ func (gm *GlobalManager) Rebuild(name KeyName) error {
 	return fmt.Errorf("global object '%s' does not support rebuilding", name)
 }
 
-// Release 扩展 GlobalManager 支持资源释放, 不删除key，要重建sync.Once，以便可以Get时重新初始化
+// Release 释放已注册对象持有的资源，并把 entry 重置回未初始化状态。
+//
+// 不删除 key：重置 sync.Once 后，下一次 Get 会重新执行 initializer。要永久移除
+// key 请使用 Unregister 或 Clear。
+//
+// 三种情况，返回值语义各不相同：
+//
+//   - 对象实现 Closable：先 Close 再重置。Close 失败时**保留**实例与初始化状态
+//     并返回错误——释放没有发生，调用方拿到的仍是原来那个可用对象。
+//   - 对象未实现 Closable：没有需要关闭的资源，直接重置。返回 nil。
+//   - entry 尚未初始化：无操作，返回 nil（幂等）。
+//
+// 关键点是重置对**所有**已初始化对象都会发生，而不只是对 Closable 对象。
+// 早期实现把重置放在 Closable 类型分支内部，导致非 Closable 对象在 Release
+// 返回 nil 的同时保持初始化状态不变，调用方随后 Get 会拿回同一个实例——
+// 一次报告成功但实际未生效的释放。
+//
+// 并发：同一 entry 上 Release 与 Rebuild 以 fail-fast 方式互斥，冲突时返回包装
+// 了 ErrMaintenanceInProgress 的错误。Release 不会等待或取消已经开始的 Get
+// 初始化，也不会使调用方已经持有的引用失效。
 func (gm *GlobalManager) Release(name KeyName) error {
 	// 获取实例
 	origin, ok := gm.container.Load(name)
@@ -292,28 +311,36 @@ func (gm *GlobalManager) Release(name KeyName) error {
 	}
 	defer entity.endMaintenance()
 
-	// 检查是否实现了 Closable 接口
 	var instance interface{}
 	if stored := entity.instance.Load(); stored != nil {
 		instance = stored.value
 	}
+	// 未初始化的 entry 没有资源需要释放，也没有状态需要重置。
+	if instance == nil {
+		return nil
+	}
+
+	// 实现了 Closable 的对象先关闭；关闭失败则保留实例，不重置状态。
 	if closable, ok := instance.(Closable); ok {
-		err := closable.Close()
-		if err != nil {
+		if err := closable.Close(); err != nil {
 			return fmt.Errorf("unable to close object resource by key '%s' : %v", name, err)
 		}
-		// close成功，重置sync.Once，以便Get时重新初始化实例
-		entity.mu.Lock()
-		// 清空实例
-		entity.instance.Store(nil)
-		entity.initErr.Store(nil)
-		// 重置初始化状态
-		atomic.StoreInt32(&entity.initialized, 0)
-		// 重置once以便下次可以重新初始化
-		entity.once.Store(&sync.Once{})
-		entity.mu.Unlock()
 	}
+
+	// 重置为未初始化状态，使下一次 Get 重新执行 initializer。
+	entity.resetToUninitialized()
 	return nil
+}
+
+// resetToUninitialized 把 entry 重置回未初始化状态，使下一次 Get 重新执行
+// initializer。调用方必须已持有维护闸门。
+func (e *entry) resetToUninitialized() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.instance.Store(nil)
+	e.initErr.Store(nil)
+	atomic.StoreInt32(&e.initialized, 0)
+	e.once.Store(&sync.Once{})
 }
 
 // ReleaseAll 释放所有已注册对象的资源，仅仅释放，支持get时重建对象

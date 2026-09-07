@@ -290,6 +290,71 @@ func TestRelease_CloseErrorRetainsInitializedResource(t *testing.T) {
 	}
 }
 
+// TestRelease_NonClosableResetsAndReinitializes 锁定非 Closable 对象的释放语义。
+//
+// 早期实现把状态重置放在 Closable 类型分支内部：非 Closable 对象走完维护闸门后
+// 直接返回 nil，initialized 仍为 1，实例仍在。调用方 Release 后再 Get 会拿回
+// 同一个实例，而 Release 已经报告成功。
+func TestRelease_NonClosableResetsAndReinitializes(t *testing.T) {
+	manager := NewGlobalManager()
+	initializations := 0
+	manager.Register("plain", func() (interface{}, error) {
+		initializations++
+		// 刻意不实现 Closable：一个纯内存态对象。
+		return &struct{ generation int }{generation: initializations}, nil
+	})
+
+	first, err := manager.Get("plain")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if initializations != 1 {
+		t.Fatalf("initializations = %d, want 1", initializations)
+	}
+
+	if err := manager.Release("plain"); err != nil {
+		t.Fatalf("Release() on non-Closable error = %v", err)
+	}
+
+	second, err := manager.Get("plain")
+	if err != nil {
+		t.Fatalf("Get() after Release() error = %v", err)
+	}
+	if initializations != 2 {
+		t.Fatalf("initializations = %d after release, want 2 (initializer must run again)", initializations)
+	}
+	if first == second {
+		t.Fatal("Get() after Release() returned the released instance; Release() did not take effect")
+	}
+}
+
+// TestRelease_UninitializedEntryIsNoop 确认未初始化的 entry 上 Release 是幂等的，
+// 不会触发 initializer，也不报错。
+func TestRelease_UninitializedEntryIsNoop(t *testing.T) {
+	manager := NewGlobalManager()
+	initializations := 0
+	manager.Register("lazy", func() (interface{}, error) {
+		initializations++
+		return &lifecycleClosable{closed: new(int)}, nil
+	})
+
+	if err := manager.Release("lazy"); err != nil {
+		t.Fatalf("Release() on uninitialized entry error = %v", err)
+	}
+	if initializations != 0 {
+		t.Fatalf("Release() triggered initialization: initializations = %d, want 0", initializations)
+	}
+	if !manager.IsRegistered("lazy") {
+		t.Fatal("Release() removed the key; it must only reset state")
+	}
+	if _, err := manager.Get("lazy"); err != nil {
+		t.Fatalf("Get() after no-op Release() error = %v", err)
+	}
+	if initializations != 1 {
+		t.Fatalf("initializations = %d, want 1", initializations)
+	}
+}
+
 func TestCheckHealth_InitializedCheckerAndDefaults(t *testing.T) {
 	manager := NewGlobalManager()
 	manager.Register("checker", func() (interface{}, error) { return &lifecycleHealth{healthy: false}, nil })
