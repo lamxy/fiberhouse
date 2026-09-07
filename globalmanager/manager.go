@@ -293,7 +293,9 @@ func (gm *GlobalManager) Rebuild(name KeyName) error {
 		if err != nil {
 			return fmt.Errorf("failed to rebuild global object '%s': %v", name, err)
 		}
-		if newInstance == nil {
+		// 与 Get 同样用 isNilInstance：返回 (*T, error) 的 Rebuild 实现失败时会返回
+		// typed-nil，直接判 == nil 拦不住，会把它替换成当前实例。
+		if isNilInstance(newInstance) {
 			return fmt.Errorf("failed to rebuild global object '%s': rebuilder returned nil instance", name)
 		}
 		entity.instance.Store(&storedValue{value: newInstance})

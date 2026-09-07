@@ -547,6 +547,41 @@ func TestGet_TypedNilFromSucceedingInitializerIsRejected(t *testing.T) {
 	}
 }
 
+// typedNilRebuilder 的 Rebuild 返回 typed-nil，模拟一个失败但没有报错的实现。
+type typedNilRebuilder struct{}
+
+func (typedNilRebuilder) Close() error        { return nil }
+func (typedNilRebuilder) GetConfPath() string { return "test.path" }
+
+func (typedNilRebuilder) Rebuild(...interface{}) (interface{}, error) {
+	var rebuilt *typedNilResource
+	return rebuilt, nil
+}
+
+// TestRebuild_TypedNilResultIsRejected 确认 Rebuild 也不会存入 typed-nil。
+//
+// 与 Get 同源的陷阱：返回 (*T, error) 的 Rebuild 实现失败时返回 (*T)(nil)，
+// 直接判 `newInstance == nil` 拦不住，容器会用它替换掉当前可用实例。
+func TestRebuild_TypedNilResultIsRejected(t *testing.T) {
+	manager := NewGlobalManager()
+	original := typedNilRebuilder{}
+	register(t, manager, "rebuildable", original)
+
+	err := manager.Rebuild("rebuildable")
+	if err == nil {
+		t.Fatal("Rebuild() accepted a typed-nil result")
+	}
+
+	// 当前实例必须保持不变，而不是被 typed-nil 顶替。
+	got, getErr := manager.Get("rebuildable")
+	if getErr != nil {
+		t.Fatalf("Get() after rejected Rebuild() error = %v", getErr)
+	}
+	if got != interface{}(original) {
+		t.Fatalf("Get() = %#v, want the original instance retained", got)
+	}
+}
+
 func register(t *testing.T, manager *GlobalManager, key string, instance interface{}) {
 	t.Helper()
 	if !manager.Register(key, func() (interface{}, error) { return instance, nil }) {
