@@ -111,8 +111,17 @@ func (app *Application) ConfigGlobalInitializers() globalmanager.InitializerMap 
 // ConfigRequiredGlobalKeys 配置并返回全局管理容器中在启动时必须初始化的key
 // 应用启动阶段必须完成初始化的全局对象清单，此处列举后，框架启动阶段自动完成对象创建的初始化工作
 // 可交给全局对象初始化提供者实现
+// KEY_LEVEL2_CACHE 列入必需项，使示例在启动期真正构造出 L2 缓存。
+//
+// 它是本仓库唯一的 globalmanager.CompositeClosable：持有 local 与 remote 两个子
+// 缓存并负责关闭它们，而 remote 又是 KEY_REDIS 的别名。关闭时容器必须先释放它、
+// 再释放子缓存各自的 key，否则它排空在途异步写入期间会打在已关闭的 Redis 上。
+// 只有把它真正实例化，示例的关闭路径才会走过这段排序逻辑。
 func (app *Application) ConfigRequiredGlobalKeys() []globalmanager.KeyName {
-	return []string{KEY_MONGODB, KEY_REDIS, KEY_JSON_SONIC_ESCAPE, KEY_JSON_SONIC_FAST, KEY_MYSQL}
+	return []string{
+		KEY_MONGODB, KEY_REDIS, KEY_JSON_SONIC_ESCAPE, KEY_JSON_SONIC_FAST, KEY_MYSQL,
+		KEY_LOCAL_CACHE, KEY_REMOTE_CACHE, KEY_LEVEL2_CACHE,
+	}
 }
 
 // ConfigCustomValidateInitializers 配置并返回自定义更多的语言验证器初始化器

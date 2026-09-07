@@ -199,6 +199,11 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 	})
 
 	if stored := entity.initErr.Load(); stored != nil && stored.err != nil {
+		// instance 是命名返回值，初始化闭包可能已经把 initializer 的返回值写进去了。
+		// 失败时必须显式清空：返回 (*T, error) 的构造函数在失败时返回 (*T)(nil)，
+		// 装箱成 interface{} 后是**非 nil** 的（typed-nil），调用方若检查
+		// instance != nil 会拿到一个解引用即 panic 的值。
+		instance = nil
 		err = stored.err
 		return
 	}
@@ -391,18 +396,19 @@ func (gm *GlobalManager) ReleaseAllWithObserver(observer func(name KeyName, err 
 	}
 }
 
+// ownedInstance 是释放排序期间对某个 key 及其当前实例的快照。
+type ownedInstance struct {
+	name     KeyName
+	instance interface{}
+}
+
 // partitionByOwnership 把容器内的 key 分成两组：需要优先释放的组合对象（已按嵌套
 // 深度由外向内排序）与其余普通对象。
 //
 // 必须在释放开始前一次性完成快照与排序：释放会把 entry 重置为未初始化，之后再去
 // 读取实例就无法判断它原本是不是组合对象了。
 func (gm *GlobalManager) partitionByOwnership() (composites, plain []KeyName) {
-	type snapshot struct {
-		name     KeyName
-		instance interface{}
-	}
-
-	var owning []snapshot
+	var owning []ownedInstance
 	gm.container.Range(func(key, _ interface{}) bool {
 		name, ok := key.(string)
 		if !ok {
@@ -414,27 +420,19 @@ func (gm *GlobalManager) partitionByOwnership() (composites, plain []KeyName) {
 			return true
 		}
 		if composite, ok := instance.(CompositeClosable); ok && composite.OwnsChildren() {
-			owning = append(owning, snapshot{name: name, instance: instance})
+			owning = append(owning, ownedInstance{name: name, instance: instance})
 			return true
 		}
 		plain = append(plain, name)
 		return true
 	})
 
-	// 按「被多少个其他组合对象持有」升序排列：没有被任何组合对象持有的是最外层，
-	// 必须最先释放。只持有普通资源的组合对象计数均为 0，退化为原来的两层顺序。
-	depth := make([]int, len(owning))
-	for i, candidate := range owning {
-		for j, owner := range owning {
-			if i == j {
-				continue
-			}
-			inspector, ok := owner.instance.(CompositeOwnershipInspector)
-			if ok && inspector.OwnsInstance(candidate.instance) {
-				depth[i]++
-			}
-		}
-	}
+	// 按嵌套深度升序释放：深度 0 是最外层（没有被任何组合对象持有），必须最先释放。
+	//
+	// 深度必须是**传递**的最长持有链长度，而不是「被多少个组合对象直接持有」。
+	// 对链 A→B→C，直接持有计数是 A=0、B=1、C=1，B 与 C 打平，相对顺序退回容器
+	// 遍历顺序，C 可能先于 B 释放。传递深度给出 A=0、B=1、C=2，顺序才确定。
+	depth := transitiveOwnershipDepth(owning)
 
 	// 插入排序：组合对象数量极少（通常个位数），无需引入 sort 依赖与比较器。
 	order := make([]int, len(owning))
@@ -450,6 +448,48 @@ func (gm *GlobalManager) partitionByOwnership() (composites, plain []KeyName) {
 		composites = append(composites, owning[idx].name)
 	}
 	return composites, plain
+}
+
+// transitiveOwnershipDepth 计算每个组合对象的嵌套深度：从任意最外层组合对象出发，
+// 到达它的最长持有链长度。最外层深度为 0。
+//
+// 用逐轮松弛而非递归：持有关系理论上可能成环（A 声称持有 B、B 声称持有 A），
+// 递归会栈溢出。松弛轮数以对象个数封顶，成环时深度停在有限值，顺序退化为不确定
+// 但不会挂死——环本身是实现方的契约错误，容器不为它提供正确性保证。
+func transitiveOwnershipDepth(owning []ownedInstance) []int {
+	depth := make([]int, len(owning))
+
+	// owns[i][j] 表示 i 直接持有 j。
+	owns := make([][]bool, len(owning))
+	for i := range owns {
+		owns[i] = make([]bool, len(owning))
+		inspector, ok := owning[i].instance.(CompositeOwnershipInspector)
+		if !ok {
+			continue
+		}
+		for j := range owning {
+			if i != j && inspector.OwnsInstance(owning[j].instance) {
+				owns[i][j] = true
+			}
+		}
+	}
+
+	// 松弛：若 i 持有 j，则 j 至少比 i 深一层。最多迭代 len(owning) 轮即收敛。
+	for round := 0; round < len(owning); round++ {
+		changed := false
+		for i := range owning {
+			for j := range owning {
+				if owns[i][j] && depth[j] < depth[i]+1 {
+					depth[j] = depth[i] + 1
+					changed = true
+				}
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	return depth
 }
 
 // loadedInstance 返回某个 key 当前已初始化的实例；未初始化时返回 nil。
@@ -476,7 +516,18 @@ func (gm *GlobalManager) Clear(name KeyName) {
 	gm.Unregister(name)
 }
 
-// ClearAll 不受阻碍的清空全局管理器管理的全部对象和资源
+// ClearAll 清空容器内的全部条目。需要显式传入 true 才会执行。
+//
+// **只删除条目，不关闭任何资源。** 名字里的「清空」指的是容器条目，不含被管理对象
+// 持有的连接、goroutine 或文件句柄——那些必须先由 ReleaseAll 释放。
+//
+// 因此正确的关闭顺序是先 ReleaseAll 再 ClearAll；框架的 clearApplicationGlobals
+// 就是这么做的。单独调用 ClearAll 会让已初始化对象持有的资源无人关闭，一直保留到
+// 进程退出。
+//
+// 保持「只删除」语义而不在这里顺带关闭，是因为 ClearAll 承诺不受阻碍地立即返回：
+// 关闭要等待在途操作排空、可能阻塞数秒，混进来会让这个承诺失效。释放与清空是两件
+// 事，各自有明确契约。
 func (gm *GlobalManager) ClearAll(conform ...bool) {
 	if len(conform) > 0 && conform[0] {
 		gm.container.Clear()

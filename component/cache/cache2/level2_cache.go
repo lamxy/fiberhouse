@@ -24,7 +24,13 @@ import (
 
 // Level2Cache 持有 local 与 remote 两个子缓存的关闭责任，必须先于子缓存各自的
 // 全局 key 被释放，否则排空期间的异步写入会打在已关闭的子缓存上。
-var _ globalmanager.CompositeClosable = (*Level2Cache)(nil)
+//
+// 同时实现 CompositeOwnershipInspector，供容器判断嵌套层级：子缓存本身也可能是
+// 组合对象，容器据此保证由外向内释放。
+var (
+	_ globalmanager.CompositeClosable           = (*Level2Cache)(nil)
+	_ globalmanager.CompositeOwnershipInspector = (*Level2Cache)(nil)
+)
 
 const generationShardCount = 64
 

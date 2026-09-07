@@ -82,14 +82,35 @@ type ExampleModel struct {
 
 // NewExampleModel 构建一个 ExampleModel，绑定到从 ctx 解析出的、为 example
 // 模块配置的 MongoDB 集合。
+//
+// Mongo 实例未注册或类型不符时 panic。wire 生成的装配代码不接受返回错误的
+// provider，因此这里保留 panic 变体；能够处理错误的调用方应改用
+// NewExampleModelWithError。
 func NewExampleModel(ctx fiberhouse.IApplicationContext) *ExampleModel {
-	locator := dbmongo.NewMongoModel(ctx, constant.MongoInstanceKey).
+	model, err := NewExampleModelWithError(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return model
+}
+
+// NewExampleModelWithError 构建 ExampleModel，解析 Mongo 实例失败时返回错误。
+//
+// 这是 GlobalManager 初始化器该走的路径：初始化器签名本身就是
+// func() (interface{}, error)，把解析失败作为错误返回，容器就能把它记录下来并让
+// 调用方在 Get 时观察到，而不是让一次装配失败以 panic 的形式中断进程。
+func NewExampleModelWithError(ctx fiberhouse.IApplicationContext) (*ExampleModel, error) {
+	mongoModel, err := dbmongo.NewMongoModelWithError(ctx, constant.MongoInstanceKey)
+	if err != nil {
+		return nil, err
+	}
+	locator := mongoModel.
 		SetDbName(constant.DbNameMongo).
 		SetTable(constant.CollExample).
 		SetName(GetKeyExampleModel()).(dbmongo.MongoLocator)
 	model := NewExampleModelWithCollection(locator.GetCollection(locator.GetColl()))
 	model.MongoLocator = locator
-	return model
+	return model, nil
 }
 
 // NewExampleModelWithCollection 保持生产环境的持久化行为，同时允许调用方
@@ -110,7 +131,9 @@ func GetKeyExampleModel(ns ...string) string {
 // ExampleModel），并返回其注册键。
 func RegisterKeyExampleModel(ctx fiberhouse.IApplicationContext, ns ...string) string {
 	return fiberhouse.RegisterKeyInitializerFunc(GetKeyExampleModel(ns...), func() (interface{}, error) {
-		return NewExampleModel(ctx), nil
+		// 用返回错误的变体：初始化器失败会被容器记录，调用方在 Get 时观察到错误，
+		// 而不是让一次可恢复的装配失败以 panic 中断进程。
+		return NewExampleModelWithError(ctx)
 	})
 }
 

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 // orderRecorder 记录关闭顺序，供断言使用。
@@ -277,6 +278,76 @@ func TestReleaseAll_NestedCompositesReleaseOutermostFirst(t *testing.T) {
 	}
 }
 
+// TestPartitionByOwnership_ThreeLevelChainOrdersByTransitiveDepth 锁定三层及更深
+// 嵌套的排序。
+//
+// 直接断言排序结果而不是只观察关闭行为：对链 A→B→C，A 的 Close 会级联关闭 B 和 C，
+// 因而即使容器把 C 排在 B 前面，级联也会掩盖错误顺序，仅靠 violated 标志观察不到。
+// 早期实现用「被多少个组合对象直接持有」作为深度，A/B/C 得到 0/1/1，B 与 C 打平，
+// 实测稳定产出 [A C B]。传递深度给出 0/1/2，顺序才确定。
+func TestPartitionByOwnership_ThreeLevelChainOrdersByTransitiveDepth(t *testing.T) {
+	recorder := &orderRecorder{}
+	manager := NewGlobalManager()
+
+	leaf := &orderedChild{name: "leaf", recorder: recorder}
+	third := &nestedComposite{name: "C", recorder: recorder, children: []closableProbe{leaf}, owns: true}
+	second := &nestedComposite{name: "B", recorder: recorder, children: []closableProbe{third}, owns: true}
+	first := &nestedComposite{name: "A", recorder: recorder, children: []closableProbe{second}, owns: true}
+
+	register(t, manager, "leaf", leaf)
+	register(t, manager, "C", third)
+	register(t, manager, "B", second)
+	register(t, manager, "A", first)
+
+	composites, plain := manager.partitionByOwnership()
+
+	position := make(map[KeyName]int, len(composites))
+	for i, name := range composites {
+		position[name] = i
+	}
+	for _, name := range []KeyName{"A", "B", "C"} {
+		if _, ok := position[name]; !ok {
+			t.Fatalf("composite %q missing from release order %v", name, composites)
+		}
+	}
+	if !(position["A"] < position["B"] && position["B"] < position["C"]) {
+		t.Fatalf("want release order A < B < C, got %v", composites)
+	}
+	if len(plain) != 1 || plain[0] != "leaf" {
+		t.Fatalf("plain = %v, want [leaf]", plain)
+	}
+}
+
+// TestPartitionByOwnership_OwnershipCycleTerminates 确认持有关系成环时排序不挂死。
+//
+// 成环是实现方的契约错误（A 声称持有 B，B 声称持有 A），容器不为它提供正确的顺序，
+// 但必须保证终止：深度计算用有界松弛而非递归，否则会栈溢出。
+func TestPartitionByOwnership_OwnershipCycleTerminates(t *testing.T) {
+	recorder := &orderRecorder{}
+	manager := NewGlobalManager()
+
+	left := &nestedComposite{name: "left", recorder: recorder, owns: true}
+	right := &nestedComposite{name: "right", recorder: recorder, owns: true}
+	// 互相声称持有对方。
+	left.children = []closableProbe{right}
+	right.children = []closableProbe{left}
+
+	register(t, manager, "left", left)
+	register(t, manager, "right", right)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		manager.partitionByOwnership()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("partitionByOwnership did not terminate on an ownership cycle")
+	}
+}
+
 // TestReleaseAll_AliasedResourceIsClosedOnce 确认别名注册不会导致重复关闭被观测到。
 //
 // 同一个 *orderedChild 注册在两个 key 下，并且还被组合对象持有：一轮释放会对它发起
@@ -395,6 +466,45 @@ func TestReleaseAll_RequiresConfirmation(t *testing.T) {
 
 	if closed != 0 {
 		t.Fatalf("Close() calls = %d without confirmation, want 0", closed)
+	}
+}
+
+// typedNilResource 用于构造 typed-nil 陷阱：一个返回 (*T)(nil) 的初始化器。
+type typedNilResource struct{}
+
+func (typedNilResource) Close() error { return nil }
+
+// TestGet_TypedNilFromFailingInitializerIsNotStored 锁定 typed-nil 陷阱的处理。
+//
+// 返回错误的构造函数签名是 (*T, error)，把它直接用作 InitializerFunc 时，Go 会把
+// (*T)(nil) 装箱成一个**非 nil** 的 interface{}。若失败路径把它存进容器，后续 Get
+// 会返回一个看起来非 nil、解引用却会 panic 的实例。
+//
+// 示例应用的 RegisterKeyExampleModel 正是这种写法，所以这条路径必须有回归覆盖。
+func TestGet_TypedNilFromFailingInitializerIsNotStored(t *testing.T) {
+	manager := NewGlobalManager()
+	wantErr := errors.New("initializer failed")
+
+	// 模拟 return NewXWithError(ctx) —— 返回 (*T)(nil) 与一个错误。
+	registered := manager.Register("typed-nil", func() (interface{}, error) {
+		var resource *typedNilResource
+		return resource, wantErr
+	})
+	if !registered {
+		t.Fatal("Register() returned false for a new key")
+	}
+
+	instance, err := manager.Get("typed-nil")
+	if err == nil {
+		t.Fatal("Get() returned nil error for a failing initializer")
+	}
+	if instance != nil {
+		t.Fatalf("Get() returned instance %#v on failure; a typed-nil must not be published", instance)
+	}
+
+	// 释放一个从未成功初始化的 entry 必须是安全的无操作。
+	if err := manager.Release("typed-nil"); err != nil {
+		t.Fatalf("Release() on a never-initialized entry error = %v", err)
 	}
 }
 
