@@ -172,8 +172,10 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 
 	// 如果已经初始化过，直接返回已有实例
 	if atomic.LoadInt32(&entity.initialized) == 1 {
-		// 先尝试获取已有实例
-		if stored := entity.instance.Load(); stored != nil && stored.value != nil {
+		// 用 isNilInstance 而非 != nil，与写入侧的两处守卫保持一致。
+		// 当前三个写入点（Get 成功路径、Rebuild、resetToUninitialized）都已拦截
+		// typed-nil，因此这里防的是将来新增写入点时的回归，而不是活的缺陷。
+		if stored := entity.instance.Load(); stored != nil && !isNilInstance(stored.value) {
 			instance = stored.value
 			return
 		} else {
