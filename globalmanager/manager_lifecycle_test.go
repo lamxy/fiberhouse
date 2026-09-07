@@ -727,7 +727,7 @@ func lifecycleAsyncError(call func() error) <-chan lifecycleErrorResult {
 
 func assertLifecycleBusy(t *testing.T, err error) {
 	t.Helper()
-	if err == nil || !errors.Is(err, errMaintenanceInProgress) {
+	if err == nil || !errors.Is(err, ErrMaintenanceInProgress) {
 		t.Fatalf("maintenance error = %v, want busy", err)
 	}
 }
@@ -1020,13 +1020,13 @@ func TestMaintenance_DifferentKeysRemainIndependent(t *testing.T) {
 	}
 }
 
-func TestEntry_BeginMaintenanceWrapsPrivateBusyError(t *testing.T) {
+func TestEntry_BeginMaintenanceWrapsExportedBusyError(t *testing.T) {
 	entity := &entry{}
 	if err := entity.beginMaintenance("resource"); err != nil {
 		t.Fatalf("first beginMaintenance error = %v", err)
 	}
 	defer entity.endMaintenance()
-	if err := entity.beginMaintenance("resource"); !errors.Is(err, errMaintenanceInProgress) {
-		t.Fatalf("second beginMaintenance error = %v, want private busy sentinel", err)
+	if err := entity.beginMaintenance("resource"); !errors.Is(err, ErrMaintenanceInProgress) {
+		t.Fatalf("second beginMaintenance error = %v, want exported busy sentinel", err)
 	}
 }

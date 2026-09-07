@@ -63,11 +63,23 @@ type storedError struct {
 	err error
 }
 
-var errMaintenanceInProgress = errors.New("global object maintenance already in progress")
+// ErrMaintenanceInProgress 表示同一 entry 上已有维护操作（Rebuild 或 Release）在执行。
+//
+// Rebuild 与 Release 在同一 entry 上以 fail-fast 方式互斥：冲突的调用不会排队等待，
+// 而是立即返回包装了本哨兵的错误。这是一个**可恢复**条件——被拒绝的调用没有产生任何
+// 副作用，调用方可以退避后重试：
+//
+//	if err := gm.Release(key); errors.Is(err, globalmanager.ErrMaintenanceInProgress) {
+//		// 另一个维护操作正在进行，稍后重试
+//	}
+//
+// 返回的错误始终用 %w 包装本哨兵并附加 key 名，因此 errors.Is 可靠，错误文本也可直接
+// 用于日志定位。
+var ErrMaintenanceInProgress = errors.New("global object maintenance already in progress")
 
 func (e *entry) beginMaintenance(name KeyName) error {
 	if !e.maintenance.CompareAndSwap(false, true) {
-		return fmt.Errorf("%w: %s", errMaintenanceInProgress, name)
+		return fmt.Errorf("%w: %s", ErrMaintenanceInProgress, name)
 	}
 	return nil
 }
