@@ -82,6 +82,9 @@ func TestTaskAsyncDispatcherInitializerRejectsInvalidRedisInstances(t *testing.T
 			wantErr: "invalid redis instance",
 		},
 		{
+			// 容器现在会在 Get 阶段就拒绝 typed-nil（GlobalManager.isNilInstance），
+			// 因此错误来自初始化失败而不是下游的类型断言。拦截层次变了，契约没变：
+			// 仍然返回错误、dispatcher 仍然为 nil。
 			name: "typed nil",
 			register: func(t *testing.T, taskAsync *TaskAsync, redisKey string) {
 				t.Helper()
@@ -92,7 +95,7 @@ func TestTaskAsyncDispatcherInitializerRejectsInvalidRedisInstances(t *testing.T
 					t.Fatalf("register redis initializer %q", redisKey)
 				}
 			},
-			wantErr: "invalid redis instance",
+			wantErr: "returned nil instance",
 		},
 	}
 
@@ -113,6 +116,12 @@ func TestTaskAsyncDispatcherInitializerRejectsInvalidRedisInstances(t *testing.T
 	}
 }
 
+// TestTaskAsyncGetTaskDispatcherRejectsTypedNil 确认注册了 typed-nil 的 dispatcher
+// 时不会把它当作可用实例交出去。
+//
+// 拦截点在容器：GlobalManager.Get 用 isNilInstance 识别 typed-nil 并作为初始化失败
+// 返回，因此错误文本是 "returned nil instance" 而不是下游的类型断言失败。契约不变
+// ——必须返回错误，且 dispatcher 必须为 nil。
 func TestTaskAsyncGetTaskDispatcherRejectsTypedNil(t *testing.T) {
 	taskAsync, _, dispatcherKey := newTaskAsyncForTest(t)
 	var dispatcher *fiberhouse.TaskDispatcher
@@ -123,8 +132,8 @@ func TestTaskAsyncGetTaskDispatcherRejectsTypedNil(t *testing.T) {
 	}
 
 	got, err := taskAsync.GetTaskDispatcher()
-	if err == nil || !strings.Contains(err.Error(), "assertion failure") {
-		t.Fatalf("GetTaskDispatcher() = %#v, %v, want assertion failure", got, err)
+	if err == nil || !strings.Contains(err.Error(), "returned nil instance") {
+		t.Fatalf("GetTaskDispatcher() = %#v, %v, want a nil-instance rejection", got, err)
 	}
 	if got != nil {
 		t.Fatalf("GetTaskDispatcher() = %#v, want nil", got)

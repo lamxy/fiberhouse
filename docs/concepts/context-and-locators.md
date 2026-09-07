@@ -140,7 +140,7 @@ Locator 的非泛型 `GetInstance` 与全局泛型 helper 访问的是同一个�
 - Starter 回指在生命周期早期为 nil；应用状态写入时机晚且不适合作为 readiness。
 - Locator 名称和容器 key 是字符串，没有编译期依赖完整性检查；`GetMust*` 会把配置/装配错误变成 panic。
 - `RegisterKeyInitializerFunc` 与批量注册会丢弃重复注册结果；启动期应主动校验必需 key 和类型。
-- HTTP Core 当前通过 `ClearAll(true)` 清空容器，不逐项关闭资源；Context/Locator 只提供可达性，不提供所有权证明。
+- HTTP Core 的关闭先 `ReleaseAllWithObserver` 逐项释放，再 `ClearAll(true)` 删除条目；Context/Locator 只提供可达性，不提供所有权证明。
 - Wire 内容位于示例装配，不构成框架强制范式或稳定 API 承诺。
 
 源码入口为 [`context_interface.go`](../../context_interface.go)、[`context_impl.go`](../../context_impl.go)、[`locator_interface.go`](../../locator_interface.go)、[`api_impl.go`](../../api_impl.go)、[`service_impl.go`](../../service_impl.go)、[`repository_impl.go`](../../repository_impl.go)、[`global_utils.go`](../../global_utils.go) 与 [`globalmanager/manager.go`](../../globalmanager/manager.go)。

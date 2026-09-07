@@ -508,6 +508,45 @@ func TestGet_TypedNilFromFailingInitializerIsNotStored(t *testing.T) {
 	}
 }
 
+// TestGet_TypedNilFromSucceedingInitializerIsRejected 锁定 typed-nil 陷阱的另一半。
+//
+// 失败路径由 TestGet_TypedNilFromFailingInitializerIsNotStored 覆盖。这里覆盖成功
+// 路径：initializer 返回 ((*T)(nil), nil)。早期实现只用 `instance == nil` 判断，
+// 无类型 nil 能拦住、typed-nil 拦不住——容器会把它当作有效实例缓存，之后每一次 Get
+// 都返回一个看起来非 nil、解引用即 panic 的对象，而且永远不会自愈。
+func TestGet_TypedNilFromSucceedingInitializerIsRejected(t *testing.T) {
+	manager := NewGlobalManager()
+	registered := manager.Register("typed-nil-success", func() (interface{}, error) {
+		var resource *typedNilResource
+		return resource, nil // 注意 error 为 nil
+	})
+	if !registered {
+		t.Fatal("Register() returned false for a new key")
+	}
+
+	instance, err := manager.Get("typed-nil-success")
+	if err == nil {
+		t.Fatalf("Get() returned instance %#v with nil error; a typed-nil must be rejected", instance)
+	}
+	if instance != nil {
+		t.Fatalf("Get() returned instance %#v alongside the error", instance)
+	}
+
+	// 失败必须是可重试的：修好 initializer 之后下一次 Get 应当成功。
+	// 这里换一个 key 验证等价行为，因为 initializer 不可替换。
+	healthy := &typedNilResource{}
+	if !manager.Register("typed-nil-fixed", func() (interface{}, error) { return healthy, nil }) {
+		t.Fatal("Register() returned false for a new key")
+	}
+	got, err := manager.Get("typed-nil-fixed")
+	if err != nil {
+		t.Fatalf("Get() on a valid instance error = %v", err)
+	}
+	if got != healthy {
+		t.Fatalf("Get() = %#v, want the registered instance", got)
+	}
+}
+
 func register(t *testing.T, manager *GlobalManager, key string, instance interface{}) {
 	t.Helper()
 	if !manager.Register(key, func() (interface{}, error) { return instance, nil }) {

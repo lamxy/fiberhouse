@@ -96,7 +96,7 @@ mongo-driver 内建 SDAM 心跳自动跟随副本集拓扑变化。配合 `connM
 连接池会中断在途请求且缺乏排空（drain）机制。`Client` 在构造后不再被替换，
 因此无需锁保护——`*gorm.DB` 与 `*mongo.Client` 本身即并发安全。
 
-标准 HTTP shutdown 调用 `ClearAll(true)`，不会逐项 `Close`。GlobalManager `Release` 只会重置成功关闭的 `Closable`，也不能替代资源所有者安排数据库 client 的关闭；因此数据库创建者仍应显式关闭 client，不依赖容器清空。详见[《GlobalManager》](global-manager.md)。
+Fiber 与 Gin 的受控关闭会先 `ReleaseAllWithObserver` 再 `ClearAll(true)`，因此这两条路径下容器内已初始化的 MySQL / Mongo client 会被 `Close`，两者的 `Close` 均幂等。**CLI 与 hertzcore 不走这条路径**（`commandstarter/` 没有关闭入口），这两种场景下数据库创建者仍应显式关闭 client。详见[《GlobalManager》](global-manager.md)。
 
 ## MySQL model 基类
 

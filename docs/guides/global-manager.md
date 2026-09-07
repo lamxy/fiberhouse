@@ -119,16 +119,26 @@ app.GET("/readyz", gin.WrapF(handler))               // Gin
 | 操作 | key | initializer | 实例/资源 |
 |---|---|---|---|
 | `Rebuild(key)` | 保留 | 保留旧 initializer | 用 `Rebuilder` 返回值替换实例；容器不关闭旧实例，释放旧资源由实现方负责 |
-| `Release(key)` | 保留 | 对 `Closable` 成功关闭后保留并重置 `sync.Once` | `Closable` 成功关闭后清空实例，后续 `Get` 可重新初始化；非 `Closable` 不重置 |
-| `ReleaseAll(true)` | 保留 | 保留 | 遍历调用 `Release`；单项错误打印到 stdout |
+| `Release(key)` | 保留 | 保留并重置 `sync.Once` | 对 `Closable` 先 `Close` 再清空实例；非 `Closable` 无需关闭但**同样重置**；未初始化 entry 为幂等空操作。`Close` 失败保留实例并返回错误 |
+| `ReleaseAll(true)` | 保留 | 保留 | 按嵌套深度由外向内释放组合对象，再释放其余对象；失败经 `ReleaseAllWithObserver` 的回调逐 key 上报（`ReleaseAll` 本身丢弃错误） |
 | `Clear(key)` / `Unregister(key)` | 删除 | 删除 | 不调用 `Close` |
-| `ClearAll(true)` | 删除全部 | 删除全部 | 在原 `sync.Map` 上调用 `Clear`，不逐项 `Close` |
+| `ClearAll(true)` | 删除全部 | 删除全部 | 只删除条目，不调用任何 `Close`；必须在 `ReleaseAll` 之后调用 |
 
-`Release` 对实现 `Closable` 的对象调用 `Close`；成功后通过原子指针清空实例和错误状态，并重置初始化标志与 `sync.Once`。`Close` 返回错误时保留原实例；对象未实现 `Closable` 时返回 nil，但不会重置实例。同一已注册 entry generation 内，`Release` 与 `Rebuild` 共享 fail-fast maintenance gate；冲突维护调用返回 busy error，不等待第二个回调。
+`Release` 对实现 `Closable` 的对象先调用 `Close`，成功后清空实例与错误状态并重置初始化标志和 `sync.Once`；`Close` 返回错误时保留原实例并返回该错误。对象未实现 `Closable` 时没有资源需要关闭，但**仍然重置**——释放必须真正生效，否则调用方 `Release` 后再 `Get` 会拿回同一个实例，而 `Release` 已经报告成功。未初始化的 entry 上 `Release` 是幂等空操作，不会触发 initializer。
+
+同一已注册 entry generation 内，`Release` 与 `Rebuild` 共享 fail-fast maintenance gate；冲突调用返回包装 `ErrMaintenanceInProgress` 的错误。被拒绝的调用没有产生任何副作用，因此这是一个可恢复条件，调用方可以分类后退避重试：
+
+```go
+if err := gm.Release(key); errors.Is(err, globalmanager.ErrMaintenanceInProgress) {
+    // 另一个维护操作正在进行，稍后重试
+}
+```
 
 `ReleaseAll` 和 `ClearAll` 只有显式传入 true 才执行。`sync.Map.Clear` 可与 map 操作并发，但 `ClearAll(true)` 不取消已经取得 entry 并开始执行的 initializer，也不协调调用方已持有的业务引用；它适合已经停流后的最终删除，不是资源关闭或运行期热重置。
 
-当前 Fiber 与 Gin 受控关闭路径先停止并等待默认健康检查，再调用 `ClearAll(true)`，不是 `ReleaseAll(true)`。因此 GlobalManager 清空不等于数据库、缓存、writer 或 task client 已关闭，资源创建者仍须安排各自的 `Close` / `Disconnect`。
+当前 Fiber 与 Gin 受控关闭路径按三步执行：停止并等待默认健康检查 → `ReleaseAllWithObserver`（失败写入框架日志器）→ `ClearAll(true)`。因此这两条路径下容器内已初始化对象的 `Close` 会被调用。
+
+**CLI 与 `example_application/hertzcore` 不走这条路径**：`commandstarter/` 没有任何关闭入口，hertzcore 的 `Shutdown` 不调用 `clearApplicationGlobals`，这两种场景下资源创建者仍须自行安排 `Close` / `Disconnect`。
 
 ## 启动与运行期边界
 
@@ -140,15 +150,16 @@ app.GET("/readyz", gin.WrapF(handler))               // Gin
 
 默认 `FrameApplication` 的健康检查由框架内部持有取消与等待状态；内置 Fiber/Gin 会在清空容器和关闭日志前停止它，重复停止和并发停止均可返回。停止后不会重新启动同一 `FrameApplication` 的健康检查。该契约不扩展到自定义 `FrameStarter`，也不构成通用后台任务取消树。
 
-框架当前也没有统一逐项关闭链，因此资源回收仍需应用补齐。GlobalManager 的原子字段与 `sync.Map` 保护局部读写，不会让业务对象自身变成线程安全，也不会让 `Rebuild`、`Release`、`ClearAll` 成为无缝并发切换。
+Fiber/Gin 关闭路径已具备逐项释放，但 CLI 与 hertzcore 仍需应用补齐。GlobalManager 的原子字段与 `sync.Map` 保护局部读写，不会让业务对象自身变成线程安全，也不会让 `Rebuild`、`Release`、`ClearAll` 成为无缝并发切换。
 
 ## 已知限制
 
 - 默认容器是进程级单例；Web、CLI、配置、日志 writer 和泛型 helper 可能共享同一 key 空间。
 - 批量注册和根 package 注册 helper 丢弃重复注册结果。
 - 容器的 `Rebuild` 不关闭旧实例（由 `Rebuilder` 实现方负责），也不与调用方已持有的引用协调；新旧具体类型兼容仍由调用方负责。
-- `Release` 只重置成功关闭的 `Closable`；`Clear` / `ClearAll` 仍完全不关闭资源。
+- `Clear` / `ClearAll` 完全不关闭资源，必须在 `ReleaseAll` 之后调用。
+- 组合对象的持有关系若声明成环，释放顺序不保证正确，只保证计算终止。
 - 同一 entry generation 的维护门禁不定义删除后同名重注册、普通 `Get` 或业务引用的完整状态机。
 - 健康检查不初始化懒对象；取消与等待只由默认 `FrameApplication` 和内置 Fiber/Gin 关闭路径消费。
 
-因此 [功能状态](../reference/feature-status.md) 将 GlobalManager 归为实验性生命周期能力。源码入口见 [`globalmanager/manager.go`](../../globalmanager/manager.go)、[`globalmanager/interface.go`](../../globalmanager/interface.go)、[`global_utils.go`](../../global_utils.go) 与 [`frame_starter_impl.go`](../../frame_starter_impl.go)。
+[功能状态](../reference/feature-status.md) 已将 GlobalManager 列为稳定公共能力：四段生命周期契约明确、测试与 race 进入 CI、可恢复错误不依赖 panic 表达。上列限制是该能力**已声明的边界**，不是未闭合的缺口；晋级不冻结导出符号，兼容承诺统一在 v2.0.0 给出。源码入口见 [`globalmanager/manager.go`](../../globalmanager/manager.go)、[`globalmanager/interface.go`](../../globalmanager/interface.go)、[`global_utils.go`](../../global_utils.go) 与 [`frame_starter_impl.go`](../../frame_starter_impl.go)。

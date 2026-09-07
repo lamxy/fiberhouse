@@ -87,7 +87,7 @@ Gin 的规范运行模式键是 `application.plugins.engine.servers.gin.mode`，
 
 ## listen、shutdown 与 TLS 边界
 
-Fiber 和 Gin 都在 goroutine 中启动服务，并在主 goroutine 等待 `SIGINT`/`SIGTERM`。两者都只在监听函数返回后才把 `AppState` 设为 `true`，因此该字段不是“已经开始接流量”的 ready 标记。受控停止都会调用 `GlobalManager.ClearAll(true)` 而不是逐项 `Close`；清空容器不等于数据库、缓存、后台 worker 已被释放，详见[《GlobalManager》](global-manager.md)。
+Fiber 和 Gin 都在 goroutine 中启动服务，并在主 goroutine 等待 `SIGINT`/`SIGTERM`。两者都只在监听函数返回后才把 `AppState` 设为 `true`，因此该字段不是“已经开始接流量”的 ready 标记。受控停止按三步执行：停止并等待健康检查 → `ReleaseAllWithObserver`（逐项 `Close`，失败写入框架日志器）→ `ClearAll(true)` 删除条目。容器内已初始化对象的资源会被释放；未由容器管理的后台 worker 仍需应用自行停止，详见[《GlobalManager》](global-manager.md)。
 
 Fiber 的 `OnShutdown` 在 `Shutdown()` 触发时先停止并等待默认健康检查，再清空容器、记录 shutdown 日志并关闭日志器。Gin 使用固定 30 秒 shutdown context，并在调用 `http.Server.Shutdown` 前标记协调式停止；listener 先返回时由 run 路径保留 Gin 日志 owner，活动 handler 排空且 `http.Server.Shutdown` 返回后，先停用 owner，再执行 post-shutdown providers、停止并等待默认健康检查、清空容器等资源清理，随后记录完成日志，最后关闭日志器。稳定的 Gin 转发入口不会在关闭过程中被写回，无 owner 时会转发到首次捕获的原始行为。该协调只覆盖默认 `FrameApplication` 的健康检查，不包含 task worker、应用自建 goroutine 或逐项资源关闭。
 

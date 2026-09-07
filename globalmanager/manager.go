@@ -34,6 +34,7 @@ package globalmanager
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 )
@@ -76,6 +77,27 @@ type storedError struct {
 // 返回的错误始终用 %w 包装本哨兵并附加 key 名，因此 errors.Is 可靠，错误文本也可直接
 // 用于日志定位。
 var ErrMaintenanceInProgress = errors.New("global object maintenance already in progress")
+
+// isNilInstance 判断 initializer 的返回值是否实质为 nil，包括 typed-nil。
+//
+// 返回 (*T, error) 的构造函数装箱成 InitializerFunc 时，失败返回的 (*T)(nil) 会变成
+// 一个**非 nil** 的 interface{}：接口的类型字确实指向 *T，只有数据字为空。直接用
+// `instance == nil` 判断会漏掉这种值，容器随后把它当作有效实例缓存起来，调用方拿到
+// 一个看起来非 nil、解引用即 panic 的对象，且每次 Get 都返回它。
+//
+// 示例应用的 RegisterKeyExampleModel 正是 `return NewXWithError(ctx)` 这种写法，
+// 所以这条路径必须覆盖，不能只判断无类型 nil。
+func isNilInstance(instance interface{}) bool {
+	if instance == nil {
+		return true
+	}
+	switch value := reflect.ValueOf(instance); value.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
 
 func (e *entry) beginMaintenance(name KeyName) error {
 	if !e.maintenance.CompareAndSwap(false, true) {
@@ -182,7 +204,7 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 			}
 		}()
 		instance, err = entity.initializer()
-		if err == nil && instance == nil {
+		if err == nil && isNilInstance(instance) {
 			err = fmt.Errorf("initializer returned nil instance")
 		}
 		if err != nil {
