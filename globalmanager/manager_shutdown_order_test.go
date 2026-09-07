@@ -156,6 +156,127 @@ func TestReleaseAll_ClosesCompositesBeforePlainObjects(t *testing.T) {
 	}
 }
 
+// nestedComposite 是一个可以持有其他组合对象的组合对象，用于验证嵌套排序。
+type nestedComposite struct {
+	name     string
+	recorder *orderRecorder
+	children []closableProbe
+	owns     bool
+	closed   bool
+	violated bool
+	mu       sync.Mutex
+}
+
+// closableProbe 是 nestedComposite 子资源的最小契约：能关闭、能被查询是否已关闭。
+type closableProbe interface {
+	Close() error
+	isClosed() bool
+}
+
+func (c *nestedComposite) OwnsChildren() bool { return c.owns }
+
+func (c *nestedComposite) OwnsInstance(candidate interface{}) bool {
+	if !c.owns || candidate == nil {
+		return false
+	}
+	for _, child := range c.children {
+		if candidate == child {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *nestedComposite) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
+func (c *nestedComposite) Close() error {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil
+	}
+	c.closed = true
+	c.mu.Unlock()
+
+	c.recorder.record(c.name)
+
+	// 排空阶段：子资源必须仍然可用。
+	for _, child := range c.children {
+		if child.isClosed() {
+			c.mu.Lock()
+			c.violated = true
+			c.mu.Unlock()
+		}
+	}
+
+	if !c.owns {
+		return nil
+	}
+	for _, child := range c.children {
+		if err := child.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// TestReleaseAll_NestedCompositesReleaseOutermostFirst 锁定嵌套组合对象的关闭顺序。
+//
+// 两层排序（组合对象 vs 普通对象）不足以处理「组合对象持有另一个组合对象」的情况：
+// 两者都在第一轮，轮内顺序仍取决于 sync.Map.Range，外层可能在内层已被关闭之后才
+// 开始排空。容器通过 CompositeOwnershipInspector 识别嵌套关系并按深度排序。
+//
+// 本用例重复多轮：顺序缺陷是概率性的，单轮通过不能证明契约成立。
+func TestReleaseAll_NestedCompositesReleaseOutermostFirst(t *testing.T) {
+	const rounds = 300
+
+	for round := 0; round < rounds; round++ {
+		recorder := &orderRecorder{}
+		manager := NewGlobalManager()
+
+		leaf := &orderedChild{name: "leaf", recorder: recorder}
+		inner := &nestedComposite{
+			name:     "inner",
+			recorder: recorder,
+			children: []closableProbe{leaf},
+			owns:     true,
+		}
+		outer := &nestedComposite{
+			name:     "outer",
+			recorder: recorder,
+			children: []closableProbe{inner},
+			owns:     true,
+		}
+
+		register(t, manager, "leaf", leaf)
+		register(t, manager, "inner", inner)
+		register(t, manager, "outer", outer)
+
+		manager.ReleaseAll(true)
+
+		if outer.violated {
+			t.Fatalf("round %d: outer drained against an already-closed inner; order = %v",
+				round, recorder.snapshot())
+		}
+		if inner.violated {
+			t.Fatalf("round %d: inner drained against an already-closed leaf; order = %v",
+				round, recorder.snapshot())
+		}
+
+		outerAt, innerAt, leafAt := recorder.indexOf("outer"), recorder.indexOf("inner"), recorder.indexOf("leaf")
+		if outerAt == -1 || innerAt == -1 || leafAt == -1 {
+			t.Fatalf("round %d: not everything was closed; order = %v", round, recorder.snapshot())
+		}
+		if !(outerAt < innerAt && innerAt < leafAt) {
+			t.Fatalf("round %d: want outer < inner < leaf, got %v", round, recorder.snapshot())
+		}
+	}
+}
+
 // TestReleaseAll_AliasedResourceIsClosedOnce 确认别名注册不会导致重复关闭被观测到。
 //
 // 同一个 *orderedChild 注册在两个 key 下，并且还被组合对象持有：一轮释放会对它发起

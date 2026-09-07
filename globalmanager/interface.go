@@ -26,11 +26,16 @@ type Closable interface {
 // 而遍历顺序本身是不确定的：ReleaseAll 基于 sync.Map.Range，其迭代顺序未定义且每次
 // 运行都可能不同。因此「先关组合对象」不能依赖运气，必须显式表达。
 //
-// 实现本接口即向容器声明：本对象拥有子资源，必须**先于**普通对象关闭。
-// ReleaseAll 会分两轮执行——先释放所有 CompositeClosable，再释放其余对象。
+// 实现本接口即向容器声明：本对象拥有子资源，必须**先于**其子资源关闭。
+// ReleaseAll 会按嵌套深度分层释放——先释放没有被任何其他组合对象持有的组合对象，
+// 再逐层向内，最后释放普通对象。
 //
 // 实现方仍须保证 Close 幂等：子资源被组合对象关闭后，容器随后仍会对它自己的 key
 // 调用一次 Release，此时第二次 Close 必须安全返回。
+//
+// 嵌套：组合对象可以持有另一个组合对象。容器通过 OwnsInstance 识别这种嵌套关系
+// 并据此排序；不实现 OwnsInstance 的组合对象被视为不持有其他**已注册**的组合对象
+// （持有普通资源不受影响）。
 type CompositeClosable interface {
 	Closable
 	// OwnsChildren 返回本对象是否确实持有子资源的关闭责任。
@@ -38,6 +43,17 @@ type CompositeClosable interface {
 	// 返回 false 时按普通 Closable 对待：某些组合对象可以被构造为「借用」子资源
 	// 而不负责关闭它们，这种对象没有关闭顺序约束。
 	OwnsChildren() bool
+}
+
+// CompositeOwnershipInspector 让组合对象声明它是否持有某个具体实例。
+//
+// 仅在组合对象可能持有**另一个组合对象**时才需要实现：容器据此判断嵌套层级，
+// 保证外层先于内层释放。只持有普通资源的组合对象无须实现——两层排序已经足够。
+//
+// 容器只用它做关闭排序，不会缓存结果，实现应保持轻量且不得触发初始化。
+type CompositeOwnershipInspector interface {
+	// OwnsInstance 返回 candidate 是否为本对象持有的子资源。
+	OwnsInstance(candidate interface{}) bool
 }
 
 // HealthChecker 定义健康检查行为，用于观测与上报全局对象的可用状态。

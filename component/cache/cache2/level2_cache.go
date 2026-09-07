@@ -455,6 +455,23 @@ func (l2c *Level2Cache) OwnsChildren() bool {
 	return l2c.ownChildren
 }
 
+// OwnsInstance 实现 globalmanager.CompositeOwnershipInspector。
+//
+// 供容器判断嵌套关系：若某个子缓存本身也是组合对象，容器据此保证本对象先于它释放。
+// 不持有子资源（ownChildren 为 false）时恒返回 false。
+func (l2c *Level2Cache) OwnsInstance(candidate interface{}) bool {
+	if candidate == nil {
+		return false
+	}
+	l2c.lifecycleMu.Lock()
+	owns := l2c.ownChildren
+	l2c.lifecycleMu.Unlock()
+	if !owns {
+		return false
+	}
+	return candidate == l2c.local || candidate == l2c.remote
+}
+
 func (l2c *Level2Cache) initLifecycle(ownChildren bool) {
 	l2c.lifecycleMu.Lock()
 	l2c.admitting = true

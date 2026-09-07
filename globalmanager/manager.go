@@ -377,45 +377,98 @@ func (gm *GlobalManager) ReleaseAllWithObserver(observer func(name KeyName, err 
 		}
 	}
 
-	// 第一轮：组合对象。它们负责排空在途操作并关闭自己持有的子资源。
-	var deferred []KeyName
+	composites, plain := gm.partitionByOwnership()
+
+	// 组合对象按嵌套深度释放：外层先于内层，保证任一组合对象排空时它持有的子资源
+	// （包括子组合对象）都还没有被关闭。
+	for _, name := range composites {
+		report(name, gm.Release(name))
+	}
+
+	// 最后释放普通对象。此时组合对象已排空，子资源的重复关闭由幂等 Close 吸收。
+	for _, name := range plain {
+		report(name, gm.Release(name))
+	}
+}
+
+// partitionByOwnership 把容器内的 key 分成两组：需要优先释放的组合对象（已按嵌套
+// 深度由外向内排序）与其余普通对象。
+//
+// 必须在释放开始前一次性完成快照与排序：释放会把 entry 重置为未初始化，之后再去
+// 读取实例就无法判断它原本是不是组合对象了。
+func (gm *GlobalManager) partitionByOwnership() (composites, plain []KeyName) {
+	type snapshot struct {
+		name     KeyName
+		instance interface{}
+	}
+
+	var owning []snapshot
 	gm.container.Range(func(key, _ interface{}) bool {
 		name, ok := key.(string)
 		if !ok {
 			return true
 		}
-		if gm.ownsChildren(name) {
-			report(name, gm.Release(name))
-		} else {
-			deferred = append(deferred, name)
+		instance := gm.loadedInstance(name)
+		if instance == nil {
+			plain = append(plain, name)
+			return true
 		}
+		if composite, ok := instance.(CompositeClosable); ok && composite.OwnsChildren() {
+			owning = append(owning, snapshot{name: name, instance: instance})
+			return true
+		}
+		plain = append(plain, name)
 		return true
 	})
 
-	// 第二轮：其余对象。此时组合对象已排空，子资源的重复关闭由幂等 Close 吸收。
-	for _, name := range deferred {
-		report(name, gm.Release(name))
+	// 按「被多少个其他组合对象持有」升序排列：没有被任何组合对象持有的是最外层，
+	// 必须最先释放。只持有普通资源的组合对象计数均为 0，退化为原来的两层顺序。
+	depth := make([]int, len(owning))
+	for i, candidate := range owning {
+		for j, owner := range owning {
+			if i == j {
+				continue
+			}
+			inspector, ok := owner.instance.(CompositeOwnershipInspector)
+			if ok && inspector.OwnsInstance(candidate.instance) {
+				depth[i]++
+			}
+		}
 	}
+
+	// 插入排序：组合对象数量极少（通常个位数），无需引入 sort 依赖与比较器。
+	order := make([]int, len(owning))
+	for i := range order {
+		order[i] = i
+	}
+	for i := 1; i < len(order); i++ {
+		for j := i; j > 0 && depth[order[j]] < depth[order[j-1]]; j-- {
+			order[j], order[j-1] = order[j-1], order[j]
+		}
+	}
+	for _, idx := range order {
+		composites = append(composites, owning[idx].name)
+	}
+	return composites, plain
 }
 
-// ownsChildren 判断某个 key 当前的实例是否为负责关闭子资源的组合对象。
+// loadedInstance 返回某个 key 当前已初始化的实例；未初始化时返回 nil。
 //
-// 未初始化的 entry 返回 false：没有实例就没有子资源，放进第二轮即可。
-func (gm *GlobalManager) ownsChildren(name KeyName) bool {
+// 不触发初始化：关闭路径不应该把一个从未被使用的懒加载对象创建出来再关掉。
+func (gm *GlobalManager) loadedInstance(name KeyName) interface{} {
 	origin, ok := gm.container.Load(name)
 	if !ok {
-		return false
+		return nil
 	}
 	entity, ok := origin.(*entry)
 	if !ok {
-		return false
+		return nil
 	}
 	stored := entity.instance.Load()
 	if stored == nil {
-		return false
+		return nil
 	}
-	composite, ok := stored.value.(CompositeClosable)
-	return ok && composite.OwnsChildren()
+	return stored.value
 }
 
 // Clear 直接永久删除key，后续无法Get()，只能重新注册
