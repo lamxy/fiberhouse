@@ -34,7 +34,7 @@ Go Web 應用框架，核心 HTTP 引擎可切換（Fiber / Gin），通過 Prov
 BootStrapConfig → FrameStarterCreate → CoreStarterCreate
 → GlobalInit → CoreEngineInit → CoreHookInit
 → AppMiddlewareInit → ModuleMiddlewareInit → RouteRegisterInit
-→ ModuleSwaggerInit → TaskServerInit → GlobalKeepaliveInit
+→ ModuleSwaggerInit → TaskServerInit → GlobalHealthCheckInit
 → ServerRunBefore → ServerRun → ServerRunAfter → ServerShutdown
 ```
 
@@ -92,7 +92,7 @@ fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 
 1. **位點驅動啟動流程**：每個啟動階段對應一個 `IProviderLocation`，解耦各階段邏輯，可在任意位點插入自定義行為。
 2. **核心引擎可插拔**：`BootConfig.CoreType` 切換 fiber/gin，Provider 通過 `Target()` 字段聲明適配的引擎類型。
-3. **全局對象統一管理**：`GlobalManager` 作為單例容器，通過 `InstanceKey` 訪問 DB/Cache 等實例，支持健康保活機制（`RegisterGlobalsKeepalive`）。
+3. **全局對象統一管理**：`GlobalManager` 作為單例容器，通過 `InstanceKey` 訪問 DB/Cache 等實例，支持後台健康檢查機制（`RegisterGlobalsHealthCheck`，僅觀測上報，不做自動重建，重建職責交由驅動層自愈）。
 4. **二級緩存支持**：本地（ristretto）+ 遠端（Redis），通過 `GetLocalCacheKey` / `GetRemoteCacheKey` / `GetLevel2CacheKey` 訪問。
 5. **CLI 支持**：除 Web 應用外，有獨立的 `ICommandContext` + `CommandStarter` 體系（`commandstarter/` 目錄）。
 6. **Protobuf 響應編碼**：`response/pb` 包含 HTTP 統一響應的 protobuf schema 與生成消息，不是 RPC runtime。

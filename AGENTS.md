@@ -64,3 +64,14 @@ Claude 规则来源是参考材料。不要盲目加载或遵循整份 `CLAUDE.m
     - 如果你执行了 `rtk <command>` 发现输出被过度裁剪，且你确实需要阅读完整的原始报错或未压缩细节，请在命令前加上 `NO_RTK` 前缀来绕过 Hook（例如：`NO_RTK go test ./...`）。
 
 @CLAUDE.md
+
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo root), reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool** (when available): `codegraph_explore` answers most code questions in one call — the relevant symbols' verbatim source plus the call paths between them, including dynamic-dispatch hops grep can't follow. Name a file or symbol in the query to read its current line-numbered source. If it's listed but deferred, load it by name via tool search.
+- **Shell** (always works): `codegraph explore "<symbol names or question>"` prints the same output.
+
+If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
+<!-- CODEGRAPH_END -->

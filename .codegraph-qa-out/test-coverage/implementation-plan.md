@@ -362,14 +362,14 @@ With a recording `ApplicationStarter`, assert:
 ```text
 RegisterToCtx -> RegisterApplicationGlobals -> InitCoreApp ->
 RegisterAppHooks -> RegisterAppMiddleware -> RegisterModuleInitialize ->
-RegisterModuleSwagger -> RegisterTaskServer -> RegisterGlobalsKeepalive -> AppCoreRun
+RegisterModuleSwagger -> RegisterTaskServer -> RegisterGlobalsHealthCheck -> AppCoreRun
 ```
 
 Assert the same manager slice reaches every accepting stage. Do not call blocking `FiberHouse.RunServer`.
 
 - [ ] **Step 2: Cover FrameApplication guards**
 
-Test application/module/task registration/getters, context registration, app-state early returns, missing application panic, initializer registration, required-key success/failure logging, logger-origin registration, validator initializers/tags, task disabled/nil and keepalive disabled. Do not start a ticker or task server.
+Test application/module/task registration/getters, context registration, app-state early returns, missing application panic, initializer registration, required-key success/failure logging, logger-origin registration, validator initializers/tags, task disabled/nil and healthCheck disabled (legacy `keepAlive` key still falls back). Do not start a ticker or task server.
 
 - [ ] **Step 3: Cover starter providers/managers**
 
