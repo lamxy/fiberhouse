@@ -89,6 +89,13 @@ L2 的 error-returning 构造函数默认拥有传入的 local 和 remote。它�
 会关闭两个 child，每个最多一次。因此把 child 交给 L2 后，不要再由另一个 owner 关闭。
 Coordinator 不关闭 backend；创建 Coordinator 的应用仍负责 backend 生命周期。
 
+把 L2 与它的 child 同时注册进 GlobalManager 是允许的（示例就是这么做的：Redis 既在
+`KEY_REDIS` 下，又以别名在 `KEY_REMOTE_CACHE` 下，还被 L2 持有）。`Level2Cache` 实现
+`globalmanager.CompositeClosable`，向容器声明这层持有关系，容器的 `ReleaseAll` 据此
+先释放 L2、再释放 child 各自的 key——L2 会先排空在途异步写入再关 child，若顺序反过来，
+排空期间的写入就会打在已关闭的 Redis 上。child 因此会被关闭多次，这是正常的：三个封装
+的 `Close` 都是幂等的。
+
 ```go
 local, err := cachelocal.NewLocalCache(appCtx)
 if err != nil {

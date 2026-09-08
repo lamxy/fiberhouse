@@ -90,8 +90,8 @@ Fiber 与 Gin 都在 goroutine 中启动 HTTP server，在调用 `AppCoreRun` �
 
 | Core | 运行 | 收到信号后 | 当前限制 |
 |---|---|---|---|
-| Fiber | `fiber.App.Listen(host + ":" + port)` | 调用 `fiber.App.Shutdown()`；`OnShutdown` hook 停止并等待默认健康检查，随后清空 `GlobalManager`、记录日志并关闭日志器 | `RegisterAppState(true)` 在 `Listen` 返回后才执行，并非“开始监听成功”标志；清空容器不逐项关闭资源 |
-| Gin | 无 TLS 配置时调用 `http.Server.ListenAndServe()`；已加载 TLS 配置时调用 `ListenAndServeTLS("", "")` | 最多等待 30 秒 `Shutdown`，随后停止并等待默认健康检查、清空容器、记录日志并关闭日志器 | TLS 证书加载已有单元/契约测试，但没有真实 listener/握手集成验证；应用状态同样在 server 返回后才写入 |
+| Fiber | `fiber.App.Listen(host + ":" + port)` | 调用 `fiber.App.Shutdown()`；`OnShutdown` hook 停止并等待默认健康检查，逐项释放 `GlobalManager` 内已初始化对象，再清空容器、记录日志并关闭日志器 | `RegisterAppState(true)` 在 `Listen` 返回后才执行，并非“开始监听成功”标志 |
+| Gin | 无 TLS 配置时调用 `http.Server.ListenAndServe()`；已加载 TLS 配置时调用 `ListenAndServeTLS("", "")` | 最多等待 30 秒 `Shutdown`，随后停止并等待默认健康检查、逐项释放并清空容器、记录日志并关闭日志器 | TLS 证书加载已有单元/契约测试，但没有真实 listener/握手集成验证；应用状态同样在 server 返回后才写入 |
 
 `LocationServerRun` 与 `LocationServerShutdown` 的 Manager 虽被传给 `AppCoreRun`，当前两种 Core 都不读取它们。`LocationServerRunAfter` 只有在 `AppCoreRun` 返回后才执行；如果 fatal/panic/进程强退阻断返回，after-run 也没有保证。
 

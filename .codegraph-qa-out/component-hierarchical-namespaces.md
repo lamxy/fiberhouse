@@ -21,4 +21,6 @@ JSON 路径末段与 package 名有意不同，用于避免与标准库及 Gin �
 
 ## 迁移边界
 
-迁移改变公开 import path 和 Go package identity，但不重命名导出 API、不保留兼容 shim，也不修改运行行为、配置、依赖版本或既有测试逻辑。完整测试仍按 `docs/reference/known-test-failures.md` 中记录的六项既有问题分类。
+迁移改变公开 import path 和 Go package identity，但不重命名导出 API、不保留兼容 shim，也不修改运行行为、配置、依赖版本或既有测试逻辑。
+
+迁移当时完整测试有六项既有失败（bootstrap 配置隔离一项、async writer 五项），曾记录在 `docs/reference/known-test-failures.md`。这些债务已于 2026-07-17 由 `4a79cbd`、`09d33f5` 清偿：bootstrap 测试重写后不再依赖进程级 singleton 状态，writer 测试改用排空完成条件而非固定睡眠。该文档随之删除。

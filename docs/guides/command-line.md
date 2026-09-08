@@ -129,7 +129,9 @@ os.Exit(exitCode) // 所有清理完成后，且只在最外层退出
 
 若应用不能保证 `RegisterGlobalErrHandler` 的实现不退出，就不要调用该阶段，改由顶层处理 `AppCoreRun` 返回值。命令 action 可以返回带 exit code 的 error；顶层统一记录运行与关闭错误，再决定最终 exit code。
 
-CLI 当前没有统一 shutdown 阶段，也不会自动调用 GlobalManager 中实例的 `Close`。安全顺序应由入口建立：停止新工作，等待命令启动的 goroutine，关闭数据库/缓存/client，关闭日志 writer，最后决定退出码。`GlobalManager.ClearAll(true)` 只删除引用，不能替代逐项关闭。
+CLI 当前没有统一 shutdown 阶段，也不会自动调用 GlobalManager 中实例的 `Close`——`commandstarter/` 不调用 `ReleaseAll` / `ClearAll` / `clearApplicationGlobals`，因此 CLI 注册的 MySQL、Mongo、Redis 连接在进程退出前不会被关闭。这与 Fiber/Gin 的受控关闭不同，后者会逐项释放再清空。
+
+安全顺序应由入口建立：停止新工作，等待命令启动的 goroutine，关闭数据库/缓存/client，关闭日志 writer，最后决定退出码。要复用容器的释放逻辑，可在入口自行调用 `GlobalManager.ReleaseAllWithObserver(observer, true)` 再 `ClearAll(true)`；`ClearAll(true)` 只删除引用，不能替代逐项关闭。
 
 ## `test-orm` 示例边界
 
