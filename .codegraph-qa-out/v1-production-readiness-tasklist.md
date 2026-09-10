@@ -75,9 +75,54 @@ SIGTERM → coordinateServerRun select (server_lifecycle.go:30)
 
 `NewPprofShutdownProvider`/`NewPprofShutdownPManager` 在預設集合（`default.go:48-49,158-159`），綁定 `LocationServerShutdownAfter`（`pprof_providers_and_manager.go:215`），`example_main/main.go:71,110,126` 確實裝配。僅由 `application.pprof.enable`（預設 false）擋住 → **潛在但可達**。
 
-### 修復方案
+### 修復方案（第三輪審計後大幅修訂）
 
-將 `clearApplicationGlobals` 與 `logger.Close()` 移出 `OnShutdown` hook，置於 `Shutdown` 末端、`ServerShutdownAfter` **之後**；同時消除 `:444` 的重複關閉。
+初稿方案「移出 hook、置於 `Shutdown` 末端」**已被審計判定為 unsound**，逐條複核後屬實，方案作廢。
+
+**初稿為何不成立**：`Shutdown` 有六個提前返回，全部早於末端的 `:444`——
+`:403`（appState 守衛）、`:412`（shutdown 位點載入失敗）、`:415`（replaced）、
+`:424`（pre-shutdown 載入失敗）、`:431`（`coreApp.Shutdown()` 失敗）、`:440`（post-shutdown 載入失敗）。
+把清理放在末端，等於這六條路徑全部拿不到清理。
+
+更關鍵：已核對 fiber@v2.52.14 `app.go:888-895`，`defer app.hooks.executeOnShutdownHooks()`
+位於 `if app.server == nil` 檢查**之上**，故 hook **無條件觸發**。今日即使 `coreApp.Shutdown()`
+失敗（`:431`）也仍有清理；初稿方案會把這條路徑的清理一併移除——**用一個缺陷換另一個**。
+
+Gin 之所以能用末端寫法，是因為它同時有 `defer cg.releaseGinLogger()`（`core_gin_starter_impl.go:531`）
+配套。Fiber 需要同樣的紀律。
+
+**修訂後方案**：
+
+1. 清理改為 `Shutdown` 頂部的 `defer`，以**每實例** `sync.Once` 守衛（不可用套件級 —— 同進程
+   第二個 app 實例會拿不到清理）。`CoreWithFiber` 目前只有 4 個欄位，需新增該欄位。
+2. **保留** `OnShutdown` hook，但改為委派同一個 once-guarded 清理函式。once 守衛使重複執行成為
+   no-op，因此保留 hook 零成本，且維持「直接呼叫 `coreApp.Shutdown()`」這條路徑的既有行為。
+   初稿「移除 hook」是整個提案中不必要的那一半。
+3. 移除 `:444` 的重複 `logger.Close()`。`LoggerWrap.Close()`（`bootstrap.go:94-99`）**無冪等守衛**，
+   僅委派 `wCloser.Close()`，故 once 守衛是**功能性必需**而非美化。
+
+### 兩項待決策（不逕行採納）
+
+審計另提兩項建議，但兩者都超出局部補丁邊界，**列為待決策而非直接實作**：
+
+- **`runErr` 分支的清理**：`server_lifecycle.go:28-29` 的 `case runErr = <-runResult` 直接返回，
+  從不呼叫 `Shutdown`，涵蓋 Listen 綁定失敗與 run goroutine panic 兩條路徑。**今日同樣洩漏**
+  （hook 只在 `coreApp.Shutdown()` 時觸發，而該分支從不呼叫），故屬**既有缺陷、非本次新增**。
+  但修好 T2 後文件將宣稱關閉順序正確，而這兩條路徑仍零清理 —— 需決定是否納入本輪。
+- **`appState` latch 防護**：`RegisterAppState` 是 `sync.Once` latch（首次呼叫即定值）。倉庫內
+  不可達，但使用方若提前 pin `true`，`Shutdown` 會在 `:403` 直接返回並跳過清理。防護需把清理
+  移到守衛之前，等於變更 `Shutdown` 對 replaced/no-op 情形的契約 —— 觸及 v2.0.0 排除的
+  `AppState` 語義，傾向不在本輪處理。
+
+### 紅燈測試策略（審計修正）
+
+初稿設想的「容器隔離」**不可行**：`AppContext.container` 來自 `NewGlobalManagerOnce()`
+（`context_impl.go:53,183`），該單例無 reset 入口、無注入點。
+
+改用**注入 writer 觀測順序**：`bootstrap.NewLoggerWrap` 接受 `io.WriteCloser`
+（`bootstrap/bootstrap.go:71-77`），故可注入一個記錄 close 時序的 writer，斷言
+`ServerShutdownAfter` 位點早於日誌器關閉。**完全不觸碰全域單例**，不會污染同套件其他測試
+（此即 T5 踩到的坑）。
 
 **前置**：先寫紅燈測試釘住現行順序。`pprof_lifecycle_test.go:145` 以 nil starter 直接驅動位點，不 pin Fiber 內部順序，紅燈測試不會衝突。
 
@@ -108,6 +153,30 @@ SIGTERM → coordinateServerRun select (server_lifecycle.go:30)
 **修正後方案**：把 `clearApplicationGlobals` / `releaseApplicationGlobals` 的參數收窄為 `IContext`，或 CLI 直接經容器呼叫 `ReleaseAllWithObserver` + `ClearAll`。收窄未匯出函式的參數屬純局部改動。
 
 **優先序**：`commandstarter/` 為正式套件 → 優先；`hertzcore` 屬 `example_application/` 示例碼 → 次之。
+
+### CLI 半部 ✅ 已完成
+
+`RunCommandStarter` 以 `defer releaseCommandGlobals(starter)` 補上關閉段。
+
+**實作中推翻了兩輪審計的共同建議**：兩份審計都說「把 `clearApplicationGlobals` 參數收窄為 `IContext`」即可。
+實測**不成立** —— 該函式第一步 `stopFrameHealthCheck` 需要 `IApplicationContext.GetStarterApp()` 回傳的
+`ApplicationStarter`，而 `ICommandContext.GetStarterApp()` 回傳 `CommandStarter`（`context_interface.go:42` vs `:61`），
+型別不同，收窄後無法編譯。且 CLI 健康檢查是一次性的（註冊期跑一輪，無後台 ticker），**沒有可停止的東西**，
+故只需 release + clear 兩步，不需三步。
+
+已用探針證實舊行為確實洩漏：僅 `ClearAll`（只刪條目）時，已註冊的 `Closable` 的 `Close` 呼叫次數為 **0**。
+
+覆蓋率：`RunCommandStarter` 100%、`releaseCommandGlobals` 78.6%；`-race -count=5` 通過。
+
+### hertzcore 半部 ⏸ 待決策
+
+`core_hertz_starter.go:32,63` 已持有 `IApplicationContext`，插入點無障礙。**但**該套件的套件註解
+（`:1-12`）明言「僅依賴框架的匯出 API」，用以證明「新增核心引擎不需修改框架任何一行程式碼」。
+而 `clearApplicationGlobals`/`releaseApplicationGlobals` **皆未匯出**，倉庫亦無任何匯出的釋放入口。
+
+兩條路：(a) 新增匯出 API —— 違反「不新增公共運行入口」約束；(b) hertzcore 自行內聯
+`GetContainer().ReleaseAllWithObserver(...)` + `ClearAll(true)`（兩者在 `*GlobalManager` 上已匯出）——
+遵守約束且保住該套件「只用匯出 API」的示範價值。傾向 (b)，但屬設計分叉，待決策。
 
 **明確排除**：`RunCommandStarter:21` 丟棄 `AppCoreRun()` 錯誤——`follow-up-local-patch-optimization-todo.md:40` 已列為不進入佇列，尊重既有決定。
 
@@ -206,6 +275,21 @@ RegisterAppHooks       39.1%  → 39.1%（未變，理由見下）
 | 擴展運行位點與關閉鏈 | 條件 1、5 | 正是被延後的「統一 provider 關閉接口與跨組件所有權契約」 |
 | L2 快取 | 條件 1 | 非同步 flush 所有權延後 |
 | hertzcore | 原則上不可 | `example_application/` 無成熟度承諾（`feature-status.md:68`），無能力列 |
+
+---
+
+## 已知既有 flake（非本輪引入，未修）
+
+`TestPprofServerShutdownReleasesPort`（`pprof_server_test.go:173`）間歇失敗。
+
+**已證實為既有問題**：在 `origin/main`（`46c6618`，不含本分支任何改動）的獨立 worktree 上以相同
+指令重跑 6 次，重現 1 次；在本分支重現 2/5。與本輪任何改動無關。
+
+機制：`freePort` 綁定 `:0` 取得埠號後隨即關閉，`Start()` 再綁定同一埠，`Shutdown` 釋放後測試又
+綁定第三次——對臨時埠的三重 TOCTOU。任一空隙被其他行程搶佔即失敗。
+
+不在 T1–T5 範圍內，但 CI 可能偶發撞上。修法（若日後處理）：讓 `PprofServer` 支援 `:0` 並回報實際
+埠號，避免「取號→關閉→重綁」的競態。
 
 ---
 
