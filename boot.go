@@ -390,6 +390,14 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 
 	if runErr != nil {
 		fmt.Printf("Application run server error: %v\n", runErr)
+		// 运行分支返回代表核心从未进入信号协调的关闭流程：监听绑定失败，或运行
+		// goroutine panic 被 coordinateServerRun 收敛成错误。这两条路径都不会调用
+		// Shutdown，因此全局对象此前从未被回收——MySQL 连接池、Mongo 与 Redis
+		// 客户端一直保持到进程退出。
+		//
+		// 这里补上回收。核心自身的回收入口带 once 守卫，重复调用是空操作，因此即使
+		// 未来这条路径也走到 Shutdown，也不会重复释放。
+		releaseGlobalsAfterRunFailure(appStarter)
 	}
 
 	if shutdownRequested {
@@ -397,6 +405,30 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	}
 
 	fmt.Println("Application RunServer exited")
+}
+
+// releaseGlobalsAfterRunFailure 在运行分支失败后回收全局对象。
+//
+// coordinateServerRun 的 runErr 分支直接返回、从不调用 Shutdown，覆盖两种情况：
+// 监听绑定失败（AppCoreRun 返回错误），以及运行 goroutine panic 被收敛成错误。
+// 这两条路径此前没有任何回收，注册的 MySQL 连接池、Mongo 与 Redis 客户端会一直
+// 保持到进程退出。
+//
+// 这里直接调用通用回收函数，不尝试走核心自带的 once 守卫入口：守卫方法未导出，
+// 而 WebApplication 以接口字段嵌入 CoreStarter，跨接口断言取不到具体类型的未导出
+// 方法（已实测确认）。走通用路径本身是安全的——这条分支意味着 Shutdown 从未执行，
+// 不存在重复回收；Fiber 的守卫也会让后续可能的回收成为空操作。
+//
+// 全程 nil 防护：启动流程可能在核心装配完成前就失败。
+func releaseGlobalsAfterRunFailure(starter ApplicationStarter) {
+	if starter == nil {
+		return
+	}
+	ctx := starter.GetAppContext()
+	if ctx == nil || ctx.GetContainer() == nil {
+		return
+	}
+	clearApplicationGlobals(ctx)
 }
 
 // resolveGlobalTools 获取全局应用上下文、全局配置器和全局日志器

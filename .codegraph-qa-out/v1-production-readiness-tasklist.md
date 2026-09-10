@@ -5,20 +5,36 @@
 > 約束：優先局部補丁；不新增公共運行入口；不建立統一關閉架構；不遷移公共 API。
 > 狀態：已完成兩輪子代理審計（技術面 C1–C8、範圍面 S1–S5），結論已併入下文。
 
-## 非目標（明確聲明）
+## 晉級結果
 
-**T1–T5 全部完成後，`feature-status.md` 五條晉級條件下不會有任何能力晉級。**
-本分支是穩定性**維護**，不是晉級包。晉級需另立範圍（見文末「晉級阻塞分析」）。
+**JSON 流量編解碼與 JSON 響應：實驗性 → 稳定公共能力**（第四項晉級能力）。
+
+逐條證據：條件 1，四條路徑有契約，且「沒有獨立關閉資源」是**完整契約而非缺口**——`JsonWrapper`
+只暴露 `Marshal`/`Unmarshal`，包內無任何 `Close`/`Shutdown`；條件 3，`component/codec/json`
+覆蓋率 **100%**，隨 `go test ./...` 與獨立 race job 進入 CI，不依賴外部服務故無需 live；
+條件 4，全包無 `panic`/`fatal`；條件 5，`response-and-serialization.md` 描述該路徑，
+示例經 `resolveJSONCodec` 實際執行。條件 2 依 v2.0.0 前豁免不作門檻。
+
+### 更正：先前「無任何能力可晉級」的判斷是錯的
+
+本文件原先寫著「T1–T5 全部完成後不會有任何能力晉級」，依據是範圍審計 S5 的結論。
+**該結論未經逐條驗證即被採納，對 JSON 編解碼而言是錯的。** 實測後四條件全部滿足。
+
+其餘能力確實不可晉級，但理由各不相同，需分別判斷而非一概而論：
+- **參數驗證**：卡條件 4。`en.go:29`、`zh_cn.go:31`、`zh_tw.go:31` 在 locale 註冊失敗時
+  `panic(err)`，而這正是「以 panic 表達可恢復的裝配錯誤」。改成回傳 error 即可解，但屬行為變更。
+- **panic recovery**：卡條件 4。`recover_error_handler_impl.go:107/116/123` 等五處在裝配路徑 panic。
+- **Fiber 內核**：卡條件 1。`AppState` 單一布林承載三種互斥語義且為 `sync.Once` latch，屬 v2.0.0 範圍。
 
 ## 已驗證基線
 
 | 檢查 | 結果 |
 |---|---|
 | `go vet ./...` | 通過 |
-| `go test ./... -count=1` | 全通過，40 套件 |
+| `go test ./... -count=1` | 全通過，**41 套件** |
 | `go test -race ./... -count=1` | 全通過，零 data race |
-| 預設 profile 總覆蓋率 | 62.2% |
-| `-tags=liveintegration` 本機 | 連線被拒（無 Docker），**環境問題非回歸** |
+| `go test -tags=liveintegration -run 'TestLive_'` | **全通過**（Docker 起 MySQL 8.4 / Mongo 8.0 / Redis 8.2 實測） |
+| 根套件覆蓋率 | 75.5%（原 74.0%） |
 
 ---
 
@@ -123,10 +139,12 @@ Gin 之所以能用末端寫法，是因為它同時有 `defer cg.releaseGinLogg
 
 審計另提兩項建議，但兩者都超出局部補丁邊界，**列為待決策而非直接實作**：
 
-- **`runErr` 分支的清理**：`server_lifecycle.go:28-29` 的 `case runErr = <-runResult` 直接返回，
-  從不呼叫 `Shutdown`，涵蓋 Listen 綁定失敗與 run goroutine panic 兩條路徑。**今日同樣洩漏**
-  （hook 只在 `coreApp.Shutdown()` 時觸發，而該分支從不呼叫），故屬**既有缺陷、非本次新增**。
-  但修好 T2 後文件將宣稱關閉順序正確，而這兩條路徑仍零清理 —— 需決定是否納入本輪。
+- ~~**`runErr` 分支的清理**~~ ✅ **已納入並實作**。`boot.go` 在 `runErr != nil` 時呼叫
+  `releaseGlobalsAfterRunFailure(appStarter)`，涵蓋 Listen 綁定失敗與 run goroutine panic 兩條
+  路徑。理由：修好 T2 後文件宣稱關閉順序正確，若這兩條路徑仍零清理，等於只說了一半實話。
+  實作註記：不走核心的 once 守衛入口——守衛方法未匯出，而 `WebApplication` 以介面欄位嵌入
+  `CoreStarter`，跨介面斷言取不到具體型別的未匯出方法（已用探針實測確認）。直接走通用
+  `clearApplicationGlobals` 是安全的：該分支意味著 `Shutdown` 從未執行，不存在重複回收。
 - **`appState` latch 防護**：`RegisterAppState` 是 `sync.Once` latch（首次呼叫即定值）。倉庫內
   不可達，但使用方若提前 pin `true`，`Shutdown` 會在 `:403` 直接返回並跳過清理。防護需把清理
   移到守衛之前，等於變更 `Shutdown` 對 replaced/no-op 情形的契約 —— 觸及 v2.0.0 排除的
@@ -284,7 +302,7 @@ RegisterAppHooks       39.1%  → 39.1%（未變，理由見下）
 
 ---
 
-## 晉級阻塞分析（範圍審計 S5，說明「非目標」的依據）
+## 晉級阻塞分析（範圍審計 S5 的原始結論，其中 JSON 編解碼一項已被推翻，見文首「晉級結果」）
 
 | 能力 | 阻塞條件 | 原因 |
 |---|---|---|
@@ -300,14 +318,25 @@ RegisterAppHooks       39.1%  → 39.1%（未變，理由見下）
 
 `TestPprofServerShutdownReleasesPort`（`pprof_server_test.go:173`）間歇失敗。
 
-**已證實為既有問題**：在 `origin/main`（`46c6618`，不含本分支任何改動）的獨立 worktree 上以相同
-指令重跑 6 次，重現 1 次；在本分支重現 2/5。與本輪任何改動無關。
+**這是「隔離執行才會出現」的假象，不影響 CI，不需要修。**
 
-機制：`freePort` 綁定 `:0` 取得埠號後隨即關閉，`Start()` 再綁定同一埠，`Shutdown` 釋放後測試又
-綁定第三次——對臨時埠的三重 TOCTOU。任一空隙被其他行程搶佔即失敗。
+先前本節記錄的機制與失敗率都是錯的，已更正。實測資料：
 
-不在 T1–T5 範圍內，但 CI 可能偶發撞上。修法（若日後處理）：讓 `PprofServer` 支援 `:0` 並回報實際
-埠號，避免「取號→關閉→重綁」的競態。
+| 執行方式 | 失敗率 |
+|---|---|
+| `go test . -run 'TestPprofServerShutdownReleasesPort'`（隔離） | 5/10、5/10、5/10（三批交錯量測，穩定約 50%） |
+| `go test .`（整包，即 CI 的執行方式） | **0/10** |
+
+失敗訊息是 `listen tcp 127.0.0.1:39225: bind: address already in use`，發生在**關閉後重新監聽**
+那一步——即 TIME_WAIT。整包執行時其他測試消耗掉這段間隔，因此從不失敗；隔離執行則立刻重綁，
+必然撞上。
+
+**先前的錯誤結論**（保留以記取教訓）：曾據此宣稱「`origin/main` 有 1/6 既有 flake」、
+「我的改動把它惡化到 19/30」、「revert 後回到 12/30」。這些數字全部是同一個隔離假象在不同機器
+負載下的讀數，彼此不可比較，也不足以支撐任何因果結論。曾嘗試以 `Port: 0` + 回報實際綁定位址
+修復，該改動已 revert——問題根本不在 TOCTOU。
+
+CI 執行 `go test ./...`（整包），故不受影響。
 
 ---
 
