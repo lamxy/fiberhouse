@@ -127,7 +127,17 @@ SIGTERM → coordinateServerRun select (server_lifecycle.go:30)
 
 **方案**：CI 覆蓋率步驟加 `-tags=liveintegration`，或合併 hermetic + live 兩份 profile。
 
-### 真正未測且在生產關閉路徑上（審計升級為高優先）
+### 真正未測且在生產關閉路徑上 ✅ 已完成（commit `491467c`）
+
+新增 `component/cache/cache2/level2_ownership_release_test.go`，四個用例，把真實 `Level2Cache`
+按示例應用的別名結構註冊進真實 `GlobalManager`，驅動 `ReleaseAll` 200 輪。
+
+`OwnsChildren` / `OwnsInstance`：**0% → 100%**；`cache2` 套件：73.3% → 77.5%。`-race` 通過。
+
+關鍵細節：helper 必須在 `Register` 後 `Get` 一次讓實例落位——`partitionByOwnership` 只快照
+已初始化的 entry，否則組合對象被當作未初始化條目跳過，測試會恆真通過而不檢驗任何東西。
+
+以下為原始分析：
 
 `cache2/level2_cache.go:458 OwnsChildren` 與 `:468 OwnsInstance` 皆 0%，**無 build tag，是真未測**。
 
@@ -143,9 +153,35 @@ SIGTERM → coordinateServerRun select (server_lifecycle.go:30)
 
 ---
 
-## T5 — Fiber 測試補強
+## T5 — Fiber 測試補強 ✅ 已完成（commit `98b3ca0`）
 
-`core_starter_init_test.go` 27 個測試中 Gin 專項約 14 個；Fiber 專項僅 1 個（`core_starter_provider_test.go:78`）。出現次數 Gin 30 / Fiber 18。
+新增 `core_fiber_starter_lifecycle_test.go`，六個用例，照搬 Gin 已驗證的 loopback listener 策略。
+
+實測覆蓋率變化：
+
+```
+RegisterAppMiddleware   0.0%  → 91.3%
+AppCoreRun             33.3%  → 86.7%
+Shutdown               63.2%  → 68.4%
+RegisterAppHooks       39.1%  → 39.1%（未變，理由見下）
+```
+
+### 施工中發現的約束（T2 必須據此設計）
+
+初稿在此測試中呼叫了 `RegisterAppHooks`，覆蓋率一度到 78.3%，但**導致整包測試隨機失敗**。
+
+根因：`RegisterAppHooks` 安裝的 `OnShutdown` hook 會執行 `clearApplicationGlobals`，而容器來自
+`NewGlobalManagerOnce()` —— **進程級單例**。同一進程內重複執行時，上一輪的 hook 拆掉下一輪
+依賴的共享狀態（容器被 `ClearAll`、框架日誌器被 `Close`），使 `Listen` 無法在期限內解開。
+
+失敗訊息：`AppCoreRun did not return after Shutdown closed the listener`，`-count=5` 下穩定復現。
+移除該呼叫後連續 30 次通過。
+
+**對 T2 的意義**：T2 的紅燈測試必須直面這個共享單例。任何驅動 Fiber `OnShutdown` hook 的測試
+都會污染同進程的其他測試，因此 T2 用例需自備容器隔離（或明確接受單次執行語義），不能沿用
+本檔案的 fixture。這是實作中發現的硬約束，不是可選建議。
+
+原始不對稱數據：`core_starter_init_test.go` 27 個測試中 Gin 專項約 14 個；Fiber 專項僅 1 個（`core_starter_provider_test.go:78`）。出現次數 Gin 30 / Fiber 18。
 
 覆蓋率缺口（Fiber 不涉 build tag，數字為真）：
 ```
@@ -184,8 +220,14 @@ SIGTERM → coordinateServerRun select (server_lifecycle.go:30)
 
 ## 執行順序
 
-1. ~~T1~~ ✅ 完成
-2. **T4 高優先部分**：`OwnsChildren`/`OwnsInstance` 測試（守住 T2/T3 的關閉排序安全網）
+1. ~~T1 Makefile~~ ✅ 完成（`661a93a`）
+2. ~~T4 高優先部分：`OwnsChildren`/`OwnsInstance` 測試~~ ✅ 完成（`491467c`）
+3. ~~T5 Fiber 測試補強~~ ✅ 完成（`98b3ca0`）
+4. **← 當前戰線：T2** 紅燈測試 → 修復 → 同步四份文件（注意 T5 發現的共享單例約束）
+5. T3：CLI 優先，hertzcore 次之
+6. T4 CI 度量修正
+
+原始順序：
 3. **T5**：Fiber 測試補強
 4. **T2**：紅燈測試 → 修復 → 同步四份文件
 5. **T3**：CLI 優先，hertzcore 次之
