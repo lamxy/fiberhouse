@@ -90,7 +90,7 @@ Fiber 与 Gin 都在 goroutine 中启动 HTTP server，在调用 `AppCoreRun` �
 
 | Core | 运行 | 收到信号后 | 当前限制 |
 |---|---|---|---|
-| Fiber | `fiber.App.Listen(host + ":" + port)` | 调用 `fiber.App.Shutdown()`；`OnShutdown` hook 停止并等待默认健康检查，逐项释放 `GlobalManager` 内已初始化对象，再清空容器、记录日志并关闭日志器 | `RegisterAppState(true)` 在 `Listen` 返回后才执行，并非“开始监听成功”标志 |
+| Fiber | `fiber.App.Listen(host + ":" + port)` | 依次消费 shutdown 的 main/before 位点，调用 `fiber.App.Shutdown()`，再消费 after 位点；随后由 `Shutdown` 顶部的 defer 停止并等待默认健康检查，逐项释放 `GlobalManager` 内已初始化对象，清空容器、记录日志并关闭日志器 | `RegisterAppState(true)` 在 `Listen` 返回后才执行，并非“开始监听成功”标志 |
 | Gin | 无 TLS 配置时调用 `http.Server.ListenAndServe()`；已加载 TLS 配置时调用 `ListenAndServeTLS("", "")` | 最多等待 30 秒 `Shutdown`，随后停止并等待默认健康检查、逐项释放并清空容器、记录日志并关闭日志器 | TLS 证书加载已有单元/契约测试，但没有真实 listener/握手集成验证；应用状态同样在 server 返回后才写入 |
 
 `LocationServerRun` 与 `LocationServerShutdown` 的 Manager 虽被传给 `AppCoreRun`，当前两种 Core 都不读取它们。`LocationServerRunAfter` 只有在 `AppCoreRun` 返回后才执行；如果 fatal/panic/进程强退阻断返回，after-run 也没有保证。
@@ -103,9 +103,12 @@ Fiber 与 Gin 都在 goroutine 中启动 HTTP server，在调用 `AppCoreRun` �
 |---|---|
 | zero-location 判定 | `ZeroLocation`（通过比较 Manager 的 Location ID，不读取其 Manager 列表） |
 | `RunServer` 直接读取 | `LocationBootStrapConfig`、`LocationFrameStarterOptionInit`、`LocationCoreStarterOptionInit`、`LocationFrameStarterCreate`、`LocationCoreStarterCreate`、`LocationGlobalInit`、`LocationCoreEngineInit`、`LocationCoreHookInit`、`LocationAppMiddlewareInit`、`LocationModuleMiddlewareInit`、`LocationRouteRegisterInit`、`LocationModuleSwaggerInit`、`LocationTaskServerInit`、`LocationGlobalHealthCheckInit`、`LocationServerRunBefore`、`LocationServerRun`、`LocationServerShutdown`、`LocationServerRunAfter` |
-| 已声明但 `RunServer` 不读取 | `LocationAdaptCoreCtxChoose`、`LocationServerShutdownBefore`、`LocationServerShutdownAfter`、`LocationResponseInfoInit` |
+| 已声明但 `RunServer` 不读取 | `LocationAdaptCoreCtxChoose`、`LocationResponseInfoInit` |
+| `RunServer` 收集后交给 Core 的关闭链 | `LocationServerShutdownBefore`、`LocationServerShutdownAfter` |
 
-`LocationResponseInfoInit` 由响应 facade 在响应路径单独读取，不属于启动顺序。`LocationAdaptCoreCtxChoose` 当前没有启动链消费者；适配 Fiber/Gin context 仍需显式选择。`LocationServerShutdownBefore` 与 `LocationServerShutdownAfter` 只有声明，不能当作可用关闭 hook。
+`LocationResponseInfoInit` 由响应 facade 在响应路径单独读取，不属于启动顺序。`LocationAdaptCoreCtxChoose` 当前没有启动链消费者；适配 Fiber/Gin context 仍需显式选择。
+
+`LocationServerShutdownBefore` 与 `LocationServerShutdownAfter` 是可用的关闭 hook：`RunServer` 通过 `resolveRunAndShutdownManagers` 收集它们，交给 Core 的 `Shutdown` 依次消费（Fiber 见 `core_fiber_starter_impl.go`，Gin 见 `core_gin_starter_impl.go`）。仓库内的既有消费者是 pprof 关闭提供者，它绑定在 `LocationServerShutdownAfter`。两个内核都保证 after 位点在全局对象释放与日志器关闭**之前**执行，因此该位点的 provider 仍可正常记录日志。
 
 自定义 Location 也不会因注册而自动进入 `RunServer`。它需要一个明确调用 `GetManagers()` / `LoadProvider()` 的消费者；否则只是一条元数据记录。
 
@@ -116,6 +119,6 @@ Fiber 与 Gin 都在 goroutine 中启动 HTTP server，在调用 `AppCoreRun` �
 - Frame/Core 创建、Options 类型不符：使用 fatal 日志；应用注册器缺失、codec manager 缺失、task worker 获取失败等路径会 panic。
 - `ProviderManager.List()` 来自 map，Provider 执行顺序不稳定。Location 使用切片保存 Manager，但当前重复绑定检查会拒绝同一 Location 的后续 Manager，而 `SetOrBindToLocation` 又忽略这个错误；不能依赖“同一位置多个 Manager 按绑定顺序执行”。
 - `RunApplicationStarter` 是另一个导出 helper：它把同一组 Manager 传给各阶段，但不完成 `RunServer` 的 Provider 分发、Starter 选择和 Location 编排，不能与完整入口等同。
-- Fiber/Gin 关闭链只清空全局容器；数据库、缓存、任务、writer 与其他 goroutine 的资源所有者仍需定义停止顺序、超时和错误出口。
+- Fiber/Gin/CLI/hertzcore 的关闭链都会先释放全局对象再清空容器（释放失败按 key 上报，不中断回收）；但数据库、缓存、任务、writer 与其他 goroutine 的资源所有者仍需定义停止顺序、超时和错误出口——容器只负责调用 `Close`，不定义跨组件的停止编排。
 
 相关机制见[《Provider 系统》](provider-system.md)，上下文的单例与并发边界见[《Context 与 Locator》](context-and-locators.md)。

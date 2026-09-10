@@ -10,7 +10,7 @@ pprof 诊断服务的提供者与管理器，将 PprofServer 接入框架的位�
 # 位点编排
 
   - LocationServerRunBefore  : 启动诊断服务（业务引擎开始监听之前）
-  - LocationServerShutdownAfter: 关闭诊断服务（业务引擎关闭之后）
+  - LocationServerShutdownAfter: 关闭诊断服务（业务引擎关闭之后、全局对象释放与日志器关闭之前）
 
 两个位点均通过 LoadProviderManagersAtLocation 统一分派，支持注册多个管理器。
 
