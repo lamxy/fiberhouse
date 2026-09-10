@@ -9,16 +9,63 @@ package commandstarter
 
 import (
 	"github.com/lamxy/fiberhouse"
+	"github.com/lamxy/fiberhouse/globalmanager"
 )
 
 // RunCommandStarter 运行命令启动器
+//
+// 命令执行完毕后释放全局对象。此前 CLI 没有任何关闭段：应用注册的 MySQL 连接池、
+// Mongo 客户端与 Redis 客户端从未 Close，只能等进程退出由 OS 回收。短命命令影响
+// 有限，但常驻型 CLI（daemon、cron worker、批处理）会真实泄漏，且 Mongo/Redis 的
+// 后台 goroutine 不会停止。
+//
+// 不复用 Web 侧的 clearApplicationGlobals：它第一步要停止健康检查，而那依赖
+// IApplicationContext.GetStarterApp() 返回的 ApplicationStarter；CLI 的
+// ICommandContext.GetStarterApp() 返回的是 CommandStarter，类型不同。CLI 的健康
+// 检查本身也是一次性的（注册阶段执行一轮，没有后台 ticker），没有需要停止的东西，
+// 因此这里只做「释放资源」与「清空条目」两步。
 func RunCommandStarter(starter fiberhouse.CommandStarter) {
 	starter.InitCoreApp()
 	starter.RegisterGlobalErrHandler(starter.GetFrameCmdApp())
 	starter.RegisterCommands(starter.GetFrameCmdApp())
 	starter.RegisterCoreGlobalOptional(starter.GetFrameCmdApp())
 	starter.RegisterApplicationGlobals()
+	defer releaseCommandGlobals(starter)
 	_ = starter.AppCoreRun()
+}
+
+// releaseCommandGlobals 释放 CLI 注册的全局对象，并按 key 上报关闭失败。
+//
+// 用 defer 调用：命令自身返回错误、或 urfave/cli 的 action 触发退出流程时，资源
+// 同样需要回收，不能只在正常返回时执行。
+//
+// 关闭失败不中断回收——一个资源关不掉不应阻止其余资源被释放，因此只上报、不返回
+// 错误。这与 Web 侧 releaseApplicationGlobals 的取舍一致。
+//
+// 全程做 nil 防护：starter 的实现可能不持有真实上下文（例如只记录调用顺序的测试
+// 替身），此时应安静跳过而不是 panic。
+func releaseCommandGlobals(starter fiberhouse.CommandStarter) {
+	if starter == nil {
+		return
+	}
+	ctx := starter.GetContext()
+	if ctx == nil {
+		return
+	}
+	container := ctx.GetContainer()
+	if container == nil {
+		return
+	}
+
+	logger, cfg := ctx.GetLogger(), ctx.GetConfig()
+	container.ReleaseAllWithObserver(func(name globalmanager.KeyName, err error) {
+		if logger == nil || cfg == nil {
+			return
+		}
+		logger.Error(cfg.LogOriginCMD()).Err(err).
+			Msgf("failed to release global object '%s' during command shutdown", name)
+	}, true)
+	container.ClearAll(true)
 }
 
 // FrameCmdApplication 是命令行应用启动器，实现 fiberhouse.FrameCmdStarter 接口。

@@ -41,6 +41,13 @@ func (r *commandLifecycleRecorder) AppCoreRun() error {
 	return errors.New("ignored by lifecycle")
 }
 
+// GetContext 返回 nil：本替身只记录调用顺序，不持有真实上下文。
+//
+// 必须显式实现而不是靠嵌入的 nil CommandStarter 兜底——嵌入接口为 nil 时方法分派
+// 会直接 panic，而 RunCommandStarter 的关闭段需要取上下文来释放全局对象。返回 nil
+// 让它安静跳过，这正是该路径的 nil 防护要覆盖的情况。
+func (r *commandLifecycleRecorder) GetContext() fiberhouse.ICommandContext { return nil }
+
 type commandTestApplication struct {
 	fiberhouse.ApplicationCmdRegister
 	name                  string
