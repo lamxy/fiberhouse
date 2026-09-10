@@ -1,9 +1,14 @@
 # v1.x.x 生產級穩定性任務清單
 
-> 基線：`main@46c6618`（工作樹乾淨，`main == origin/main`，無分歧）
-> 分支：`stability/v1-production-readiness`
+> 基線：`main@46c6618`；分支 `stability/v1-production-readiness`
 > 範圍：**僅 v1.x.x**。不涉及 v2.0.0 重構（統一生命週期、跨組件所有權契約、公共 API 遷移均排除）。
 > 約束：優先局部補丁；不新增公共運行入口；不建立統一關閉架構；不遷移公共 API。
+> 狀態：已完成兩輪子代理審計（技術面 C1–C8、範圍面 S1–S5），結論已併入下文。
+
+## 非目標（明確聲明）
+
+**T1–T5 全部完成後，`feature-status.md` 五條晉級條件下不會有任何能力晉級。**
+本分支是穩定性**維護**，不是晉級包。晉級需另立範圍（見文末「晉級阻塞分析」）。
 
 ## 已驗證基線
 
@@ -13,76 +18,77 @@
 | `go test ./... -count=1` | 全通過，40 套件 |
 | `go test -race ./... -count=1` | 全通過，零 data race |
 | 預設 profile 總覆蓋率 | 62.2% |
-| `-tags=liveintegration` 本機 | 連線被拒（無 Docker），**環境問題非回歸**；CI 有服務容器 |
+| `-tags=liveintegration` 本機 | 連線被拒（無 Docker），**環境問題非回歸** |
 
 ---
 
-## T1 — 修 Makefile 測試 target（阻塞訊號污染）
+## T1 — 修 Makefile 測試 target ✅ 已完成（commit `661a93a`）
 
-**問題**：4 個 target 指向不存在的 `./frame/...`。Go 對不匹配 pattern 靜默成功退出，`make test` 印「測試完成」但零測試執行。
+四個 target 由不存在的 `./frame/...` 改為 `./...`；移除 Windows CMD 語法 `set CGO_ENABLED=1 &&`（在 sh/zsh 下執行 shell 內建 `set`，變數從未匯出，經實測確認）。
 
-```
-Makefile:33  go test ./frame/... -race -cover -coverprofile=coverage.out
-Makefile:37  go test -v ./frame/... -race -cover
-Makefile:40  go test ./frame/... -race -cover -coverprofile=coverage.out
-Makefile:45  go test -bench=. ./frame/... -benchmem
-```
-
-**次要缺陷**：`set CGO_ENABLED=1 &&` 是 Windows CMD 語法。在 zsh/bash 下執行 shell 內建 `set`，`CGO_ENABLED` 實際未設定。
-
-**修復方案**：`./frame/...` → `./...`；`set X=1 &&` → `CGO_ENABLED=1 <cmd>` 前綴形式。
-
-**驗收**：`make test` 實際執行 40 個套件並回報覆蓋率；`make test-bench` 能跑到 benchmark。
-
-**風險**：零。純工具修復，不觸及產品程式碼。
+**驗收（已達成）**：`make test` 實際執行 40 套件、`-race` 全通過並回報覆蓋率。先前靜默跑零測試卻印「測試完成」。
 
 ---
 
-## T2 — Fiber 關閉路徑順序缺陷（唯一具使用者可見後果的缺陷）
+## T2 — Fiber 關閉路徑順序缺陷
 
-**問題**：Fiber 有兩條並存關閉路徑，`ServerShutdownAfter` 位點在資源銷毀**之後**執行。
+### 可達性：已用可執行測試證實（審計爭議已裁決）
 
-路徑 A（`core_fiber_starter_impl.go:357-364`）—— `OnShutdown` hook：
-```go
-cf.coreApp.Hooks().OnShutdown(func() error {
-    clearApplicationGlobals(cf.GetAppContext())   // 釋放全域物件 + ClearAll 清空容器
-    _ = cf.GetAppContext().GetLogger().Close()    // 關閉日誌 writer
-    return nil
-})
+範圍審計主張 `Shutdown` 因 `AppState` 守衛（`core_fiber_starter_impl.go:402`）在正常路徑不可達，故 T2 打在死程式碼上。**此主張已被實測推翻。**
+
+關鍵事實：`RegisterAppState(true)` 在 `:396`，位於 `Listen` (`:390`) **返回之後**。而 `Listen` 會一直阻塞到伺服器停止。`coordinateServerRun` (`server_lifecycle.go:24-31`) 把 `AppCoreRun` 丟進 goroutine 並 `select` 等待；SIGTERM 到達時 `Listen` 仍在阻塞，`:396` 尚未執行，故 `AppState` 仍為 `false`，`:402` 守衛**放行**。
+
+已寫臨時探針測試實測確認 `AppState=false` during listen（驗證後已刪除，未進入版本庫）。範圍審計把 `:396` 讀成「成功監聽後即設 true」，漏掉 `Listen` 的阻塞語義。
+
+**結論：T2 的目標區塊可達，T2 成立。**
+
+### 缺陷本體
+
+Fiber 有兩條並存關閉路徑。路徑 A（`:357-364`）為 `OnShutdown` hook，內含 `clearApplicationGlobals()` + `logger.Close()`；路徑 B（`:401-445`）為 `Shutdown` 方法，其 `:428` 的 `cf.coreApp.Shutdown()` 正是觸發路徑 A 的動作。
+
+技術審計已核對 fiber@v2.52.14 原始碼（`app.go:889`、`hooks.go:194-200`）：`defer app.hooks.executeOnShutdownHooks()` 是純同步迴圈，**確認 hook 在 `:428` 內同步執行完畢**，早於 `:436` 的 `ServerShutdownAfter` 載入。
+
+執行序：
 ```
-
-路徑 B（`core_fiber_starter_impl.go:401-440`）—— `Shutdown` 方法，其第 428 行 `cf.coreApp.Shutdown()` 正是觸發路徑 A 的動作。
-
-**實際執行序**：
-```
-SIGTERM → coordinateServerRun select 命中 (server_lifecycle.go:30)
-       → appStarter.Shutdown()            (server_lifecycle.go:31)
-           → ServerShutdown 位點
-           → ServerShutdownBefore 位點
-           → coreApp.Shutdown()            (fiber:428)
-               → OnShutdown hook
+SIGTERM → coordinateServerRun select (server_lifecycle.go:30)
+       → Shutdown()  守衛放行（AppState 仍 false）
+           → ServerShutdown / ServerShutdownBefore 位點
+           → coreApp.Shutdown()            (:428)
+               → OnShutdown hook（同步）
                    → clearApplicationGlobals()  ← 容器清空、全域資源關閉
                    → logger.Close()             ← 日誌 writer 關閉
-           → ServerShutdownAfter 位點       (fiber:436)  ← 在無資源環境下執行
+           → ServerShutdownAfter 位點       (:436)  ← 在無資源環境下執行
+           → logger.Close() 再次             (:444)
 ```
 
-**Gin 無此問題**（`core_gin_starter_impl.go:585-600`）：線性順序，先跑完 `ServerShutdownAfter`，再 `clearApplicationGlobals`，最後 `logger.Close()`。
+**Gin 無此問題**：`core_gin_starter_impl.go:582` 的 `ServerShutdownAfter` 早於 `:594` 的 `clearApplicationGlobals` 共 12 行。
 
-**可達性已確認**：
-- `NewPprofShutdownProvider()` / `NewPprofShutdownPManager()` 在預設集合中（`default.go:48-49, 158-159`）
-- `PprofShutdownPManager` 綁定到 `LocationServerShutdownAfter`（`pprof_providers_and_manager.go:215`）
-- `example_main/main.go:71,110,126` 確實裝配兩個預設集合並 `RunServer()`
-- 僅由 `application.pprof.enable`（預設 false）開關擋住 → **潛在但可達**
+### 實際後果（較初稿收斂）
 
-**嚴重度**：`LoggerWrap.Close()` 只關 `wCloser`，`lw.logger` 指標仍有效 → 關閉後寫入是**靜默丟失**，非 panic。故為「診斷資訊遺失 + 位點語義錯誤」，非崩潰。
+技術審計指出：pprof 關閉提供者自行解析 server 物件（`resolvePprofServer`，`:162`），**不讀容器**，故能倖存於提早的 `ClearAll`。真實損害是**日誌靜默遺失**——`logger.Close()` 在 `:363` 已執行，任何在 `ServerShutdownAfter` 記錄日誌的 provider 都寫入已關閉的 writer。
 
-**修復方案（選項 A：關閉路徑線性化，對齊 Gin）**：
-將 `clearApplicationGlobals` 與 `logger.Close()` 移出 `OnShutdown` hook，置於 `Shutdown` 方法末端、`ServerShutdownAfter` 位點之後。
+嚴重度為「靜默遺失」而非崩潰，已逐一核對三個 writer：`AsyncChannelWriter` 以 atomic `closed` 旗標守衛（`:27,93-96`）返回 error；`AsyncDiodeWriter` 同（`:111-114`）；`LoggerWrap.Close()` 只關 `wCloser`，`lw.logger` 指標仍有效。**無任何 writer panic。**
 
-**必要前置**：先寫**紅燈測試**釘住現行順序缺陷（斷言 `ServerShutdownAfter` 執行時日誌器已關閉/容器已清空），有紅燈再修。
-`pprof_lifecycle_test.go:145` 以 nil starter 直接驅動位點，**不** pin Fiber 內部順序，紅燈測試不會與之衝突。
+**附帶缺陷**：Fiber 重複關閉日誌器（`:363` 與 `:444`）。今日無害，因兩個 async writer 的 `Close` 以 CAS + `closeDone` 實作冪等，但這依賴的是**契約而非強制**。
 
-**行為變更**：`ServerShutdownAfter` 語義由「資源銷毀後」改為「資源銷毀前」。屬 breaking change，v2.0.0 前允許，**須同步記入 CHANGELOG 與 `docs/reference/feature-status.md`**。
+### 可達性（生產）
+
+`NewPprofShutdownProvider`/`NewPprofShutdownPManager` 在預設集合（`default.go:48-49,158-159`），綁定 `LocationServerShutdownAfter`（`pprof_providers_and_manager.go:215`），`example_main/main.go:71,110,126` 確實裝配。僅由 `application.pprof.enable`（預設 false）擋住 → **潛在但可達**。
+
+### 修復方案
+
+將 `clearApplicationGlobals` 與 `logger.Close()` 移出 `OnShutdown` hook，置於 `Shutdown` 末端、`ServerShutdownAfter` **之後**；同時消除 `:444` 的重複關閉。
+
+**前置**：先寫紅燈測試釘住現行順序。`pprof_lifecycle_test.go:145` 以 nil starter 直接驅動位點，不 pin Fiber 內部順序，紅燈測試不會衝突。
+
+### 必須同步更新的文件（審計修正）
+
+- **無 CHANGELOG 檔案**（已確認），初稿的「記入 CHANGELOG」不可執行 → 改為：於 commit message 完整記錄，或另立 CHANGELOG（本輪不新增）。
+- `docs/concepts/startup-lifecycle.md:108` — 現稱 `LocationServerShutdownBefore` 與 `LocationServerShutdownAfter`「只有声明，不能当作可用关闭 hook」，**此陳述當前即為假**（兩核心都消費：fiber:436、gin:582）。連同其上方的位點消費表一併修正。
+- `docs/reference/feature-status.md` — 「扩展运行位点与关闭链」列。
+- `pprof_providers_and_manager.go:13` — 註解稱關閉發生在「业务引擎关闭之后」。
+
+**行為變更**：`ServerShutdownAfter` 語義由「資源銷毀後」改為「資源銷毀前」，屬 breaking change，v2.0.0 前允許。
 
 **風險**：中。需覆蓋 `Shutdown` 被非 `RunServer` 路徑呼叫的情形。
 
@@ -90,89 +96,99 @@ SIGTERM → coordinateServerRun select 命中 (server_lifecycle.go:30)
 
 ## T3 — CLI 與 hertzcore 缺關閉路徑（真實資源洩漏）
 
-**問題**：`clearApplicationGlobals` 全庫僅兩處呼叫 —— `core_fiber_starter_impl.go:360`、`core_gin_starter_impl.go:594`。
+`clearApplicationGlobals` 全庫僅兩處呼叫：`core_fiber_starter_impl.go:360`、`core_gin_starter_impl.go:594`。
 
-- **CLI**（`commandstarter/frame_cmd_application.go:15-22`）：`RunCommandStarter` 跑完 `AppCoreRun()` 即結束，**無關閉段**。註冊的 MySQL 連線池、Mongo client、Redis client 從未 `Close`。
-- **hertzcore**（`example_application/hertzcore/starter/core_hertz_starter.go:415-450`）：`Shutdown` 有完整位點編排與 `coreApp.Shutdown`，**獨缺 `clearApplicationGlobals`**。
+- **CLI**（`commandstarter/frame_cmd_application.go:15-22`）：`RunCommandStarter` 跑完 `AppCoreRun()` 即結束，無關閉段。
+- **hertzcore**：**兩輪審計一致指出比初稿描述更嚴重**。`core_hertz_starter.go:361-366` 的 `OnShutdown` hook **只記錄日誌**（已親自核對），`Shutdown`（`:414-459`）也不釋放全域物件 → Hertz 完全洩漏 MySQL/Mongo/Redis 連線池，而非僅順序錯誤。
 
-**影響分級**：短命 CLI 影響小；長跑 CLI（daemon / cron worker）為真實洩漏，Mongo/Redis 背景 goroutine 不停，MySQL 伺服器端連線留到 `wait_timeout`。
+### 初稿的阻礙描述是錯的（兩輪審計一致指出）
 
-**修復方案**：
-- `commandstarter/` 為正式套件 → **優先**。障礙：`clearApplicationGlobals` 收 `IApplicationContext`，CLI 持 `ICommandContext`，兩者不同介面。需確認容器取得路徑，或抽共用釋放函式（**不新增公共入口**）。
-- `hertzcore` 屬 `example_application/` 示例碼 → 次優先。
+初稿稱「`clearApplicationGlobals` 收 `IApplicationContext`，CLI 持 `ICommandContext`，兩者不同介面」，暗示需抽共用函式。**此前提為假**：`GetContainer()`（連同 `GetLogger()`、`GetConfig()`）定義在 `IContext`（`context_interface.go:24-25`），而 `ICommandContext` 內嵌 `IContext`（`context_interface.go:54-55`）。`releaseApplicationGlobals` 僅用這三個方法。
 
-**明確排除**：`RunCommandStarter` 第 21 行 `_ = starter.AppCoreRun()` 丟棄錯誤 —— 專案 TODO 已列「暫不進入優化佇列」，理由是改變公共入口語義。**尊重既有決定，不動。**
+**修正後方案**：把 `clearApplicationGlobals` / `releaseApplicationGlobals` 的參數收窄為 `IContext`，或 CLI 直接經容器呼叫 `ReleaseAllWithObserver` + `ClearAll`。收窄未匯出函式的參數屬純局部改動。
 
-**風險**：中低。新增關閉段，不改既有簽名。
+**優先序**：`commandstarter/` 為正式套件 → 優先；`hertzcore` 屬 `example_application/` 示例碼 → 次之。
 
----
+**明確排除**：`RunCommandStarter:21` 丟棄 `AppCoreRun()` 錯誤——`follow-up-local-patch-optimization-todo.md:40` 已列為不進入佇列，尊重既有決定。
 
-## T4 — 覆蓋率度量修正（非補測試）
-
-**問題**：`dbmysql` 20.9% / `dbmongo` 19.3% 是**度量假象**。`Close`/`IsHealthy`/`PingTry`/`NewClient` 顯示 0%，但確實被 live 測試覆蓋，只因測試在 `//go:build liveintegration` 後，預設 profile 不編譯。
-
-已確認 live 測試清單：
-```
-TestLive_MysqlDb_CreateWriteReadDropClose / CloseIsIdempotent / ConcurrentReadWriteWithHealthCheck
-TestLive_MongoDb_CreateWriteReadDropClose / CloseIsIdempotent / ConcurrentReadWriteWithHealthCheck
-```
-`Close` 連呼三次斷言冪等、`IsHealthy` 併發呼叫、`PingTry` 均有明確 assertion。
-
-**後果**：CI `quality` job 的 62.2% 系統性低估了 DB 與 Redis 三個**已晉級為「穩定公共能力」**的模組。
-
-**修復方案**：CI 覆蓋率步驟加 `-tags=liveintegration`，或合併 hermetic + live 兩份 profile 後再報總數。
-
-**真正未測、值得補**（不在 live 測試內）：
-- `cache2/level2_cache.go:458 OwnsChildren` 0%
-- `cache2/level2_cache.go:468 OwnsInstance` 0%
-  → 兩者是 `CompositeOwnershipInspector` 實作，**正是 `ReleaseAll` 決定巢狀關閉順序所依賴的方法**，與 T2/T3 關閉正確性直接相關 → **優先補**
-- `cache2/level2_cache.go:310 asyncSetLocalIfCurrent` / `336 asyncSetLocal` 0%
-  → L2 仍為實驗性，文件已記載「非同步 flush 所有權不完整」，屬已知限制 → 低優先
-
-**風險**：低。CI 設定 + 增量測試。
+**風險**：中低。
 
 ---
 
-## T5 — Fiber 測試補強（晉級條件 3）
+## T4 — 覆蓋率度量修正
 
-**不對稱事實**：`core_starter_init_test.go` 27 個測試中，Gin 專項約 14 個（logger lease 衝突、owner release 終止性、重入 no-op、listener 失敗釋放、TLS 憑證載入/拒絕、loopback TLS 握手、mode fallback…）；**Fiber 專項僅 1 個**（`core_starter_provider_test.go:78`），其餘為 Fiber+Gin 共用表格測試。
+### C6 已被審計推翻，初稿說法過度概化
 
+初稿稱 DB 低覆蓋「全是」build tag 造成的度量假象。**技術審計 REFUTED，經覆核屬實**：
+- `IsHealthy` / `PingTry` 確為 live-tag-only（0.0%）→ 度量假象成立
+- 但 `NewClient` 31.7%、`dbmongo Close` 28.6% —— **由一般非 live 測試部分覆蓋**：`mysql_test.go:62 TestNewClient_PingFailureReturnsError`、`mongo_model_impl_test.go:118-124 TestMongoDbClose_NilClientIsSafe`（對應 `mongo.go:119` 的 nil-client 守衛與 `closed` CAS）
+
+**修正**：T4 僅對 `IsHealthy`/`PingTry` 主張度量假象，不對整包。
+
+**方案**：CI 覆蓋率步驟加 `-tags=liveintegration`，或合併 hermetic + live 兩份 profile。
+
+### 真正未測且在生產關閉路徑上（審計升級為高優先）
+
+`cache2/level2_cache.go:458 OwnsChildren` 與 `:468 OwnsInstance` 皆 0%，**無 build tag，是真未測**。
+
+技術審計指出其嚴重性高於初稿判斷，已親自核對確認：`example_application/application_impl.go:97-107,123` 把 `KEY_LEVEL2_CACHE` 列入 `ConfigRequiredGlobalKeys`，`KEY_REMOTE_CACHE` 是 `KEY_REDIS` 的別名；`Level2Cache` 是本倉庫**唯一** `CompositeClosable`。`globalmanager/manager.go:448` 用 `OwnsChildren` 分桶、`:497` 用 `OwnsInstance` 算遞移深度。
+
+而 `level2_cache.go:452-457` 的註解正描述這兩個方法要防止的故障：容器若先關 remote（同一 Redis 客戶端另註冊在別的 key 下），L2 排空在途非同步寫入時就會打在已關閉的客戶端上。**即：0% 覆蓋的排序邏輯，正守著一條會造成資料遺失的路徑，且在 Fiber 的出貨關閉路徑上。**
+
+→ **優先補測試**。
+
+低優先：`:310 asyncSetLocalIfCurrent`、`:336 asyncSetLocal`（L2 仍實驗性，非同步 flush 所有權為已載明限制）。
+
+**風險**：低。
+
+---
+
+## T5 — Fiber 測試補強
+
+`core_starter_init_test.go` 27 個測試中 Gin 專項約 14 個；Fiber 專項僅 1 個（`core_starter_provider_test.go:78`）。出現次數 Gin 30 / Fiber 18。
+
+覆蓋率缺口（Fiber 不涉 build tag，數字為真）：
 ```
-CoreWithGin   在測試出現 30 次
-CoreWithFiber 在測試出現 18 次
+:190 RegisterAppMiddleware   0.0%   ← 完全未測
+:368 AppCoreRun             33.3%
+:320 RegisterAppHooks       39.1%   ← T2 的 hook 本體在此
+:401 Shutdown               63.2%
 ```
 
-**覆蓋率缺口**（Fiber 不涉 build tag，數字為真）：
-```
-core_fiber_starter_impl.go:190  RegisterAppMiddleware   0.0%   ← 完全未測
-core_fiber_starter_impl.go:368  AppCoreRun             33.3%   ← Listen 後分支全未測
-core_fiber_starter_impl.go:320  RegisterAppHooks       39.1%   ← 路徑 A hook 本體在此
-core_fiber_starter_impl.go:401  Shutdown               63.2%
-```
+**方案**：照搬 Gin 已驗證的 loopback listener 策略。非新設計。
 
-`RegisterAppHooks` 39.1% 尤其關鍵 —— T2 的順序缺陷正落在其未覆蓋部分。
+**風險**：低。
 
-**修復方案**：照搬 Gin 已驗證的 loopback listener 策略到 Fiber。非新設計，是對齊既有模式。
+---
 
-**風險**：低。純增量測試。
+## 晉級阻塞分析（範圍審計 S5，說明「非目標」的依據）
+
+| 能力 | 阻塞條件 | 原因 |
+|---|---|---|
+| Fiber HTTP 內核 | 條件 1 | `AppState` 單一布林承載三種互斥語義，且 `sync.Once` 使其無法回退 → 生命週期契約不成立。修復觸及 `IApplicationContext` 與 30+ 呼叫點，屬 v2.0.0 |
+| CLI | 條件 1、5 | 即使 T3 補上關閉，`AppCoreRun` 失敗傳播仍因既有排除而無契約 |
+| 擴展運行位點與關閉鏈 | 條件 1、5 | 正是被延後的「統一 provider 關閉接口與跨組件所有權契約」 |
+| L2 快取 | 條件 1 | 非同步 flush 所有權延後 |
+| hertzcore | 原則上不可 | `example_application/` 無成熟度承諾（`feature-status.md:68`），無能力列 |
 
 ---
 
 ## 明確排除（v2.0.0 範圍）
 
-- **`AppState` 語義重構**：單一布林承載三種互斥語義（冪等守衛 / 執行中 / 已結束），且 `sync.Once` 使其無法回退。`context_impl_test.go:93-96` 證明先呼叫 `RegisterAppState(false)` 會永久鎖死。這是晉級條件 1 的根因，但觸及 `IApplicationContext` 公共介面與 30+ 呼叫點，**超出局部補丁約束** → 留 v2.0.0。
-- 統一 provider 關閉契約 / 跨組件資源所有權契約（`IProvider` 無任何 close 方法，屬刻意省略）。
-- `RunCommandStarter` 錯誤傳播語義變更。
-- `dbmysql/mysql.go:58` GORM logger adapter 在 `FatalLevel` 走 `os.Exit(1)` —— 邊緣設定，記為已知限制，不在本輪修。
+- `AppState` 語義重構（條件 1 根因，但超出局部補丁約束）
+- 統一 provider 關閉契約（`IProvider` 無 close 方法，屬刻意省略）
+- `RunCommandStarter` 錯誤傳播（已收口決定）
+- `dbmysql/mysql.go:58` GORM logger adapter 在 `FatalLevel` 走 `os.Exit(1)`（邊緣設定，記為已知限制）
 
 ---
 
 ## 執行順序
 
-1. **T1**（零風險，先消除訊號污染，讓後續驗證可信）
-2. **T5 + T4 未測部分**（純增量測試，為 T2/T3 建立安全網）
-3. **T2**（先紅燈測試，再修；同步 CHANGELOG + feature-status.md）
-4. **T3**（CLI 優先於 hertzcore）
-5. **T4 CI 度量修正**
+1. ~~T1~~ ✅ 完成
+2. **T4 高優先部分**：`OwnsChildren`/`OwnsInstance` 測試（守住 T2/T3 的關閉排序安全網）
+3. **T5**：Fiber 測試補強
+4. **T2**：紅燈測試 → 修復 → 同步四份文件
+5. **T3**：CLI 優先，hertzcore 次之
+6. **T4 CI 度量修正**
 
-每個關鍵節點派子代理審計。
+關鍵節點再派子代理審計。
