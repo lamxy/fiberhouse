@@ -30,19 +30,19 @@ build: deps ## 构建应用
 # 测试相关命令
 test: ## 运行所有测试
 	@echo "正在运行单元测试..."
-	set CGO_ENABLED=1 && go test ./frame/... -race -cover -coverprofile=coverage.out
+	CGO_ENABLED=1 go test ./... -race -cover -coverprofile=coverage.out
 	@echo "测试完成"
 
 test-verbose: ## 详细测试输出
-	set CGO_ENABLED=1 && go test -v ./frame/... -race -cover
+	CGO_ENABLED=1 go test -v ./... -race -cover
 
 test-coverage: ## 生成测试覆盖率报告
-	set CGO_ENABLED=1 && go test ./frame/... -race -cover -coverprofile=coverage.out
+	CGO_ENABLED=1 go test ./... -race -cover -coverprofile=coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "覆盖率报告已生成: coverage.html"
 
 test-bench: ## 运行基准测试
-	go test -bench=. ./frame/... -benchmem
+	go test -bench=. ./... -benchmem
 
 lint: ## 代码静态检查
 	golangci-lint run --timeout=5m

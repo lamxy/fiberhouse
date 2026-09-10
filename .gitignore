@@ -25,6 +25,9 @@ __pycache__/
 *.pyc
 .codegraph-qa-out/todo.md
 .codegraph-qa-out/local/
+coverage.out
+coverage.html
+.claude/artifacts/
 .agent-rules/
 docs/superpowers/
 .superpowers/
