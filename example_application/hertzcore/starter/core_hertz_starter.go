@@ -25,6 +25,7 @@ import (
 	"github.com/lamxy/fiberhouse/appconfig"
 	hertzadaptor "github.com/lamxy/fiberhouse/example_application/hertzcore/adaptor"
 	hertzconst "github.com/lamxy/fiberhouse/example_application/hertzcore/constant"
+	"github.com/lamxy/fiberhouse/globalmanager"
 )
 
 // CoreWithHertz 基於 hertz 的核心應用啟動器
@@ -36,6 +37,9 @@ type CoreWithHertz struct {
 	hertzLoggerLease    *hertzadaptor.HertzLoggerLease
 	initErr             error
 	shutdownCoordinated atomic.Bool
+	// globalsReleased 保證全域物件只釋放一次：Shutdown 的正常路徑與 defer 各呼叫
+	// 一次，提前返回時只有 defer 生效。掛在實例上而非套件層級。
+	globalsReleased atomic.Bool
 }
 
 // releaseHertzLogger 釋放引擎日誌所有權，使引擎日誌回落到 hertz 原始日誌器。
@@ -414,6 +418,9 @@ func (ch *CoreWithHertz) AppCoreRun(managers ...fiberhouse.IProviderManager) err
 // Shutdown 優雅關閉應用
 func (ch *CoreWithHertz) Shutdown(managers ...fiberhouse.IProviderManager) error {
 	defer ch.releaseHertzLogger()
+	// 以 defer 釋放全域物件：本方法有五處提前返回（初始化失敗、已運行、三處位點載入
+	// 失敗、引擎關閉失敗），寫在方法尾端的話這些路徑全部拿不到釋放。
+	defer ch.releaseHertzGlobals()
 
 	if ch.initializationFailed() {
 		return ch.initErr
@@ -456,7 +463,43 @@ func (ch *CoreWithHertz) Shutdown(managers ...fiberhouse.IProviderManager) error
 	// 必須在關閉框架日誌器之前歸還引擎日誌所有權，
 	// 否則引擎後續日誌會寫入已關閉的 writer。
 	ch.releaseHertzLogger()
+	// 同理，全域物件必須在日誌器關閉前釋放：釋放失敗要靠框架日誌器上報，
+	// 日誌器已關則錯誤不可見。defer 的那次呼叫因 once 守衛成為 no-op。
+	ch.releaseHertzGlobals()
 	return ch.GetAppContext().GetLogger().Close()
+}
+
+// releaseHertzGlobals 釋放全域物件持有的資源，並按 key 上報關閉失敗。
+//
+// 此前 hertzcore 完全沒有釋放路徑：OnShutdown 鉤子只寫一行日誌，Shutdown 也不釋放，
+// 因此應用註冊的 MySQL 連線池、Mongo 與 Redis 客戶端從未 Close。
+//
+// 這裡直接呼叫容器上已匯出的 ReleaseAllWithObserver 與 ClearAll，而不是使用框架的
+// clearApplicationGlobals —— 後者未匯出。本套件的定位是「僅依賴框架的匯出 API」，
+// 用以證明新增核心引擎不需修改框架任何一行程式碼；為了它而新增匯出入口會破壞這個
+// 前提，也違反專案「不新增公共運行入口」的約束。
+//
+// once 守衛使重複呼叫成為 no-op：正常路徑在關閉日誌器前顯式呼叫一次，defer 再呼叫
+// 一次；提前返回時只有 defer 那次生效。守衛掛在實例上而非套件層級，同進程的第二個
+// 應用實例才不會被前一個的釋放狀態擋掉。
+func (ch *CoreWithHertz) releaseHertzGlobals() {
+	if !ch.globalsReleased.CompareAndSwap(false, true) {
+		return
+	}
+
+	appCtx := ch.GetAppContext()
+	if appCtx == nil {
+		return
+	}
+	container := appCtx.GetContainer()
+	if container == nil {
+		return
+	}
+
+	container.ReleaseAllWithObserver(func(name globalmanager.KeyName, err error) {
+		ch.logErr(err, "failed to release global object '"+string(name)+"' during shutdown")
+	}, true)
+	container.ClearAll(true)
 }
 
 // logInfo 以框架日誌器輸出資訊級日誌
