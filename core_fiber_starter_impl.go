@@ -8,6 +8,7 @@ package fiberhouse
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/contrib/fiberzerolog"
@@ -22,6 +23,28 @@ type CoreWithFiber struct {
 	CoreCfg *fiber.Config
 	coreApp *fiber.App
 	json    JsonWrapper
+	// globalsCleared 保证全局对象只回收一次。
+	//
+	// 回收有两个入口：Shutdown 顶部的 defer，以及 fiber 的 OnShutdown hook（应用
+	// 直接调用 coreApp.Shutdown() 时只有后者会触发）。两者都委派到
+	// clearApplicationGlobalsOnce，由本标志把重复执行折叠成一次。
+	//
+	// 这不是优化而是必需：LoggerWrap.Close 只委派给 wCloser.Close，本身没有幂等
+	// 保护，重复关闭的安全性完全取决于注入的 writer。
+	//
+	// 挂在实例上而非包级别——包级标志会让同进程内的第二个应用实例拿不到回收。
+	globalsCleared atomic.Bool
+	// shutdownCoordinated 标记本次关闭由 Shutdown 主导。
+	//
+	// fiber 在 coreApp.Shutdown() 内**同步**触发 OnShutdown hook。若 hook 无条件回收，
+	// 日志器会在 ServerShutdownAfter 位点加载之前就被关掉——正是本次要修的顺序缺陷。
+	// 因此经由 Shutdown 关闭时置位本标志，hook 让位，由 Shutdown 顶部的 defer 在所有
+	// 位点执行完毕后统一回收。
+	//
+	// 应用绕过 Shutdown 直接调用 coreApp.Shutdown() 时本标志为 false，hook 照常回收，
+	// 那条路径的既有行为不受影响。与 Gin 的 shutdownCoordinated 同义（见
+	// core_gin_starter_impl.go:35）。
+	shutdownCoordinated atomic.Bool
 }
 
 // NewCoreWithFiber 创建一个应用核心启动器对象
@@ -354,14 +377,47 @@ func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProvider
 		return nil
 	})
 
+	// 保留 OnShutdown hook，只覆盖「绕过 Shutdown」这条路径。
+	//
+	// 应用可以直接调用 coreApp.Shutdown()，那条路径上只有本 hook 会触发；移除它会让
+	// 那些调用方彻底失去回收。
+	//
+	// 但经由 Shutdown 关闭时本 hook 必须让位：fiber 在 coreApp.Shutdown() 内**同步**
+	// 执行 hook（v2.52.14 app.go:888，`defer app.hooks.executeOnShutdownHooks()` 位于
+	// `app.server == nil` 检查之上，故无条件触发），若此时回收，日志器会在
+	// ServerShutdownAfter 位点加载之前就被关掉——该位点的 provider 于是写进已关闭的
+	// writer，日志静默丢失。这正是本次要修的顺序缺陷，仓库内的消费者是 pprof 关闭
+	// 提供者。
 	cf.coreApp.Hooks().OnShutdown(func() error {
-		// 应用Shutdown时回调，回收/关闭相关资源，如后台程序(等待关闭信号)、异步任务(等待关闭信号)、连接池（关闭连接池）、中间件（封装实现Closable接口）等
-		//fa.GetContext().GetContainer().ReleaseAll(true) // 释放资源
-		clearApplicationGlobals(cf.GetAppContext()) // 停止健康检查后清空全局对象
-		cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Str("appShutdown", "ok").Msg("")
-		_ = cf.GetAppContext().GetLogger().Close() // 日志器Close
+		if cf.shutdownCoordinated.Load() {
+			return nil
+		}
+		cf.clearApplicationGlobalsOnce()
 		return nil
 	})
+}
+
+// clearApplicationGlobalsOnce 回收全局对象并关闭日志器，重复调用为空操作。
+//
+// 顺序：先停健康检查、释放并清空容器，再记录关闭日志，最后关闭日志器。日志器必须
+// 最后关——释放失败要靠框架日志器逐 key 上报，日志器已关则这些错误不可见。
+func (cf *CoreWithFiber) clearApplicationGlobalsOnce() {
+	if !cf.globalsCleared.CompareAndSwap(false, true) {
+		return
+	}
+
+	appCtx := cf.GetAppContext()
+	if appCtx == nil {
+		return
+	}
+
+	// 回收/关闭相关资源：后台健康检查、连接池、缓存、实现 Closable 的中间件等。
+	clearApplicationGlobals(appCtx)
+	appCtx.GetLogger().InfoWith(appCtx.GetConfig().LogOriginFrame()).
+		Str("applicationStarter", "FrameApplication").
+		Str("appShutdown", "ok").
+		Msg("")
+	_ = appCtx.GetLogger().Close()
 }
 
 // AppCoreRun 监听核心应用套接字
@@ -398,7 +454,17 @@ func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
 }
 
 // Shutdown 关闭应用
+//
+// 回收写在顶部的 defer 里，而不是方法尾部：本方法有六处提前返回（AppState 守卫、
+// 三处位点加载失败、replaced 短路、引擎关闭失败），尾部语句会被它们全部跳过。
+// Gin 侧能用尾部写法，是因为它另有 `defer cg.releaseGinLogger()` 配套。
+//
+// 回收本身经 once 守卫，因此与 OnShutdown hook 中的那次调用只会生效一次：正常路径
+// 由 hook 先执行（fiber 在 coreApp.Shutdown() 内同步触发），此处的 defer 成为空操作；
+// 提前返回时 hook 未触发，则由此处兜底。
 func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
+	defer cf.clearApplicationGlobalsOnce()
+
 	if cf.GetAppContext().GetAppState() {
 		return nil
 	}
@@ -425,6 +491,9 @@ func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
 	}
 
 	cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("Fiber app Shutting down...")
+
+	// 置位后 OnShutdown hook 让位，回收改由顶部的 defer 在 ServerShutdownAfter 之后执行。
+	cf.shutdownCoordinated.Store(true)
 	err = cf.coreApp.Shutdown()
 	if err != nil {
 		cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Err(err).Msg("Fiber app Shutdown failed.")
@@ -440,6 +509,8 @@ func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
 		return fmt.Errorf("failed to load post-shutdown providers: %w", err)
 	}
 
-	// 关闭日志器
-	return cf.GetAppContext().GetLogger().Close()
+	// 日志器由顶部 defer 的 clearApplicationGlobalsOnce 关闭：它必须在全局对象释放
+	// 之后才关，否则逐 key 上报的释放失败会写进已关闭的 writer。此处不再重复关闭
+	// ——LoggerWrap.Close 没有幂等保护，重复关闭是否安全完全取决于注入的 writer。
+	return nil
 }

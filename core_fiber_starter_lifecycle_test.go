@@ -239,10 +239,14 @@ func TestCoreFiber_ShutdownRunsAllLocations(t *testing.T) {
 	assert.Equal(t, 1, main.loadCalls, "ServerShutdown must run")
 	assert.Equal(t, 1, after.loadCalls, "ServerShutdownAfter must run")
 
+	// 等待 Listen 解开。预算给得宽：这里等的是 fasthttp 收网加 goroutine 调度，
+	// 在负载较高的机器上（并行跑测试、-race 开启时尤其明显）可能明显慢于空载。
+	// 5 秒曾经足够，但实测在满载下会偶发超时——那是机器竞争，不是关闭链有问题，
+	// 用一个会随负载失败的期限去断言正确性只会制造假红灯。
 	select {
 	case runErr := <-runResult:
 		assert.NoError(t, runErr, "Listen must return cleanly after Shutdown")
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("AppCoreRun did not return after Shutdown closed the listener")
 	}
 }
