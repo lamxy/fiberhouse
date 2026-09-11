@@ -133,7 +133,7 @@ os.Exit(exitCode) // 所有清理完成后，且只在最外层退出
 
 安全顺序应由入口建立：停止新工作，等待命令启动的 goroutine，关闭数据库/缓存/client，关闭日志 writer，最后决定退出码。要复用容器的释放逻辑，可在入口自行调用 `GlobalManager.ReleaseAllWithObserver(observer, true)` 再 `ClearAll(true)`；`ClearAll(true)` 只删除引用，不能替代逐项关闭。
 
-## `test-orm` 示例边界
+## 命令示例边界
 
 [`example_application/command`](../../example_application/command/) 只用于说明装配。其示例命令：
 

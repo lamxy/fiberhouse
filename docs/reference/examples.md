@@ -49,9 +49,9 @@ Web 示例的 `ConfigRequiredGlobalKeys` 会在启动期请求 MongoDB、Redis�
 
 CLI 入口是 `example_application/command/main.go`。它从相对路径 `./../../example_config` 初始化配置，创建 `CmdContext`、命令应用注册器、`FrameCmdApplication` 与 `CoreCmdCli`，最后调用 `commandstarter.RunCommandStarter`。相对路径以进程工作目录为准，运行位置不对会导致配置加载失败。
 
-当前注册命令主要是 `test-orm`，用 Dig 组装 MySQL model/service 并执行演示操作。CLI 应用仍会预初始化 MongoDB、Redis、Sonic codec 和 MySQL，因此查看帮助或执行单一命令也可能依赖这些服务。`RunCommandStarter` 在 core 已记录错误后忽略其返回值，且没有统一资源关闭阶段；调用方若据此构建正式 CLI，应自行保留退出码和回收语义。
+当前注册的命令是 `example`（含 `migrate`、`create`、`get`、`list`、`update` 子命令）与 `bench`，见 `application.go:98-99`。CLI 应用仍会预初始化 MongoDB、Redis、Sonic codec 和 MySQL，因此查看帮助或执行单一命令也可能依赖这些服务。`RunCommandStarter` 在 core 已记录错误后仍忽略其返回值，调用方若据此构建正式 CLI，应自行保留退出码语义；资源回收已有——它以 `defer releaseCommandGlobals(starter)` 释放全局对象并清空容器。
 
-`test-orm` 会先向单例 Dig 容器注册 context、model 与 service，再执行 `Invoke`。重复执行或把同一进程用于多套装配时，应处理重复 provider 和错误切片，而不是假设容器会自动重置。
+`example` **不使用 Dig 容器**：依赖由普通构造函数串联而成（`NewExampleMysqlModel` → `NewExampleRepository` → `NewExampleMysqlService`，见 `commands/example_command.go:32-37`），再由 `sync.Once` 惰性求值。`CmdContext` 虽持有 Dig 容器字段，但仓库内没有任何 `Provide` / `Invoke` 调用者。
 
 命令 service 中存在比入口实际调用更多的 CRUD 方法。它们可用于阅读数据访问写法，但零调用的方法不能算成已验证的 CLI 功能。
 
