@@ -411,6 +411,49 @@ count 0 與 count 7 拼接後判定為 100.0%。未引入 gocovmerge 等外部�
 
 晉級後穩定公共能力由 4 項增至 **5 項**。
 
+### T7 — 非同步任務 live 補強 ✅ 已完成（測試落地，但**晉級失敗**）
+
+新增 `task_concurrent_live_test.go`（`liveintegration` tag），三個用例對真實 Redis（DB 13，
+與 cacheremote 的 14、既有 task 測試的 15 隔離）實測通過：
+
+- 並發入隊消費：8 producer × 25 task = 200 條，斷言不丟任務、不重複消費（以 `asynq.TaskID` 保證服務端唯一）
+- 故障注入：handler 持續失敗 → 按 `MaxRetry` 重試 → 歸檔，斷言 `Retried`、`LastErr` 與 `Config.ErrorHandler` 上報
+- `SkipRetry`：立即歸檔且不消耗重試次數
+
+**但晉級失敗，卡條件 1，不是條件 3。** 我先前的建議說「補 live 即可晉級第 6 項」是錯的——
+條件 3 確實已閉合，但 `TaskDispatcher` 沒有 `Close`，內部 `asynq.Client` 不被回收，
+統一關閉順序由應用自行安排且框架不驗證（`background-tasks.md:76-85` 早已載明）。
+這屬被延後到 v2.0.0 的跨組件所有權契約。
+
+### T8 — MsgPack/Protobuf 覆蓋補強 ✅ 已完成（測試落地，但**晉級失敗**）
+
+**先前判斷錯誤已更正**：我說這項「卡條件 3、無 live」。實際上這兩個編解碼器**沒有任何外部依賴**，
+而條件 3 的原文是「外部依赖通过可重复 live integration test」——無外部依賴則不需要 live。
+且 `response_facade_test.go:102` 早已用真實 Fiber 與 Gin 內核做完整協商往返（首個 Accept 值優先、
+`Content-Type` 優先於 `Accept`、未知 MIME 與通配符回退 JSON，全部解碼斷言 body）。
+**條件 3 本來就已滿足，我提議補的 live 測試是多餘的。**
+
+真正的阻塞是**條件 4**：`response_facade.go:33,36` 在裝配期 panic。條件 5 亦未閉合——
+示例只置 `EnableBinaryProtocolSupport: true`，從不實際發送二進制響應。
+
+改為補真實的覆蓋缺口（新增 `response/response_msgpack_envelope_test.go`、
+`response_facade_helpers_test.go`）：
+
+| 目標 | 前 | 後 |
+|---|---|---|
+| `parseMsgPackEnvelope`（整數寬度/溢出/型別守衛分支） | 62.9% | 82.9% |
+| `ParseMsgPackResponse` | 83.3% | 100.0% |
+| 門面 `SuccessWithData`/`ErrorCustom`/`RespInfo`/`RespProto`/`RespMsgpack` | 0% | 100% |
+| `response` 套件整體 | 85.6% | 89.4% |
+
+### 晉級結論更正
+
+**本輪未新增任何晉級，穩定公共能力仍為 5 項。** 我先前提議的「第 6、7 項」兩項都不成立，
+理由各不相同且都不是補測試能解的：異步任務卡條件 1（關閉契約），MsgPack/Protobuf 卡條件 4（裝配 panic）。
+兩者的修復都觸及 v2.0.0 排除的統一契約，或需再一次 breaking change。
+
+教訓：晉級阻塞必須逐條驗證每個條件，不能只看 `feature-status.md` 的「驗證級別」欄就推斷卡在條件 3。
+
 ### 額外完成（不在原清單）
 
 - 刪除 `component/bufferpool`（零匯入者，`go list` 實測確認），同步移除

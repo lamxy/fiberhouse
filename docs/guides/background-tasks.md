@@ -86,6 +86,15 @@ worker 和 dispatcher 都依赖调用方传入的 `*redis.Client`。框架不验
 
 ## 错误与并发边界
 
+handler 返回 error 时的 asynq 语义已由 live integration 测试钉住（`task_concurrent_live_test.go`，需 `liveintegration` build tag 与真实 Redis）：
+
+- 持续失败的 handler 按 `asynq.MaxRetry(n)` 重试，首次执行加 n 次重试共 n+1 次；耗尽后任务转入 archived，`TaskInfo.Retried` 等于 n，`LastErr` 保留 handler 的错误文本。
+- `Config.ErrorHandler` 会观测到每次失败，这是应用上报任务故障的入口。
+- 返回包装了 `asynq.SkipRetry` 的 error 会让任务立即归档且不消耗任何重试次数，用于区分"可重试故障"与"确定性坏任务"。
+- 并发入队与多并发度消费不丢任务、不重复消费（以 `asynq.TaskID` 保证服务端唯一）。
+
+注意这些是 asynq 的行为契约，不是框架补充的能力；框架既不重试也不转换这些错误。
+
 - worker initializer 缺失、类型不符或 `GetTaskWorker` 返回错误时，标准 `RegisterTaskServer` 会 panic。
 - handler map 的读写、注册器内部状态和 GlobalManager initializer 应在进入并发消费前冻结。
 - `RunAsync` 的启动错误不会改变 Web server readiness；需要应用补充探针或监督状态。
