@@ -5,8 +5,9 @@
 ## 如何理解状态
 
 - **实现阶段**：`已实现`表示有可执行实现但未证明进入框架或示例主链；`已接入`表示存在明确入口和可达运行路径。
-- **支持级别**：`实验性`表示兼容、生命周期、错误、并发或验证仍未达到晋级要求；`稳定公共能力`必须满足本文末尾全部晋级条件（条件 2 在 v2.0.0 前豁免，见文末说明）。GlobalManager、MySQL / MongoDB、本地缓存与 Redis 缓存、JSON 流量编解码与 JSON 响应、参数验证五项已完成晋级，其余能力仍为实验性。
+- **支持级别**：`实验性`表示兼容、生命周期、错误、并发或验证仍未达到晋级要求；`稳定公共能力`必须满足本文末尾全部晋级条件（条件 2 在 v2.0.0 前豁免，见文末说明）。GlobalManager、MySQL / MongoDB、本地缓存与 Redis 缓存、JSON 流量编解码与 JSON 响应、参数验证五项已完成晋级；其余能力仍为实验性，其中 8 项的阻塞项已确认属 v2.0.0 范围并标记为 `deferred-v2.0.0`（见下一条）。
 - **API 受众**：`公共 API`面向使用方；`内部工具`描述设计受众，不覆盖 Go package 实际可导入的兼容事实。
+- **`deferred-v2.0.0` 标记**：该能力的晋级阻塞项已确认属于 v2.0.0 范围（`AppState` 语义重构、统一 provider 关闭契约、无替代入口的装配期 panic）。阻塞原因在该行的「限制」列记录一次，**后续晋级复核直接跳过这些行**，不再逐轮重新论证——重新评估只会得到同一个「推迟到 v2.0.0」的结论。若某行的阻塞项脱离 v2.0.0 范围，移除标记并重新逐条判定。
 
 表中的“默认集合”表示对象是否由 `DefaultProviders()` 或 `DefaultPManagers(ctx)` 收集，不表示 `Default()` 自动装配。状态以完整能力为单位，而不是以单个导出符号为单位；阅读每一行时必须同时检查启用方式，以及创建、运行、失败、关闭四段生命周期。
 
@@ -22,8 +23,9 @@ handler 持续失败的重试-归档路径（断言 `Retried`、`LastErr` 与 `C
 ## 稳定公共能力
 
 以下能力满足文末全部晋级条件（条件 2 在 v2.0.0 前豁免）：四段生命周期契约明确、
-测试与 race 进入 CI、外部依赖有可重复 live integration 覆盖、可恢复错误不依赖 panic
-表达、示例确实执行对应路径。晋级不冻结导出符号，见文末豁免说明。
+测试与 race 进入 CI、外部依赖有可重复 live integration 覆盖、调用方本可处理的错误
+不以 panic 表达（启动期不可恢复的装配错误允许 panic，但须有返回 error 的替代入口，
+见文末条件 4 的适用边界）、示例确实执行对应路径。晋级不冻结导出符号，见文末豁免说明。
 
 晋级过程与逐条证据见
 [GlobalManager 稳定性晋级设计](../superpowers/specs/2026-09-08-globalmanager-stability-promotion-design.md)。
@@ -56,21 +58,21 @@ JSON 流量编解码逐条对照：条件 1，四条路径有契约，且「没�
 
 | 能力 | 实现阶段 | 支持级别 | API 受众 | 启用方式 | 生命周期完整度 | 验证级别 | 限制与主指南 |
 |---|---|---|---|---|---|---|---|
-| Fiber HTTP 内核 | 已接入 | 实验性 | 公共 API | Fiber core provider 在默认集合中，`Default()` 的 `CoreType` 也选择 Fiber，但集合仍需显式装配；应用还需注册 `ApplicationRegister`、`ModuleRegister` 和监听配置 | `CoreWithFiber` 的创建、中间件/监听、运行错误传递和信号关闭均有路径；运行链消费 before/main 位点，关闭链消费 before/main/after 位点，但跨组件资源所有权尚未形成项目级统一契约 | 单元/契约 + HTTP smoke | `example_main` 实际选择 Fiber 并追加中间件、hook 与路由；smoke 只检查 `/example/hello/world`，专项测试覆盖运行返回与关闭位点顺序；见[Web 运行时](../guides/web-runtime.md) |
-| Provider / Manager / Location | 已接入 | 实验性 | 公共 API | 默认集合与预定义 location 需显式传给 `WithProviders`、`WithPManagers`；`DefaultProviders()`/`DefaultPManagers(ctx)` 集合是进程级单例，`Add`/`Except` 只应在启动装配期修改；自定义能力还需匹配 type、target、manager/location 和初始化输入 | type、manager 与 location 驱动创建、运行和失败分发；Provider 使用不可变状态值，Manager 缓存初始化结果或错误、避免重复初始化，`GroupExtendReplace` 只替代同一 location 的默认逻辑；没有统一的 provider 关闭契约 | 单元/契约 | 未匹配 provider 会交给默认 manager；`example_main` 展示集合合并而非自动发现；状态 API 近期存在不兼容调整，见[Provider 系统](../concepts/provider-system.md) |
-| bootstrap、配置与日志 | 已接入 | 实验性 | 公共 API | `New()` 自动初始化配置与日志单例，不经过 provider 集合；应用需提供可读配置目录，异步日志由配置选择 | 文件/环境配置和 console/轮转文件、同步/异步 writer 的创建、运行、失败有路径；关闭存在 writer 入口，但停止生产者和关闭顺序由应用负责 | 单元/契约 | `Default()` 使用 `./config`、`./logs`，示例改用 `./example_config`、`./example_main/logs`；见[配置指南](../guides/configuration.md)、[日志指南](../guides/logging.md) |
-| panic recovery 与错误响应 | 已接入 | 实验性 | 公共 API | Fiber/Gin recovery provider 与 manager 在默认集合中，需随所选内核显式装配 | 两种 recovery 和核心错误中间件的创建、运行、失败响应有路径；没有独立关闭资源，装配失败仍可能 panic 或 fatal | 单元/契约 | 调试信息受 recovery 配置控制，生产环境应关闭详细输出；示例的 `debugMode` 只适合本地演示；见[错误与恢复](../guides/errors-and-recovery.md) |
+| Fiber HTTP 内核 | 已接入 | 实验性（deferred-v2.0.0）| 公共 API | Fiber core provider 在默认集合中，`Default()` 的 `CoreType` 也选择 Fiber，但集合仍需显式装配；应用还需注册 `ApplicationRegister`、`ModuleRegister` 和监听配置 | `CoreWithFiber` 的创建、中间件/监听、运行错误传递和信号关闭均有路径；运行链消费 before/main 位点，关闭链消费 before/main/after 位点，但跨组件资源所有权尚未形成项目级统一契约 | 单元/契约 + HTTP smoke | `example_main` 实际选择 Fiber 并追加中间件、hook 与路由；smoke 只检查 `/example/hello/world`，专项测试覆盖运行返回与关闭位点顺序；见[Web 运行时](../guides/web-runtime.md) |
+| Provider / Manager / Location | 已接入 | 实验性（deferred-v2.0.0）| 公共 API | 默认集合与预定义 location 需显式传给 `WithProviders`、`WithPManagers`；`DefaultProviders()`/`DefaultPManagers(ctx)` 集合是进程级单例，`Add`/`Except` 只应在启动装配期修改；自定义能力还需匹配 type、target、manager/location 和初始化输入 | type、manager 与 location 驱动创建、运行和失败分发；Provider 使用不可变状态值，Manager 缓存初始化结果或错误、避免重复初始化，`GroupExtendReplace` 只替代同一 location 的默认逻辑；没有统一的 provider 关闭契约 | 单元/契约 | 未匹配 provider 会交给默认 manager；`example_main` 展示集合合并而非自动发现；状态 API 近期存在不兼容调整，见[Provider 系统](../concepts/provider-system.md) |
+| bootstrap、配置与日志 | 已接入 | 实验性（deferred-v2.0.0）| 公共 API | `New()` 自动初始化配置与日志单例，不经过 provider 集合；应用需提供可读配置目录，异步日志由配置选择 | 文件/环境配置和 console/轮转文件、同步/异步 writer 的创建、运行、失败有路径；关闭存在 writer 入口，但停止生产者和关闭顺序由应用负责 | 单元/契约 | `Default()` 使用 `./config`、`./logs`，示例改用 `./example_config`、`./example_main/logs`；见[配置指南](../guides/configuration.md)、[日志指南](../guides/logging.md) |
+| panic recovery 与错误响应 | 已接入 | 实验性（deferred-v2.0.0）| 公共 API | Fiber/Gin recovery provider 与 manager 在默认集合中，需随所选内核显式装配 | 两种 recovery 和核心错误中间件的创建、运行、失败响应有路径；没有独立关闭资源，装配失败仍可能 panic 或 fatal | 单元/契约 | 调试信息受 recovery 配置控制，生产环境应关闭详细输出；示例的 `debugMode` 只适合本地演示；见[错误与恢复](../guides/errors-and-recovery.md) |
 
 ## 实验性或存在明显限制的公共能力
 
 | 能力 | 实现阶段 | 支持级别 | API 受众 | 启用方式 | 生命周期完整度 | 验证级别 | 限制与主指南 |
 |---|---|---|---|---|---|---|---|
-| Gin HTTP 内核 | 已接入 | 实验性 | 公共 API | Gin core provider 在默认集合中但 `Default()` 仍选择 Fiber；启用时设置 `CoreType` 为 `gin` 并显式装配 Gin codec、recovery、中间件和路由 provider/manager；原生诊断自动接入框架日志器 | `CoreWithGin` 的创建、运行错误传递和信号关闭均有路径；路由 location 已处理时不会再次执行模块默认注册；日志 bridge 在引擎创建前固定稳定转发入口并取得独占 lease，初始化失败、server 返回或 shutdown 时幂等停用 owner，无 owner 时按行为回退到首次捕获的 Gin 输出；有效证书可填充 `TLSConfig` 并选择 TLS serve，缺失路径仍保留 HTTP 路径 | 单元/契约 + race | adapter 与 core 测试覆盖级别/字段、稳定入口与回退、安装冲突、并发 release、mode fallback、server error logger、重复路由防护、单条访问记录及各退出路径，另有 loopback listener 驱动的真实 TLS 握手与 `Shutdown` 回归；运行期不写回 Gin 全局变量以避免与无同步读取竞争，多 Gin engine 仍共享一个框架日志器，逐 engine 原生诊断隔离不受支持，Gin 保持实验性；见[Web 运行时](../guides/web-runtime.md) |
-| MsgPack / Protobuf 响应 | 已接入 | 实验性 | 公共 API | 两种 MIME provider 与响应 manager 在默认集合中但需显式装配；还需启用 `EnableBinaryProtocolSupport` 并命中 `application/msgpack` 或 `application/x-protobuf` | 两种 HTTP body 实现的创建、运行、失败回退有路径；没有独立关闭资源；但两种实现的对象池所有权不对称——Protobuf `SendWithCtx` 释放自身，MsgPack 不释放 | 单元/契约（含 Fiber 与 Gin 真实内核的协商往返：首个 Accept 值优先、`Content-Type` 优先于 `Accept`、未知 MIME 与通配符回退 JSON，均解码断言 body） | **晋级阻塞：条件 4**。`response_facade.go:33,36` 在装配期 panic（location 首个 manager 类型不符、找不到 `RespInfoPManager`）。**无外部依赖，故条件 3 不需要 live integration**，协商已由真实内核往返测试覆盖；条件 5 亦未闭合——示例只置 `EnableBinaryProtocolSupport: true`，不实际发送二进制响应。未命中或加载失败时回退 JSON，协商只取首个媒体类型；这是 HTTP body 编码而非通用 RPC；见[响应与序列化](../guides/response-and-serialization.md) |
-| L2 缓存与 Redis 保护机制 | 已接入 | 实验性 | 公共 API | 不默认创建；应用显式构造 local、Redis、L2 并选择回填、同步/异步写、singleflight、Bloom filter 和 circuit breaker | 创建、组合运行和失败保护有代码路径；关闭已具备原子幂等、关闭后拒绝操作、子缓存关闭与错误聚合；实现 `globalmanager.CompositeClosable` 与 `CompositeOwnershipInspector`，向容器声明它持有 local/remote 的关闭责任，使 `ReleaseAll` 先释放它、再释放子缓存各自的 key（先 `<-drain` 排空再关子缓存，避免排空期间打在已关闭的 Redis 上）；异步 flush 所有权仍不完整 | 单元/契约；未验证外部 live integration | singleflight 未形成完整 loader 合并，Bloom/breaker miss 语义不一致；L2 `Wait` 不等待 ants pool 异步任务，现有 hermetic 测试不证明 Redis live 行为；见[缓存指南](../guides/cache.md) |
+| Gin HTTP 内核 | 已接入 | 实验性（deferred-v2.0.0）| 公共 API | Gin core provider 在默认集合中但 `Default()` 仍选择 Fiber；启用时设置 `CoreType` 为 `gin` 并显式装配 Gin codec、recovery、中间件和路由 provider/manager；原生诊断自动接入框架日志器 | `CoreWithGin` 的创建、运行错误传递和信号关闭均有路径；路由 location 已处理时不会再次执行模块默认注册；日志 bridge 在引擎创建前固定稳定转发入口并取得独占 lease，初始化失败、server 返回或 shutdown 时幂等停用 owner，无 owner 时按行为回退到首次捕获的 Gin 输出；有效证书可填充 `TLSConfig` 并选择 TLS serve，缺失路径仍保留 HTTP 路径 | 单元/契约 + race | adapter 与 core 测试覆盖级别/字段、稳定入口与回退、安装冲突、并发 release、mode fallback、server error logger、重复路由防护、单条访问记录及各退出路径，另有 loopback listener 驱动的真实 TLS 握手与 `Shutdown` 回归；运行期不写回 Gin 全局变量以避免与无同步读取竞争，多 Gin engine 仍共享一个框架日志器，逐 engine 原生诊断隔离不受支持，Gin 保持实验性；见[Web 运行时](../guides/web-runtime.md) |
+| MsgPack / Protobuf 响应 | 已接入 | 实验性 | 公共 API | 两种 MIME provider 与响应 manager 在默认集合中但需显式装配；还需启用 `EnableBinaryProtocolSupport` 并命中 `application/msgpack` 或 `application/x-protobuf` | 两种 HTTP body 实现的创建、运行、失败回退有路径；没有独立关闭资源；但两种实现的对象池所有权不对称——Protobuf `SendWithCtx` 释放自身，MsgPack 不释放 | 单元/契约（含 Fiber 与 Gin 真实内核的协商往返：首个 Accept 值优先、`Content-Type` 优先于 `Accept`、未知 MIME 与通配符回退 JSON，均解码断言 body） | **晋级阻塞：条件 5**（条件 4 已按改写后的判据重新评估）。条件 4：`response_facade.go:33,36` 在装配期 panic（location 首个 manager 类型不符、找不到 `RespInfoPManager`），这是启动期不可恢复的装配错误，**按改写后的判据只差一个返回 error 的替代入口**——目前 `NewRespInfoPManagerOnce` 是唯一入口，补一个 `*WithError` 变体即可满足；这与已晋级的 `NewMysqlModel`/`NewMysqlModelWithError` 是同一模式。条件 3 已满足：**无外部依赖故不需要 live integration**，协商已由 Fiber/Gin 真实内核往返测试覆盖。条件 5 仍未闭合——示例只置 `EnableBinaryProtocolSupport: true`，不实际发送二进制响应。未命中或加载失败时回退 JSON，协商只取首个媒体类型；这是 HTTP body 编码而非通用 RPC；见[响应与序列化](../guides/response-and-serialization.md) |
+| L2 缓存与 Redis 保护机制 | 已接入 | 实验性（deferred-v2.0.0）| 公共 API | 不默认创建；应用显式构造 local、Redis、L2 并选择回填、同步/异步写、singleflight、Bloom filter 和 circuit breaker | 创建、组合运行和失败保护有代码路径；关闭已具备原子幂等、关闭后拒绝操作、子缓存关闭与错误聚合；实现 `globalmanager.CompositeClosable` 与 `CompositeOwnershipInspector`，向容器声明它持有 local/remote 的关闭责任，使 `ReleaseAll` 先释放它、再释放子缓存各自的 key（先 `<-drain` 排空再关子缓存，避免排空期间打在已关闭的 Redis 上）；异步 flush 所有权仍不完整 | 单元/契约；未验证外部 live integration | singleflight 未形成完整 loader 合并，Bloom/breaker miss 语义不一致；L2 `Wait` 不等待 ants pool 异步任务，现有 hermetic 测试不证明 Redis live 行为；见[缓存指南](../guides/cache.md) |
 | 异步任务 | 已接入 | 实验性 | 公共 API | 无默认 task register；应用需提供 Redis、initializer、handler、`TaskRegister` 并启用 `application.task.enableServer` | asynq `TaskWorker`/`TaskDispatcher` 的创建、同步/异步运行和失败记录有路径；**关闭路径仍无契约**——`TaskDispatcher` 没有 `Close`，其内部 `asynq.Client` 不被回收，统一关闭顺序由应用自行安排且框架不验证（见[异步任务指南](../guides/background-tasks.md)） | 单元/契约 + live integration（入队-消费-优雅关闭；并发入队消费不丢不重；handler 持续失败的重试-归档与 `Config.ErrorHandler` 上报；`SkipRetry` 立即归档不消耗重试） | **晋级阻塞：条件 1**。live 验证（条件 3）已闭合并发与故障注入，但 dispatcher 回收与统一关闭契约缺失，属被延后的跨组件所有权契约；异步启动内部错误只记录，`RunAsync` 恒返回 nil，示例依赖外部 Redis；见[异步任务指南](../guides/background-tasks.md) |
-| CLI | 已接入 | 实验性 | 公共 API | 不属于 Web 默认集合；应用单独创建 `CmdContext`、应用注册器和基于 urfave/cli 的 `CMDLineApplication` | 创建、命令注册、运行与资源关闭有路径；`AppCoreRun` 失败传播与健康检查循环仍不完整 | 单元/契约 | 健康检查只执行一次，`RunCommandStarter` 丢弃返回值；关闭段以 `defer` 释放全局对象（命令返回错误时同样执行），但因 `ICommandContext.GetStarterApp()` 返回 `CommandStarter` 而非 `ApplicationStarter`，它不复用 `clearApplicationGlobals`，也不停止健康检查——CLI 的健康检查本就是一次性的，没有需要停止的后台 ticker；见[命令行指南](../guides/command-line.md) |
-| 扩展运行位点与关闭链 | 已接入 | 实验性 | 公共 API | 应用可把自定义 manager 显式绑定到 server run 的 before/main location，以及 shutdown 的 before/main/after location；普通 manager 先加载，`GroupExtendReplace` manager 只替代同一 location 的默认逻辑 | `RunServer` 会收集运行与关闭管理器，核心运行结果无论成功、失败或 panic 都进入协调通道，且运行分支失败（监听绑定失败、运行 goroutine panic）时也会释放全局对象——该分支从不调用 `Shutdown`，此前是唯一没有回收的退出路径；信号触发 shutdown，Fiber/Gin 的运行链消费 before/main 位点，关闭链消费 before/main/after 位点，且两者都保证 after 位点在全局对象释放与日志器关闭**之前**执行，因此该位点的 provider（仓库内即 pprof 关闭提供者）仍可正常记录日志；尚无统一的 provider 关闭接口和跨组件资源所有权契约 | 单元/契约 | 专项测试覆盖正常返回、信号关闭、同位点替代、不同位点互不抑制、shutdown before/after 执行，以及 after 位点早于日志器关闭的顺序回归（经注入 `io.WriteCloser` 观测）；`ServerRunAfter` 仍未被默认实现消费，真实进程信号与外部资源组合关闭仍未进入 smoke；见[Web 启动生命周期](../concepts/startup-lifecycle.md) |
+| CLI | 已接入 | 实验性（deferred-v2.0.0）| 公共 API | 不属于 Web 默认集合；应用单独创建 `CmdContext`、应用注册器和基于 urfave/cli 的 `CMDLineApplication` | 创建、命令注册、运行与资源关闭有路径；`AppCoreRun` 失败传播与健康检查循环仍不完整 | 单元/契约 | 健康检查只执行一次，`RunCommandStarter` 丢弃返回值；关闭段以 `defer` 释放全局对象（命令返回错误时同样执行），但因 `ICommandContext.GetStarterApp()` 返回 `CommandStarter` 而非 `ApplicationStarter`，它不复用 `clearApplicationGlobals`，也不停止健康检查——CLI 的健康检查本就是一次性的，没有需要停止的后台 ticker；见[命令行指南](../guides/command-line.md) |
+| 扩展运行位点与关闭链 | 已接入 | 实验性（deferred-v2.0.0）| 公共 API | 应用可把自定义 manager 显式绑定到 server run 的 before/main location，以及 shutdown 的 before/main/after location；普通 manager 先加载，`GroupExtendReplace` manager 只替代同一 location 的默认逻辑 | `RunServer` 会收集运行与关闭管理器，核心运行结果无论成功、失败或 panic 都进入协调通道，且运行分支失败（监听绑定失败、运行 goroutine panic）时也会释放全局对象——该分支从不调用 `Shutdown`，此前是唯一没有回收的退出路径；信号触发 shutdown，Fiber/Gin 的运行链消费 before/main 位点，关闭链消费 before/main/after 位点，且两者都保证 after 位点在全局对象释放与日志器关闭**之前**执行，因此该位点的 provider（仓库内即 pprof 关闭提供者）仍可正常记录日志；尚无统一的 provider 关闭接口和跨组件资源所有权契约 | 单元/契约 | 专项测试覆盖正常返回、信号关闭、同位点替代、不同位点互不抑制、shutdown before/after 执行，以及 after 位点早于日志器关闭的顺序回归（经注入 `io.WriteCloser` 观测）；`ServerRunAfter` 仍未被默认实现消费，真实进程信号与外部资源组合关闭仍未进入 smoke；见[Web 启动生命周期](../concepts/startup-lifecycle.md) |
 
 ## 内部工具
 
@@ -94,8 +96,33 @@ JSON 流量编解码逐条对照：条件 1，四条路径有契约，且「没�
 1. 创建、运行、失败、关闭四条路径都有明确契约。
 2. 公开 API 有兼容承诺，默认与显式启用方式无歧义。**（v2.0.0 前不作为晋级门槛，见下方说明）**
 3. 单元/契约测试进入 CI；并发能力通过 race，外部依赖通过可重复 live integration test。
-4. 不依靠 panic 或 fatal 表达可恢复的装配或运行错误。
+4. 不以 panic 或 fatal 表达调用方本可处理的错误。启动期检测到的不可恢复装配错误允许
+   panic，**前提是存在文件化的、返回 error 的替代入口**（见下方说明）。
 5. 文档示例确实执行该路径，并明确资源所有权和限制。
+
+### 关于条件 4 的适用边界
+
+本条原文为「不依靠 panic 或 fatal 表达可恢复的装配或运行错误」。该措辞与本页实际
+采用的判据不一致，已按实际判据改写，理由如下。
+
+已晋级的 MySQL / MongoDB 含两处装配期 `panic(err)`（`mysql_model_impl.go:33`、
+`mongo_model_impl.go:36`），而被判定卡住条件 4 的 MsgPack / Protobuf，其
+`response_facade.go:33,36` 在结构上与之相同。两者之所以结论不同，真正的区别是
+**前者有文件化的 `NewMysqlModelWithError` / `NewMongoModelWithError` 可供调用方改用，
+后者没有任何返回 error 的替代入口**。这个区别是成立的，但原文字从未表达它，因而
+对同类代码给出了不同结论。
+
+因此本条的判据是：
+
+- **允许**：不可恢复的装配错误在启动期 panic，且同时提供返回 error 的替代入口
+  （`Must*` / `*WithError` 成对出现的惯例，与 stdlib 的 `regexp.MustCompile`、
+  `template.Must` 一致）。调用方若需处理错误，永远有一条不 panic 的路径。
+- **不允许**：调用方可以处理、却只能以 panic 得知的错误；或唯一入口即 panic，
+  调用方无从选择。改写前的参数验证即属此类——语言包注册失败时只有 panic 一条路，
+  故 T6 将其改为返回 error。
+
+仅放宽「有替代入口」的情形，不放宽其余。以 panic 表达运行期（非装配期）错误始终
+不满足本条。
 
 ### 关于条件 2 的当前豁免
 
