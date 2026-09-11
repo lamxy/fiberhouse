@@ -6,6 +6,25 @@
 
 package fiberhouse
 
+import "context"
+
+// ClosableProvider 标记一个持有资源、需要在关闭链上回收的提供者。
+//
+// opt-in 接口，不并入 IProvider：绝大多数 provider 只是装配期的一次性工厂，产出
+// 实例后自身不持有任何资源，强制它们实现空 Close 只会制造噪音。沿用
+// globalmanager.Closable 的同一惯例——由确实持有资源的实现自行声明。
+//
+// 实现方须保证：
+//   - Close 幂等。同一 provider 可能经由多条路径被关闭（管理器关闭链、应用直接
+//     调用），第二次调用必须安全返回。
+//   - 尊重 ctx。关闭超时靠它传播，长时间阻塞会拖垮整个关闭预算。
+//   - 只在 StateLoaded 时被调用。未初始化或初始化失败的 provider 不持有实例，
+//     CloseProviders 会跳过它们。
+type ClosableProvider interface {
+	// Close 释放本提供者持有的资源。
+	Close(ctx context.Context) error
+}
+
 // ProviderInitFunc 提供者初始化函数类型
 type ProviderInitFunc func(IProvider) (any, error)
 
@@ -72,7 +91,12 @@ type IProviderManager interface {
 	// Location 获取管理器的执行位置点
 	Location() IProviderLocation
 	// SetOrBindToLocation 设置管理器的执行位置点，仅允许设置一次
+	//
+	// 绑定失败（manager 为 nil、同一实例重复绑定）时本方法不报错，以保持构造子里的
+	// 链式调用；需要观测绑定结果请改用 SetOrBindToLocationWithError。
 	SetOrBindToLocation(IProviderLocation, ...bool) IProviderManager
+	// SetOrBindToLocationWithError 与 SetOrBindToLocation 相同，但返回绑定错误
+	SetOrBindToLocationWithError(IProviderLocation, ...bool) (IProviderManager, error)
 	// GetContext 获取管理器关联的上下文对象
 	GetContext() IContext
 	// Register 注册提供者到管理器中
@@ -101,6 +125,10 @@ type IProviderManager interface {
 	IsUnique() bool
 	// MountToParent 将当前管理器挂载到父级管理器中
 	MountToParent(son ...IProviderManager) IProviderManager
+	// CloseProviders 按注册逆序关闭实现了 ClosableProvider 的已初始化提供者
+	//
+	// 单个提供者关闭失败不中断其余关闭，全部错误经 errors.Join 聚合后返回。
+	CloseProviders(ctx context.Context) error
 }
 
 // IProviderLocation 提供者位点接口，用于标识提供者管理器的执行位置，应用启动流程或生命周期的相关阶段，以及其他自定义执行点
