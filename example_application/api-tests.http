@@ -5,8 +5,12 @@
 ###
 ###   Fiber: module/example-module/api/example_api.http
 ###   Gin:   module/example-ginapi-module/api/example_api.http
+###   Hertz: module/example-hertzapi-module/api/example_api.http
 ###
-### 两者覆盖相同的 5 个 example 资源 CRUD 接口（相同的路由、请求 VO 与响应信封），
+### 三者覆盖相同的 example 资源 CRUD 接口（相同的路由、请求 VO 与响应信封），
 ### 针对当前运行在 http://localhost:8080 上的核心引擎（见
-### example_config/application_dev.yml）。Fiber 与 Gin 是同一应用的可替换核心引擎
-### —— 一次运行一个。
+### example_config/application_dev.yml）。Fiber、Gin 与 Hertz 是同一应用的可替换
+### 核心引擎 —— 一次运行一个；example_main 当前的默认核心是 Hertz。
+###
+### 另：二进制响应协商（MsgPack / Protobuf）的可执行示例只在 Hertz 文件中，
+### 对应路由 GET /examples/binary。

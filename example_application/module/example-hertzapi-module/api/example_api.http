@@ -1,0 +1,100 @@
+### example-hertzapi-module (Hertz) —— 二進制回應協商 + Example 資源 CRUD
+###
+### 供 VS Code REST Client / JetBrains HTTP Client 使用的手動 API 測試文件。
+### Hertz 是 example_main 目前的預設核心（見 example_main/main.go 的
+### BootConfig.CoreType = hertzconst.CoreTypeWithHertz）。
+###
+### 路由由 register_api_router.go 註冊在應用根路徑（無前綴）：
+###   GET    /examples/binary      <- 二進制回應協商示範
+###   POST   /examples
+###   GET    /examples/:id
+###   GET    /examples
+###   PUT    /examples/:id
+###   DELETE /examples/:id
+###
+### 回應信封：{"code": int, "msg": string, "data": ...}
+
+@baseUrl = http://localhost:8080
+@language = en
+
+### ─────────────────────────────────────────────────────────────────────
+### 二進制回應協商（MsgPack / Protobuf）
+###
+### 只有 ResponseWrap.SendWithCtx 且 BootConfig.EnableBinaryProtocolSupport
+### 為 true 時才會協商；本模組其餘 handler 走 JsonWithCtx，永遠是 JSON。
+###
+### 協商規則（見 docs/guides/response-and-serialization.md）：
+###   1. 先讀 Content-Type，只有其為空才讀 Accept；
+###   2. 逗號分隔只取第一項，再去掉分號後的參數；
+###   3. application/json、application/* 、*/* 直接走 JSON；
+###   4. 其餘 MIME 以完整字串查 provider，命中才走二進制；
+###   5. 未知 MIME / provider 缺失一律回退 JSON，不回 406。
+### ─────────────────────────────────────────────────────────────────────
+
+### JSON 回退 —— 不帶任何協商標頭
+# curl 預設送 Accept: */*，命中通配符分支，回 application/json。
+GET {{baseUrl}}/examples/binary?echo=plain
+
+### MsgPack —— Content-Type: application/msgpack
+# 回應 Content-Type 為 application/msgpack，body 是 msgpack 編碼的
+# {code, msg, data{format, echo}}。REST Client 會以二進制顯示。
+GET {{baseUrl}}/examples/binary?echo=mp
+Content-Type: application/msgpack
+
+### Protobuf —— Content-Type: application/x-protobuf
+# 回應 Content-Type 為 application/x-protobuf，body 是 response.RespInfoProto
+# {code=1, msg=2, data=3(Any 包 structpb.Value)}。
+GET {{baseUrl}}/examples/binary?echo=pb
+Content-Type: application/x-protobuf
+
+### 未知 MIME —— 回退 JSON（不是 406）
+GET {{baseUrl}}/examples/binary?echo=unk
+Content-Type: application/unknown
+
+### Accept 僅在 Content-Type 為空時生效
+GET {{baseUrl}}/examples/binary?echo=viaaccept
+Accept: application/msgpack
+
+### Content-Type 優先於 Accept —— 下例回 JSON 而非 MsgPack
+GET {{baseUrl}}/examples/binary?echo=ctwins
+Content-Type: application/json
+Accept: application/msgpack
+
+### ─────────────────────────────────────────────────────────────────────
+### Example 資源 CRUD
+### ─────────────────────────────────────────────────────────────────────
+
+### Create —— POST /examples
+# @name create
+POST {{baseUrl}}/examples
+Content-Type: application/json
+X-language-flag: {{language}}
+
+{
+  "name": "My Example",
+  "description": "A short description of the example.",
+  "status": "active",
+  "tags": ["demo", "swagger"]
+}
+
+### Get —— GET /examples/:id
+GET {{baseUrl}}/examples/{{create.response.body.$.data.id}}
+X-language-flag: {{language}}
+
+### List —— GET /examples
+GET {{baseUrl}}/examples?page=1&page_size=20&status=active
+X-language-flag: {{language}}
+
+### Update —— PUT /examples/:id
+PUT {{baseUrl}}/examples/{{create.response.body.$.data.id}}
+Content-Type: application/json
+X-language-flag: {{language}}
+
+{
+  "status": "archived",
+  "tags": ["demo"]
+}
+
+### Delete —— DELETE /examples/:id
+DELETE {{baseUrl}}/examples/{{create.response.body.$.data.id}}
+X-language-flag: {{language}}
