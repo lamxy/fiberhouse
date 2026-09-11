@@ -369,6 +369,19 @@ func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProvider
 		if fiber.IsChild() {
 			return nil
 		}
+
+		// 监听已真正建立，此刻才是 PhaseServing 的置位时机。
+		//
+		// 不能等 Listen 返回后再置位：Listen 会一直阻塞到服务器停止，那时置位
+		// 恰好把语义颠倒——「正在服务」写在了已经停止服务之后。迁移失败（例如
+		// 关闭已先行开始）不应阻断监听，因此只记录不返回错误。
+		if err := cf.GetAppContext().TransitionTo(PhaseServing); err != nil {
+			cf.GetAppContext().GetLogger().WarnWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+				Str("applicationStarter", "FrameApplication").
+				Err(err).
+				Msg("App phase transition to serving was rejected")
+		}
+
 		scheme := "http"
 		if listenData.TLS {
 			scheme = "https"
@@ -448,8 +461,9 @@ func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
 		return err
 	}
 
-	// 设置应用状态：标记应用已正常运行并监听在套接字上
-	cf.GetAppContext().RegisterAppState(true)
+	// 这里不再置位「已启动」：Listen 返回意味着服务器**已经停止**，此处置位会把
+	// 语义颠倒。PhaseServing 由 RegisterAppHooks 安装的 OnListen hook 在监听真正
+	// 建立的那一刻置位。
 	return nil
 }
 
@@ -465,9 +479,19 @@ func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
 func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
 	defer cf.clearApplicationGlobalsOnce()
 
-	if cf.GetAppContext().GetAppState() {
+	// 关闭结束时推进到 PhaseTerminated。迁移失败说明已有其他路径先行终结，
+	// 不影响本次回收（回收本身经 once 守卫）。
+	defer func() { _ = cf.GetAppContext().TransitionTo(PhaseTerminated) }()
+
+	// 守卫读的是「关闭是否已经开始」，而不再是旧的 GetAppState()。
+	//
+	// 旧守卫的缺陷：GetAppState() 在使用方提前 pin 之后恒为 true，Shutdown 于是
+	// 直接返回并跳过全部资源回收。改读阶段之后，只有真正进入关闭的调用才会被
+	// 挡住，重复关闭仍是幂等的。
+	if cf.GetAppContext().Phase() >= PhaseShuttingDown {
 		return nil
 	}
+	_ = cf.GetAppContext().TransitionTo(PhaseShuttingDown)
 
 	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,

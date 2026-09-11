@@ -331,6 +331,10 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 
 	// ======== 应用启动流程，保持执行顺序 =========
 
+	// 进入装配阶段。此后的注册器与位点都属于「装配中」，PhaseServing 要等到内核
+	// 真正建立监听时才由 OnListen hook（Fiber）或 net.Listen 之后（Gin）置位。
+	_ = fh.AppCtx.TransitionTo(PhaseInitializing)
+
 	// 将应用启动器注册到全局应用上下文
 	appStarter.RegisterToCtx(appStarter)
 

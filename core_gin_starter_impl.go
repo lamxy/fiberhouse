@@ -510,10 +510,31 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Str("applicationStarter", "FrameApplication").Msg("App: Manager for application processing server runtime")
 
+	// 先 net.Listen 再 Serve，而不是用 ListenAndServe 一步到位：只有拆开，
+	// PhaseServing 才能置位在「端口已绑定」与「开始接受流量」之间。
+	// ListenAndServe 把绑定与服务合成一个阻塞调用，返回时服务器已经停止，
+	// 那个时点置位等于把「正在服务」写在服务结束之后。
+	listener, err := net.Listen("tcp", cg.httpServer.Addr)
+	if err != nil {
+		cg.GetAppContext().GetLogger().ErrorWith(cfg.LogOriginFrame()).
+			Str("applicationStarter", "GinApplication").
+			Err(err).
+			Msg("Failed to start Gin server")
+		return err
+	}
+
+	// 监听已真正建立。迁移失败（例如关闭已先行开始）不应阻断服务，只记录。
+	if phaseErr := cg.GetAppContext().TransitionTo(PhaseServing); phaseErr != nil {
+		cg.GetAppContext().GetLogger().WarnWith(cfg.LogOriginFrame()).
+			Str("applicationStarter", "GinApplication").
+			Err(phaseErr).
+			Msg("App phase transition to serving was rejected")
+	}
+
 	if cg.httpServer.TLSConfig != nil {
-		err = cg.httpServer.ListenAndServeTLS("", "")
+		err = cg.httpServer.ServeTLS(listener, "", "")
 	} else {
-		err = cg.httpServer.ListenAndServe()
+		err = cg.httpServer.Serve(listener)
 	}
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		cg.GetAppContext().GetLogger().ErrorWith(cfg.LogOriginFrame()).
@@ -522,7 +543,8 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 			Msg("Failed to start Gin server")
 		return err
 	}
-	cg.GetAppContext().RegisterAppState(true)
+
+	// 这里不再置位「已启动」：Serve 返回意味着服务器已经停止。
 	return nil
 }
 
@@ -530,13 +552,19 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 	defer cg.releaseGinLogger()
 
+	// 关闭结束时推进到 PhaseTerminated。迁移失败说明已有其他路径先行终结。
+	defer func() { _ = cg.GetAppContext().TransitionTo(PhaseTerminated) }()
+
 	if cg.initializationFailed() {
 		return cg.initErr
 	}
 
-	if cg.GetAppContext().GetAppState() {
+	// 守卫读的是「关闭是否已经开始」，而不再是旧的 GetAppState()——后者在使用方
+	// 提前 pin 之后恒为 true，会让 Shutdown 直接返回并跳过全部资源回收。
+	if cg.GetAppContext().Phase() >= PhaseShuttingDown {
 		return nil
 	}
+	_ = cg.GetAppContext().TransitionTo(PhaseShuttingDown)
 
 	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
