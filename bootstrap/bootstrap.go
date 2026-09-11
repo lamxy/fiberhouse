@@ -66,6 +66,13 @@ type LoggerWrapper interface {
 type LoggerWrap struct {
 	logger  *zerolog.Logger
 	wCloser io.WriteCloser // 用于回收底层writer
+	// closeOnce / closeErr 保证 wCloser 只被关闭一次，并让后续调用复用首次结果。
+	//
+	// 关闭入口有多个（Fiber 的 clearApplicationGlobalsOnce、Gin 的 Shutdown
+	// 尾部、CLI 的 releaseCommandGlobals、应用自行调用），守卫必须在这一层，
+	// 契约才对任意注入的 io.WriteCloser 成立。
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // NewLoggerWrap 创建一个新的LoggerWrap实例
@@ -92,11 +99,24 @@ func (lw *LoggerWrap) GetZeroLogger() *zerolog.Logger {
 }
 
 // Close 关闭日志写入器
+//
+// 幂等：底层 wCloser 只被关闭一次，后续调用返回首次的结果。
+//
+// 这不是锦上添花。日志器的关闭有多个入口——Fiber 的 clearApplicationGlobalsOnce、
+// Gin 的 Shutdown 尾部、CLI 的 releaseCommandGlobals、以及应用自行调用——此前
+// 本方法直接转发给 wCloser，重复关闭是否安全完全取决于注入的 writer。框架自带的
+// 两个异步 writer 恰好以 CAS + closeDone 实现了幂等（async_channel_writer.go:146、
+// async_diode_writer.go:134），但那是它们的实现细节，不是 LoggerWrapper 的契约；
+// 使用方注入的任意 io.WriteCloser 没有义务容忍重复 Close。
+//
+// 守卫放在这一层，契约才对所有注入的 writer 成立。
 func (lw *LoggerWrap) Close() error {
-	if lw.wCloser != nil {
-		return lw.wCloser.Close()
-	}
-	return nil
+	lw.closeOnce.Do(func() {
+		if lw.wCloser != nil {
+			lw.closeErr = lw.wCloser.Close()
+		}
+	})
+	return lw.closeErr
 }
 
 // Debug 和 DebugWith 方法用于记录调试级别的日志
