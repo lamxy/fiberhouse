@@ -30,6 +30,13 @@ const (
 	defaultFile      string = "application.yml"
 )
 
+// ErrConfigLoadFailed 标记配置加载失败。
+//
+// 文件不存在、权限不足、YAML 语法错误、map 键冲突都归入本类。这类失败是
+// **可恢复**的：调用方常有回退路径（改用默认配置、换一个配置目录），
+// 因此不该只能以 panic 得知。
+var ErrConfigLoadFailed = errors.New("fiberhouse/appconfig: config load failed")
+
 // LogOrigin 日志来源分类标识
 type LogOrigin string
 
@@ -112,9 +119,14 @@ type IAppConfig interface {
 	配置加载方法
 	*/
 
-	LoadDefault(m map[string]interface{}) IAppConfig   // 加载默认Map配置，后加载覆盖先加载的配置；可用于测试时快速设定指定的配置项
-	LoadYaml(filename ...string) IAppConfig            // 加载yaml配置文件，后加载覆盖先加载的配置
+	LoadDefault(m map[string]interface{}) IAppConfig   // 加载默认Map配置，后加载覆盖先加载的配置；失败时 panic，取错请用 LoadDefaultWithError
+	LoadYaml(filename ...string) IAppConfig            // 加载yaml配置文件，后加载覆盖先加载的配置；失败时 panic，取错请用 LoadYamlWithError
 	LoadFunc(f func(IAppConfig) IAppConfig) IAppConfig // 通过回调自定义加载配置，后加载覆盖先加载的配置
+
+	// LoadDefaultWithError 与 LoadDefault 相同，但加载失败时返回错误而非 panic
+	LoadDefaultWithError(m map[string]interface{}) (IAppConfig, error)
+	// LoadYamlWithError 与 LoadYaml 相同，但加载失败时返回错误而非 panic
+	LoadYamlWithError(filename ...string) (IAppConfig, error)
 
 	/**
 	配置路径管理
@@ -488,15 +500,41 @@ func (ac *AppConfig) SafeSet(pathname string, value interface{}, setter func(pat
 }
 
 // LoadDefault 从map加载默认配置
+//
+// 加载失败时 panic。需要处理该错误的调用方请改用 LoadDefaultWithError。
 func (ac *AppConfig) LoadDefault(m map[string]interface{}) IAppConfig {
-	if err := ac.GetKOANF().Load(confmap.Provider(m, "."), nil); err != nil {
-		panic("LoadMap: " + err.Error())
+	cfg, err := ac.LoadDefaultWithError(m)
+	if err != nil {
+		panic(err)
 	}
-	return ac
+	return cfg
+}
+
+// LoadDefaultWithError 与 LoadDefault 相同，但加载失败时返回错误而非 panic。
+func (ac *AppConfig) LoadDefaultWithError(m map[string]interface{}) (IAppConfig, error) {
+	if err := ac.GetKOANF().Load(confmap.Provider(m, "."), nil); err != nil {
+		return nil, fmt.Errorf("%w: load default map config: %w", ErrConfigLoadFailed, err)
+	}
+	return ac, nil
 }
 
 // LoadYaml 装载yaml文件配置
+//
+// 加载失败时 panic。需要处理该错误的调用方请改用 LoadYamlWithError。
 func (ac *AppConfig) LoadYaml(filename ...string) IAppConfig {
+	cfg, err := ac.LoadYamlWithError(filename...)
+	if err != nil {
+		panic(err)
+	}
+	return cfg
+}
+
+// LoadYamlWithError 与 LoadYaml 相同，但加载失败时返回错误而非 panic。
+//
+// 文件不存在、权限不足、YAML 语法错误都会走到这里。这类失败**可恢复**：
+// 调用方常有回退路径（改用默认配置、换一个配置目录），因此不该被 panic 中断。
+// 错误始终包含文件名，这是旧 panic 文本里最有用的一项信息。
+func (ac *AppConfig) LoadYamlWithError(filename ...string) (IAppConfig, error) {
 	var (
 		baseDir = strings.TrimRight(ac.confPath, "/") + "/"
 		fName   string
@@ -508,9 +546,9 @@ func (ac *AppConfig) LoadYaml(filename ...string) IAppConfig {
 	}
 	fName = filepath.ToSlash(baseDir + strings.TrimLeft(fName, "/"))
 	if err := ac.GetKOANF().Load(file.Provider(fName), yaml.Parser()); err != nil {
-		panic(fmt.Sprintf("LoadYaml: %s, filename: %s", err.Error(), fName))
+		return nil, fmt.Errorf("%w: load yaml config '%s': %w", ErrConfigLoadFailed, fName, err)
 	}
-	return ac
+	return ac, nil
 }
 
 // LoadFunc 自定义回调装载配置

@@ -150,19 +150,26 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 		}
 
 		if jsonCodecManager == nil {
-			msg := "No JSON codec manager provided, using default JSON codec"
-			cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).Msg(msg)
-			panic(msg)
+			// 与 Fiber 一致：装配失败记录 initErr 并短路，而不是 panic。
+			// Gin 本就有 initErr 机制，此前这两处却绕开它直接 panic。
+			cg.initErr = fmt.Errorf(
+				"%w: no JSON codec manager found in the provided managers", ErrCoreInitFailed)
+			cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
+				Str("applicationStarter", "GinApplication").
+				Err(cg.initErr).
+				Msg("InitCoreApp failed")
+			return
 		}
 
 		_, err := jsonCodecManager.LoadProvider()
 
 		if err != nil {
+			cg.initErr = fmt.Errorf("%w: load JSON codec provider: %w", ErrCoreInitFailed, err)
 			cg.GetAppContext().GetLogger().ErrorWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 				Str("applicationStarter", "GinApplication").
-				Err(err).
+				Err(cg.initErr).
 				Msg("Failed to load providers into Gin application starter")
-			panic(err)
+			return
 		}
 	}
 

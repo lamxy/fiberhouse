@@ -498,22 +498,58 @@ func TestCoreInit_FiberRejectsMissingWrongAndFailedCodecManagers(t *testing.T) {
 	}
 }
 
+// TestCoreInit_GinRejectsMissingAndFailedCodecManagers 覆盖 Gin 的两种编解码器
+// 装配失败。
+//
+// 契约已变更（PRD C1）：这两处此前直接 panic，现在记录为 initErr 并短路。
+// Gin 本就有 initErr 机制（13 处使用），这两处却绕开它直接 panic——与 Fiber
+// 在 C3 修正的是同一类不一致。
+//
+// 与 Fiber 的差别：Gin 没有 InitCoreAppMust。Gin 内核在 feature-status.md 中
+// 是实验性能力且非 Default() 选择，此处只把行为与其自身既有的 initErr 机制
+// 对齐，不新增公共入口。需要 fail-fast 的调用方检查 AppCoreRun / Shutdown
+// 的返回值即可——两者都会返回 initErr。
 func TestCoreInit_GinRejectsMissingAndFailedCodecManagers(t *testing.T) {
 	preserveTask4GinMode(t)
-	ctx := newTask4InternalAppContext(t, nil)
 	frame := &task4Frame{}
-
-	assert.PanicsWithValue(t,
-		"No JSON codec manager provided, using default JSON codec",
-		func() { NewCoreWithGin(ctx).InitCoreApp(frame, task4WrongManager()) },
-	)
-
 	sentinel := errors.New("codec load failed")
-	failed := task4GoodCodecManager()
-	failed.err = sentinel
-	assert.PanicsWithError(t, sentinel.Error(), func() {
-		NewCoreWithGin(ctx).InitCoreApp(frame, failed)
-	})
+
+	for _, testCase := range []struct {
+		name    string
+		manager func() IProviderManager
+		wantErr string
+	}{
+		{
+			name:    "missing codec manager",
+			manager: func() IProviderManager { return task4WrongManager() },
+			wantErr: "no JSON codec manager found",
+		},
+		{
+			name: "codec provider load fails",
+			manager: func() IProviderManager {
+				failed := task4GoodCodecManager()
+				failed.err = sentinel
+				return failed
+			},
+			wantErr: sentinel.Error(),
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := newTask4InternalAppContext(t, nil)
+			core := NewCoreWithGin(ctx).(*CoreWithGin)
+
+			require.NotPanics(t, func() { core.InitCoreApp(frame, testCase.manager()) },
+				"assembly failure must be recorded, not panicked")
+
+			require.True(t, core.initializationFailed())
+			assert.ErrorIs(t, core.initErr, ErrCoreInitFailed)
+			assert.ErrorContains(t, core.initErr, testCase.wantErr)
+
+			// 装配失败必须经由运行与关闭入口传出。
+			assert.ErrorIs(t, core.AppCoreRun(), ErrCoreInitFailed)
+			assert.ErrorIs(t, core.Shutdown(), ErrCoreInitFailed)
+		})
+	}
 }
 
 func TestCoreInit_GinServerUsesConfiguredAddressAndTimeouts(t *testing.T) {

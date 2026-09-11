@@ -122,22 +122,41 @@ func releaseApplicationGlobals(ctx IApplicationContext) {
 	}, true)
 }
 
+// ErrNoFrameStarterOption 标记未提供任何框架启动器选项。
+//
+// 装配期的用法错误：没有选项就没有注册器，启动器无事可做。
+var ErrNoFrameStarterOption = errors.New(
+	"fiberhouse: no registrar option available for injection into the application starter")
+
 // NewFrameApplication 创建一个应用启动器对象
+//
+// 未提供选项时 panic。需要处理该错误的调用方请改用 NewFrameApplicationWithError。
 func NewFrameApplication(ctx IApplicationContext, opts ...FrameStarterOption) FrameStarter {
+	starter, err := NewFrameApplicationWithError(ctx, opts...)
+	if err != nil {
+		panic(err)
+	}
+	return starter
+}
+
+// NewFrameApplicationWithError 与 NewFrameApplication 相同，但未提供选项时返回
+// 错误而非 panic。
+func NewFrameApplicationWithError(ctx IApplicationContext, opts ...FrameStarterOption) (FrameStarter, error) {
 	fApp := &FrameApplication{
 		Ctx: ctx,
 	}
 	if len(opts) == 0 {
-		msg := "no registrar option available for injection into the application starter via NewFrameApplication"
-		ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(msg)
-		panic(msg)
+		if ctx != nil && ctx.GetLogger() != nil && ctx.GetConfig() != nil {
+			ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(ErrNoFrameStarterOption.Error())
+		}
+		return nil, ErrNoFrameStarterOption
 	}
 
 	for _, opt := range opts {
 		opt(fApp)
 	}
 
-	return fApp
+	return fApp, nil
 }
 
 // GetContext 获取应用上下文

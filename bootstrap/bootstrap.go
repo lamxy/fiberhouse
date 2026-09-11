@@ -8,6 +8,7 @@
 package bootstrap
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -318,8 +319,28 @@ func NewWriterSync(cfg appconfig.IAppConfig, filename string) io.WriteCloser {
 	return writer.NewSyncLumberjackWriter(cfg, filename)
 }
 
+// ErrAsyncWriterUnavailable 标记异步日志 writer 不可用。
+//
+// 两种装配失败：配置指定的 writer 类型未注册（配置键写错），或注册的实例不是
+// io.WriteCloser（容器 key 冲突）。
+var ErrAsyncWriterUnavailable = errors.New("fiberhouse/bootstrap: async log writer is unavailable")
+
 // NewWriterAsync 异步写日志
+//
+// 装配失败时 panic。需要处理该错误的调用方请改用 NewWriterAsyncWithError。
 func NewWriterAsync(cfg appconfig.IAppConfig, filename string) io.WriteCloser {
+	logWriter, err := NewWriterAsyncWithError(cfg, filename)
+	if err != nil {
+		panic(err)
+	}
+	return logWriter
+}
+
+// NewWriterAsyncWithError 与 NewWriterAsync 相同，但装配失败时返回错误而非 panic。
+//
+// 日志 writer 装配失败是可恢复的：调用方可以退回同步 writer 或 console，
+// 让应用带着降级的日志继续启动，而不是在启动期直接终止进程。
+func NewWriterAsyncWithError(cfg appconfig.IAppConfig, filename string) (io.WriteCloser, error) {
 	// 注册默认异步Writer写入器
 	cfg.GetContainer().Register(constant.LogWriterKeyPrefix+"chan", func() (interface{}, error) {
 		return writer.NewAsyncChannelWriter(cfg, filename), nil
@@ -333,11 +354,13 @@ func NewWriterAsync(cfg appconfig.IAppConfig, filename string) io.WriteCloser {
 	// 获取配置的异步writer写入器实例
 	internalWriter, err := cfg.GetContainer().Get(constant.LogWriterKeyPrefix + writerType)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to get async logger: '%s' from container: %v", writerType, err))
+		return nil, fmt.Errorf("%w: get async log writer '%s' from container: %w",
+			ErrAsyncWriterUnavailable, writerType, err)
 	}
 	logWriter, ok := internalWriter.(io.WriteCloser)
 	if !ok {
-		panic(fmt.Sprintf("Async logger writer type '%s' is not io.WriteCloser", writerType))
+		return nil, fmt.Errorf("%w: async log writer '%s' is %T, not an io.WriteCloser",
+			ErrAsyncWriterUnavailable, writerType, internalWriter)
 	}
-	return logWriter
+	return logWriter, nil
 }
