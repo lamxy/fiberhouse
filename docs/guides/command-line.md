@@ -1,6 +1,6 @@
 # 命令行应用
 
-FiberHouse 的命令行形态基于 urfave/cli v2。它复用配置、日志、`GlobalManager` 和应用实例 key 契约，但不经过 Web 的 `FiberHouse.RunServer`、Provider/Manager/Location 或 HTTP 生命周期。当前 CLI 已有可达实现，错误返回、健康检查和资源关闭仍需应用补齐，因此属于实验性能力。
+FiberHouse 的命令行形态基于 urfave/cli v2。它复用配置、日志、`GlobalManager` 和应用实例 key 契约，但不经过 Web 的 `FiberHouse.RunServer`、Provider/Manager/Location 或 HTTP 生命周期。当前 CLI 的创建、命令注册、运行与资源关闭四条路径均有明确契约：命令执行错误经 `RunCommandStarterWithError` 返回给调用方（`RunCommandStarter` 保持 void 签名但把错误写入 CLI 日志器），关闭段以 `defer` 释放全局对象，健康检查是一次性的因而没有需要停止的后台 ticker。在[《功能状态》](../reference/feature-status.md)中属于稳定公共能力。
 
 ## 三层组成
 

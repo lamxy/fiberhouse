@@ -141,7 +141,7 @@ CoreType: constant.CoreTypeWithGin
 curl http://localhost:8080/gin/example/hello/world
 ```
 
-Fiber handler 通过返回 `error` 进入统一错误链；Gin handler 需要调用 `c.Error(err)`。Gin 当前属于实验性能力；现有 TLS 分支可加载有效证书并启动 HTTPS，但尚无真实 TLS listener/握手集成验证。完整差异见[Web 运行时](guides/web-runtime.md)。
+Fiber handler 通过返回 `error` 进入统一错误链；Gin handler 需要调用 `c.Error(err)`。Gin 已在[《功能状态》](reference/feature-status.md)中晋级为稳定公共能力，并有 loopback listener 驱动的真实 TLS 握手与 `Shutdown` 回归；已记载的限制是多个 Gin engine 共享一个框架日志器，逐 engine 原生诊断隔离不受支持。完整差异见[Web 运行时](guides/web-runtime.md)。
 
 ## 外部项目需要完成的装配
 
@@ -233,5 +233,5 @@ WithPManagers(fiberhouse.DefaultPManagers(appCtx).List()...)
 
 - 先读[架构总览](concepts/architecture.md)理解 Starter、注册器与扩展系统。
 - 用[配置与引导](guides/configuration.md)核对部署配置与环境覆盖。
-- 用[功能状态](reference/feature-status.md)确认计划采用的组件是否仍有实验性限制。
+- 用[功能状态](reference/feature-status.md)确认计划采用的组件的支持级别与已记载限制。
 - 需要跟踪示例业务层时阅读[示例目录](reference/examples.md)；数据库 CRUD 与 Wire 生成细节保留在那里和源码中，不在本入门页展开。

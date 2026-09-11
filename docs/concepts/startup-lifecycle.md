@@ -1,6 +1,6 @@
 # Web 启动生命周期
 
-本文记录 `(*FiberHouse).RunServer` 的当前执行顺序。它不是对所有 `DefaultPLocation` 名称的推测，也不表示每个传入 Starter 的 Manager 都会被内置实现加载。Provider 系统整体为[已接入](../reference/feature-status.md)，但扩展运行位点与关闭链仍是实验性能力。
+本文记录 `(*FiberHouse).RunServer` 的当前执行顺序。它不是对所有 `DefaultPLocation` 名称的推测，也不表示每个传入 Starter 的 Manager 都会被内置实现加载。Provider 系统与扩展运行位点/关闭链均已在[《功能状态》](../reference/feature-status.md)中晋级为稳定公共能力；需注意的是该位点在仓库内唯一的默认消费者是 pprof 关闭提供者，而它只在 test profile 下启用。
 
 ## `RunServer` 之前已经发生什么
 

@@ -11,14 +11,14 @@ FiberHouse 是一个用 Go 组装 Web 应用的框架。它把配置与日志引
 - `RunServer` 按 `Type` 分发 Provider，按 Location 取出 Manager，创建 `FrameStarter` 与 `CoreStarter`，再驱动 Web 生命周期；
 - `WebApplication` 把两个 Starter 组合成 `ApplicationStarter`，让上下文能够回到完整启动器。
 
-框架核心不创建业务数据库、缓存、Repository、Service 或 API，也不把 `example_main`、`example_config`、`example_application` 变成生产模板。异步任务虽然由 `FrameStarter` 提供启动入口，但仍要求应用注册 `TaskRegister`、容器实例与外部 Redis，因此在功能分级中属于实验性应用能力，而不是框架核心盒子的一部分。
+框架核心不创建业务数据库、缓存、Repository、Service 或 API，也不把 `example_main`、`example_config`、`example_application` 变成生产模板。异步任务虽然由 `FrameStarter` 提供启动入口，但仍要求应用注册 `TaskRegister`、容器实例与外部 Redis——它是应用能力而非框架核心盒子的一部分，其生命周期契约与验证证据已闭合（见[《功能状态》](../reference/feature-status.md)）。
 
 ## Web 与 CLI 两种运行形态
 
 | 形态 | 上下文 | 组合启动器 | 运行入口 | 当前边界 |
 |---|---|---|---|---|
-| Web | `IApplicationContext` / `AppContext` | `FrameStarter` + `CoreStarter` → `ApplicationStarter` | `(*FiberHouse).RunServer` | Fiber 已接入；Gin 有可达实现但整体仍为实验性 |
-| CLI | `ICommandContext` / `CmdContext` | `FrameCmdStarter` + `CoreCmdStarter` → `CommandStarter` | `commandstarter.RunCommandStarter` | 独立于 `RunServer`，错误返回与资源回收尚未统一，属实验性 |
+| Web | `IApplicationContext` / `AppContext` | `FrameStarter` + `CoreStarter` → `ApplicationStarter` | `(*FiberHouse).RunServer` | Fiber 与 Gin 均已晋级；Gin 的多 engine 共享框架日志器仍是已记载限制 |
+| CLI | `ICommandContext` / `CmdContext` | `FrameCmdStarter` + `CoreCmdStarter` → `CommandStarter` | `commandstarter.RunCommandStarter` | 独立于 `RunServer`；错误经 `RunCommandStarterWithError` 返回，关闭段以 `defer` 回收全局对象 |
 
 两种形态共享 `IContext` 的配置、日志、全局容器、验证器访问和 `IStarter` 回指，但它们不是同一条生命周期。Web 由 Provider/Manager/Location 选择 Frame 与 HTTP Core；CLI 当前直接组装 urfave/cli Starter，`RunCommandStarter` 依次初始化 core、错误处理、commands、全局选项和全局对象，然后运行命令。
 

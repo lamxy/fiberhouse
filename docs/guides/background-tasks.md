@@ -2,7 +2,7 @@
 
 FiberHouse 用 asynq 封装 Redis 队列，提供 `TaskWorker`、`TaskDispatcher` 和应用侧 `TaskRegister` 契约。框架负责在 Web 启动链的任务位点调用注册器、挂载 handler 并选择是否启动 worker；任务类型、Redis 实例、队列配置、dispatcher/worker initializer 和资源回收都由应用决定。
 
-这套能力已有运行路径，但统一错误传播和关闭编排尚不完整，因此当前属于实验性能力。
+这套能力的创建、运行、失败与关闭四条路径均有明确契约：`TaskDispatcher.Close` 与 `TaskWorker.Shutdown` 已补齐并实作 `globalmanager.Closable`，经容器 `ReleaseAll` 回收，`RunAsync` 不再恒返回 nil。在[《功能状态》](../reference/feature-status.md)中属于稳定公共能力。
 
 ## 三个角色
 
