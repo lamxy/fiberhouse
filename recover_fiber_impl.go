@@ -130,7 +130,14 @@ func (f *FiberRecovery) TraceID(ctx adaptorctx.ICoreContext, flag ...string) str
 		ok bool
 	)
 	if c, ok = ctx.GetCtx().(*fiber.Ctx); !ok {
-		panic("ContextProvider is not *fiber.Ctx")
+		// 运行期不 panic：本方法在 panic 恢复路径上被调用，此时进程正在处理一个
+		// 已经出错的请求，再抛一次 panic 只会让恢复中间件自身崩溃。
+		//
+		// 条件 4 只豁免「装配期 panic + 有 error 替代入口」，运行期 panic 始终
+		// 不满足（feature-status.md:124）。TraceID 的签名只返回 string，没有
+		// error 通道，因此正确处置是返回空值降级——与 hertzcore 的同名实现一致
+		// （hertz_recovery.go:121-123）。
+		return ""
 	}
 	// 请求requestId
 	var (

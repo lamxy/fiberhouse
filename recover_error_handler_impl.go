@@ -9,7 +9,9 @@ package fiberhouse
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	adaptorctx "github.com/lamxy/fiberhouse/adaptor/context"
@@ -97,30 +99,77 @@ func (r *ErrorHandler) SetRecoverManager(manager IProviderManager) {
 	r.recoverManager = manager
 }
 
+// ErrRecoverMiddlewareUnavailable 标记恢复中间件装配失败。
+//
+// 三种失败：恢复中间件管理器未设置、提供者加载失败、加载结果未实现 IRecover。
+// 三者都发生在中间件注册期，调用方有条件改用其他 recovery 实现或降级。
+var ErrRecoverMiddlewareUnavailable = errors.New("fiberhouse: recover middleware is unavailable")
+
+// 两处失败的 panic 文本。抽成常量是为了让 RecoverMiddleware 委派回 panic 时
+// 能还原出与旧实现逐字一致的值——既有调用方（含测试）依赖具体的 panic 值。
+const (
+	msgRecoverManagerNotSet = "Recovery: recover manager is not set"
+	msgRecoverNotIRecover   = "Recovery: loaded recover provider does not implement IRecover"
+)
+
 // RecoverMiddleware 返回恢复中间件函数，根据核心类型返回对应的中间件
 // 通过恢复中间件管理器依据启动配置选择相应的提供者自动返回对应的恢复中间件
+// 装配失败时 panic。需要处理该错误的调用方请改用 RecoverMiddlewareWithError。
+//
+// panic 值与文本保持不变：调用方（含既有测试）可能依赖具体的 panic 值，
+// 因此这里不统一包装成 error 再 panic，而是原样抛出各自的值。
 func (r *ErrorHandler) RecoverMiddleware(config ...RecoverConfig) any {
+	middleware, err := r.RecoverMiddlewareWithError(config...)
+	if err != nil {
+		panic(recoverPanicValue(err))
+	}
+	return middleware
+}
+
+// RecoverMiddlewareWithError 与 RecoverMiddleware 相同，但装配失败时返回错误
+// 而非 panic。
+//
+// 三种失败都是装配期的错误：恢复中间件管理器未设置（应用没有装配 recovery
+// provider 集合）、提供者加载失败、加载结果未实现 IRecover。三者都发生在
+// 中间件注册期，调用方有条件改用其他 recovery 实现或降级。
+func (r *ErrorHandler) RecoverMiddlewareWithError(config ...RecoverConfig) (any, error) {
 	// 如果管理器未设置，尝试从位置点获取
 	if r.recoverManager == nil {
-		msg := "Recovery: recover manager is not set"
-		r.GetContext().GetLogger().ErrorWith(r.GetContext().GetConfig().LogOriginRecover()).Msg(msg)
-		panic(msg)
+		r.GetContext().GetLogger().ErrorWith(r.GetContext().GetConfig().LogOriginRecover()).
+			Msg(msgRecoverManagerNotSet)
+		return nil, fmt.Errorf("%w: %s", ErrRecoverMiddlewareUnavailable, msgRecoverManagerNotSet)
 	}
 
 	// 通过管理器加载对应核心类型的恢复中间件提供者
 	recovery, err := r.recoverManager.LoadProvider()
 
 	if err != nil {
-		msg := "Recovery: failed to load recover provider"
-		r.AppCtx.GetLogger().Error(r.AppCtx.GetConfig().LogOriginRecover()).Err(err).Msg(msg)
-		panic(err.Error())
+		r.AppCtx.GetLogger().Error(r.AppCtx.GetConfig().LogOriginRecover()).Err(err).
+			Msg("Recovery: failed to load recover provider")
+		return nil, fmt.Errorf("%w: load recover provider: %w", ErrRecoverMiddlewareUnavailable, err)
 	}
 	if recoverMiddleware, ok := recovery.(IRecover); ok {
-		return recoverMiddleware.RecoverPanic(config...)
+		return recoverMiddleware.RecoverPanic(config...), nil
 	}
-	msg := "Recovery: loaded recover provider does not implement IRecover"
-	r.AppCtx.GetLogger().Error(r.AppCtx.GetConfig().LogOriginRecover()).Msg(msg)
-	panic(msg)
+	r.AppCtx.GetLogger().Error(r.AppCtx.GetConfig().LogOriginRecover()).Msg(msgRecoverNotIRecover)
+	return nil, fmt.Errorf("%w: %s", ErrRecoverMiddlewareUnavailable, msgRecoverNotIRecover)
+}
+
+// recoverPanicValue 还原各失败分支原本的 panic 值。
+//
+// 旧实现三处 panic 的值各不相同：两处是字符串常量，一处是被包装错误的
+// Error() 文本。调用方可能依赖这些具体值（既有测试正是如此），因此委派回
+// panic 时必须逐一还原，而不是统一抛出包装后的 error。
+func recoverPanicValue(err error) any {
+	switch {
+	case strings.Contains(err.Error(), msgRecoverManagerNotSet):
+		return msgRecoverManagerNotSet
+	case strings.Contains(err.Error(), msgRecoverNotIRecover):
+		return msgRecoverNotIRecover
+	default:
+		// 提供者加载失败：旧实现 panic 的是底层错误的文本。
+		return errors.Unwrap(err).Error()
+	}
 }
 
 // DefaultStackTraceHandler 记录请求上下文信息 + panic信息 + 堆栈信息

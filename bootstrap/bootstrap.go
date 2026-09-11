@@ -212,7 +212,7 @@ func NewConfigOnce(path ...string) appconfig.IAppConfig {
 				return key, v
 			}), nil)
 			if err != nil {
-				panic("LoadEnv: " + err.Error())
+				recordConfigLoadFailure(fmt.Errorf("LoadEnv: %w", err))
 			}
 			return aConf
 		})
@@ -244,7 +244,7 @@ func NewConfigOnce(path ...string) appconfig.IAppConfig {
 				return key, v
 			}), nil)
 			if err != nil {
-				panic("LoadEnvConf: " + err.Error())
+				recordConfigLoadFailure(fmt.Errorf("LoadEnvConf: %w", err))
 			}
 			return aConf
 		})
@@ -317,6 +317,42 @@ func NewLoggerOnce(cfg appconfig.IAppConfig, path ...string) LoggerWrapper {
 // NewWriterSync 同步写日志
 func NewWriterSync(cfg appconfig.IAppConfig, filename string) io.WriteCloser {
 	return writer.NewSyncLumberjackWriter(cfg, filename)
+}
+
+// ErrConfigBootstrapFailed 标记引导期配置加载失败。
+//
+// 环境变量加载失败发生在 cfgOnce 的初始化闭包内，且外层 LoadFunc 回调只返回
+// IAppConfig、没有 error 通道，因此失败只能先记录、再由 NewConfigOnceWithError
+// 取回。
+var ErrConfigBootstrapFailed = errors.New("fiberhouse/bootstrap: config bootstrap failed")
+
+// configBootstrapErr 保存引导期配置加载失败的原因。
+//
+// 与 AppConfigured 一同被 cfgOnce 守卫：闭包只执行一次，失败之后的调用不会
+// 重跑，若不记录错误，后续调用便无从得知配置是带伤加载的。
+var configBootstrapErr error
+
+// recordConfigLoadFailure 记录引导期配置加载失败。
+//
+// 只记录首个失败：后续失败往往是首个失败的连锁反应，覆盖它反而丢掉根因。
+func recordConfigLoadFailure(err error) {
+	if err == nil || configBootstrapErr != nil {
+		return
+	}
+	configBootstrapErr = fmt.Errorf("%w: %w", ErrConfigBootstrapFailed, err)
+}
+
+// NewConfigOnceWithError 与 NewConfigOnce 相同，但引导期配置加载失败时一并返回
+// 错误。
+//
+// 环境变量加载失败此前直接 panic，调用方无从选择。现在改为记录并在此返回：
+// 环境变量解析失败通常意味着某个 APP_ENV_ / APP_CONF_ 变量格式有误，应用往往
+// 仍能以文件配置继续启动，因此这类失败应当可被处理而不是终止进程。
+//
+// 返回的配置实例始终可用：失败只影响那一层环境变量覆盖，其余配置照常加载。
+func NewConfigOnceWithError(path ...string) (appconfig.IAppConfig, error) {
+	cfg := NewConfigOnce(path...)
+	return cfg, configBootstrapErr
 }
 
 // ErrAsyncWriterUnavailable 标记异步日志 writer 不可用。

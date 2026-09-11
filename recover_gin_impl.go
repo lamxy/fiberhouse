@@ -120,7 +120,10 @@ func (g *GinRecovery) TraceID(ctx adaptorctx.ICoreContext, flag ...string) strin
 		ok bool
 	)
 	if c, ok = ctx.GetCtx().(*gin.Context); !ok {
-		panic("ContextProvider is not *gin.Context")
+		// 运行期不 panic，理由同 recover_fiber_impl.go 的同名方法：本方法在 panic
+		// 恢复路径上被调用，再抛一次 panic 会让恢复中间件自身崩溃。返回空值降级，
+		// 与 hertzcore 的同名实现一致。
+		return ""
 	}
 	// 请求requestId
 	return requestid.Get(c)

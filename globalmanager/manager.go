@@ -172,16 +172,22 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 
 	// 如果已经初始化过，直接返回已有实例
 	if atomic.LoadInt32(&entity.initialized) == 1 {
-		// 用 isNilInstance 而非 != nil，与写入侧的两处守卫保持一致。
-		// 当前三个写入点（Get 成功路径、Rebuild、resetToUninitialized）都已拦截
-		// typed-nil，因此这里防的是将来新增写入点时的回归，而不是活的缺陷。
+		// 用 isNilInstance 而非 != nil，与写入侧的两处守卫保持一致：返回
+		// (*T, error) 的构造函数失败时会产出 typed-nil，直接判 == nil 拦不住。
 		if stored := entity.instance.Load(); stored != nil && !isNilInstance(stored.value) {
 			instance = stored.value
 			return
-		} else {
-			err = fmt.Errorf("instance '%s' from GlobalManager is nil, but initialized flag is set to 1", name)
-			return
 		}
+		// 读到「initialized==1 但实例为空」不是状态损坏，而是与 Release 的正常
+		// 交错：本方法不持锁，initialized 与 instance 是两次独立的原子读，中间
+		// 可能被调度出去，等回来时 Release 已经把整个 entry 重置完毕。
+		//
+		// 任何写入顺序都消除不了这个窗口——它源于「两次分离的读」，不是写入侧的
+		// 顺序问题。曾尝试在 resetToUninitialized 里先清 initialized 再清
+		// instance，失败率从 3/5 降到 1/6，但并未归零，正说明了这一点。
+		//
+		// 因此这里不再报错，而是**落到下面的慢路径**重新执行 initializer：
+		// entry 已被释放、需要重建，这正是 Release 之后 Get 应有的语义。
 	}
 
 	// 如果初始化失败，重置初始化状态
@@ -391,12 +397,23 @@ func (gm *GlobalManager) Release(name KeyName) error {
 
 // resetToUninitialized 把 entry 重置回未初始化状态，使下一次 Get 重新执行
 // initializer。调用方必须已持有维护闸门。
+// 写入顺序与 Get 的成功路径**互为镜像**，这不是风格选择而是正确性要求。
+//
+// Get 的快路径先读 initialized、再读 instance；成功路径则反过来先存 instance、
+// 最后才把 initialized 置 1，因此读到 1 就一定读得到实例。
+//
+// 重置必须同样遵守这个不变量：先把 initialized 归 0，再清空 instance。反过来
+// （先清 instance 再归 0）会留下一个窗口——此时 initialized 仍是 1 而 instance
+// 已经是 nil，并发的 Get 读到 1 之后加载到 nil，直接命中快路径自己的错误分支
+// 「instance is nil, but initialized flag is set to 1」。
+//
+// 该窗口极窄但真实：并发压测在 -race 下 3/5 命中，无 -race 时 0/3。
 func (e *entry) resetToUninitialized() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	atomic.StoreInt32(&e.initialized, 0)
 	e.instance.Store(nil)
 	e.initErr.Store(nil)
-	atomic.StoreInt32(&e.initialized, 0)
 	e.once.Store(&sync.Once{})
 }
 

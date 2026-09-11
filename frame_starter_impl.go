@@ -11,6 +11,7 @@ package fiberhouse
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -127,6 +128,21 @@ func releaseApplicationGlobals(ctx IApplicationContext) {
 // 装配期的用法错误：没有选项就没有注册器，启动器无事可做。
 var ErrNoFrameStarterOption = errors.New(
 	"fiberhouse: no registrar option available for injection into the application starter")
+
+// ErrApplicationNotRegistered 标记应用注册器尚未注册。
+//
+// 装配期的顺序错误：多个注册方法都要求先 RegisterApplication。
+//
+// 文本与旧实现 panic 的 error 逐字一致：RegisterGlobalInitializers 现在委派给
+// 姊妹方法后再 panic，既有调用方（含测试）依赖这个具体文本，不能因改造而变。
+var ErrApplicationNotRegistered = errors.New(
+	"application that implements the ApplicationRegister interface is nil. Please RegisterApplication first")
+
+// ErrTaskWorkerUnavailable 标记异步任务 worker 无法从容器取得。
+//
+// 装配期失败：应用启用了 task server 但 worker 实例解析失败（key 未注册、
+// 或注册的对象类型不符）。
+var ErrTaskWorkerUnavailable = errors.New("fiberhouse: task worker is unavailable")
 
 // NewFrameApplication 创建一个应用启动器对象
 //
@@ -252,17 +268,35 @@ func (fa *FrameApplication) RegisterApplicationGlobals(managers ...IProviderMana
 }
 
 // RegisterGlobalInitializers 注册全局对象初始化器
+// 未注册应用时 panic。需要处理该错误的调用方请改用
+// RegisterGlobalInitializersWithError。
 func (fa *FrameApplication) RegisterGlobalInitializers() {
+	if err := fa.RegisterGlobalInitializersWithError(); err != nil {
+		panic(err)
+	}
+}
+
+// RegisterGlobalInitializersWithError 与 RegisterGlobalInitializers 相同，但未
+// 注册应用时返回错误而非 panic。
+//
+// 装配期的顺序错误：本方法要求先 RegisterApplication。一并补上原实现缺少的
+// 类型断言检查——原代码直接断言，类型不符时 panic 信息不含任何上下文。
+func (fa *FrameApplication) RegisterGlobalInitializersWithError() error {
 	if fa.GetContext().Phase() >= PhaseServing {
-		return
+		return nil
 	}
 
 	if fa.GetApplication() == nil {
-		panic(errors.New("application that implements the ApplicationRegister interface is nil. Please RegisterApplication first"))
+		return ErrApplicationNotRegistered
 	}
 
-	appRegister := fa.GetApplication().(ApplicationRegister)
+	appRegister, ok := fa.GetApplication().(ApplicationRegister)
+	if !ok {
+		return fmt.Errorf("%w: registered application is %T, not an ApplicationRegister",
+			ErrApplicationNotRegistered, fa.GetApplication())
+	}
 	fa.GetContext().GetContainer().Registers(appRegister.ConfigGlobalInitializers())
+	return nil
 }
 
 // InitializeGlobalRequired 初始化应用启动时必要的全局对象
@@ -381,9 +415,16 @@ func (fa *FrameApplication) RegisterTaskServer(managers ...IProviderManager) {
 			return
 		}
 		// 从容器获取任务工作者实例
+		//
+		// 解析失败此前直接 panic。改为记录并返回：task server 是可选能力
+		// （application.task.enableServer 控制），它起不来不应连带打断整个
+		// 应用启动——Web 服务本身仍可正常对外提供。
 		worker, err := fa.GetTask().GetTaskWorker(fa.GetContext().GetStarter().GetApplication().GetTaskServerKey())
 		if err != nil {
-			panic(err)
+			fa.GetContext().GetLogger().ErrorWith(fa.GetContext().GetConfig().LogOriginFrame()).
+				Err(fmt.Errorf("%w: %w", ErrTaskWorkerUnavailable, err)).
+				Msg("RegisterTaskServer failed, the async task server will not start")
+			return
 		}
 		// 获取并注册批量任务处理器
 		worker.RegisterHandlers(fa.GetTask().GetTaskHandlerMap())
