@@ -90,7 +90,7 @@ MsgPack 和 Protobuf 只改变响应 body 编码，不改变 HTTP status 或业�
 
 - `ResponseWrap.SendWithCtx` 自身 `defer r.Release()`；JSON 分支又调用会自行释放的 `RespInfo.JsonWithCtx`，使同一个内层响应可能被重复放回池。
 - 二进制分支的 `resp.From(r.IResponse, true)` 已释放源 `RespInfo`，facade 返回时又会通过 wrapper 再释放源对象。
-- Protobuf `SendWithCtx` 会释放自身；MsgPack `SendWithCtx` 不会释放自身，因此两种二进制实现的所有权不对称。
+- ~~Protobuf `SendWithCtx` 会释放自身；MsgPack `SendWithCtx` 不会释放自身，因此两种二进制实现的所有权不对称。~~ **该描述已过时**：两种实现现在是对称的，`SendWithCtx` 与 `JsonWithCtx` 四个方法都以 `defer r.Release()` 开头（`response_msgpack_impl.go:53,77`、`response_proto_impl.go:69,86`），由 `response_binary_ownership_test.go` 的对称性用例钉住。
 - `ResponseWrap` 没有覆盖 `JsonWithCtx`。经 facade 构造后若直接调用提升的 `JsonWithCtx`，内层 `RespInfo` 会归还，但外层 wrapper 没有对应归还动作。
 - `ICoreContext.JSON/Send` 会归还 adaptor；只读 header 或没有发送动作的路径不会。
 
