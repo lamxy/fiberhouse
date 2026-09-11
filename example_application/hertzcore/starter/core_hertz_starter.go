@@ -5,7 +5,7 @@
 // 新增核心引擎不需要修改框架任何一行程式碼。
 //
 // 各生命週期方法的統一骨架（自定義核心的實作範式）：
-//  1. 以 GetAppState() 短路已運行的應用；
+//  1. 以 Phase() >= fiberhouse.PhaseServing 短路已運行的應用；
 //  2. 呼叫 fiberhouse.LoadProviderManagersAtLocation 分派該位點的 provider，
 //     若回傳 replaced 為 true 表示已被擴展替代組接管，直接返回；
 //  3. 執行本核心的預設邏輯。
@@ -85,7 +85,7 @@ func (ch *CoreWithHertz) initializationFailed() bool {
 
 // InitCoreApp 初始化核心應用（基於 server.Hertz）
 func (ch *CoreWithHertz) InitCoreApp(fs fiberhouse.FrameStarter, managers ...fiberhouse.IProviderManager) {
-	if ch.coreApp != nil || ch.initializationFailed() || ch.GetAppContext().GetAppState() {
+	if ch.coreApp != nil || ch.initializationFailed() || ch.GetAppContext().Phase() >= fiberhouse.PhaseServing {
 		return
 	}
 
@@ -228,7 +228,7 @@ func (ch *CoreWithHertz) resolveJSONCodec(fs fiberhouse.FrameStarter, managers .
 
 // RegisterAppMiddleware 註冊應用級中間件
 func (ch *CoreWithHertz) RegisterAppMiddleware(fs fiberhouse.FrameStarter, managers ...fiberhouse.IProviderManager) {
-	if ch.initializationFailed() || ch.GetAppContext().GetAppState() {
+	if ch.initializationFailed() || ch.GetAppContext().Phase() >= fiberhouse.PhaseServing {
 		return
 	}
 
@@ -295,7 +295,7 @@ func (ch *CoreWithHertz) loggerMiddleware() app.HandlerFunc {
 
 // RegisterModuleInitialize 註冊模組級中間件與路由處理器
 func (ch *CoreWithHertz) RegisterModuleInitialize(fs fiberhouse.FrameStarter, managers ...fiberhouse.IProviderManager) {
-	if ch.initializationFailed() || ch.GetAppContext().GetAppState() {
+	if ch.initializationFailed() || ch.GetAppContext().Phase() >= fiberhouse.PhaseServing {
 		return
 	}
 
@@ -317,7 +317,7 @@ func (ch *CoreWithHertz) RegisterModuleInitialize(fs fiberhouse.FrameStarter, ma
 
 // RegisterModuleSwagger 註冊模組級 swagger
 func (ch *CoreWithHertz) RegisterModuleSwagger(fs fiberhouse.FrameStarter, managers ...fiberhouse.IProviderManager) {
-	if ch.initializationFailed() || ch.GetAppContext().GetAppState() {
+	if ch.initializationFailed() || ch.GetAppContext().Phase() >= fiberhouse.PhaseServing {
 		return
 	}
 
@@ -338,7 +338,7 @@ func (ch *CoreWithHertz) RegisterModuleSwagger(fs fiberhouse.FrameStarter, manag
 
 // RegisterAppHooks 註冊核心應用生命週期鉤子
 func (ch *CoreWithHertz) RegisterAppHooks(fs fiberhouse.FrameStarter, managers ...fiberhouse.IProviderManager) {
-	if ch.initializationFailed() || ch.GetAppContext().GetAppState() {
+	if ch.initializationFailed() || ch.GetAppContext().Phase() >= fiberhouse.PhaseServing {
 		return
 	}
 
@@ -359,6 +359,11 @@ func (ch *CoreWithHertz) RegisterAppHooks(fs fiberhouse.FrameStarter, managers .
 	// 框架層預設鉤子：啟動日誌與關閉時的全域資源清理
 	appCtx := ch.GetAppContext()
 	ch.coreApp.OnRun = append(ch.coreApp.OnRun, func(c ctxpkg.Context) error {
+		// 監聽已真正建立，此刻才是 PhaseServing 的置位時機；不能等阻塞的 Run 返回
+		// 之後再置位——那時伺服器已經停止。與 Fiber 的 OnListen hook 同義。
+		if err := appCtx.TransitionTo(fiberhouse.PhaseServing); err != nil {
+			ch.logErr(err, "App phase transition to serving was rejected")
+		}
 		ch.logInfo("Hertz app listening on " + ch.listenAddr())
 		return nil
 	})
@@ -392,7 +397,7 @@ func (ch *CoreWithHertz) AppCoreRun(managers ...fiberhouse.IProviderManager) err
 	if ch.initializationFailed() {
 		return ch.initErr
 	}
-	if ch.GetAppContext().GetAppState() {
+	if ch.GetAppContext().Phase() >= fiberhouse.PhaseServing {
 		return nil
 	}
 
@@ -411,7 +416,8 @@ func (ch *CoreWithHertz) AppCoreRun(managers ...fiberhouse.IProviderManager) err
 		return err
 	}
 
-	ch.GetAppContext().RegisterAppState(true)
+	// 這裡不再置位「已啟動」：Run 返回意味著伺服器已經停止。
+	// PhaseServing 由 RegisterAppHooks 安裝的 OnRun 鉤子在監聽建立時置位。
 	return nil
 }
 
@@ -422,12 +428,19 @@ func (ch *CoreWithHertz) Shutdown(managers ...fiberhouse.IProviderManager) error
 	// 失敗、引擎關閉失敗），寫在方法尾端的話這些路徑全部拿不到釋放。
 	defer ch.releaseHertzGlobals()
 
+	// 關閉結束時推進到 PhaseTerminated。
+	defer func() { _ = ch.GetAppContext().TransitionTo(fiberhouse.PhaseTerminated) }()
+
 	if ch.initializationFailed() {
 		return ch.initErr
 	}
-	if ch.GetAppContext().GetAppState() {
+
+	// 守衛讀的是「關閉是否已經開始」，而不再是舊的 GetAppState()——後者在使用方
+	// 提前 pin 之後恆為 true，會讓 Shutdown 直接返回並跳過全部資源釋放。
+	if ch.GetAppContext().Phase() >= fiberhouse.PhaseShuttingDown {
 		return nil
 	}
+	_ = ch.GetAppContext().TransitionTo(fiberhouse.PhaseShuttingDown)
 
 	_, replaced, err := fiberhouse.LoadProviderManagersAtLocation(
 		managers, fiberhouse.ProviderLocationDefault().LocationServerShutdown, ch)

@@ -88,7 +88,7 @@ module/example-hertzapi-module/api/    该核心的传输层 handler 与路由
 ```go
 func (ch *CoreWithHertz) InitCoreApp(fs fiberhouse.FrameStarter, managers ...fiberhouse.IProviderManager) {
 	// 1. 短路已运行的应用
-	if ch.coreApp != nil || ch.initializationFailed() || ch.GetAppContext().GetAppState() {
+	if ch.coreApp != nil || ch.initializationFailed() || ch.GetAppContext().Phase() >= fiberhouse.PhaseServing {
 		return
 	}
 

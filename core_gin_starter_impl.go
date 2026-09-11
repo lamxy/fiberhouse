@@ -80,7 +80,7 @@ func (cg *CoreWithGin) InitCoreApp(fs FrameStarter, managers ...IProviderManager
 	if cg.initializationTerminal() {
 		return
 	}
-	if cg.GetAppContext().GetAppState() {
+	if cg.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -269,7 +269,7 @@ func (cg *CoreWithGin) RegisterAppMiddleware(fs FrameStarter, managers ...IProvi
 	if cg.initializationFailed() {
 		return
 	}
-	if cg.GetAppContext().GetAppState() {
+	if cg.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -373,7 +373,7 @@ func (cg *CoreWithGin) RegisterModuleInitialize(fs FrameStarter, managers ...IPr
 	if cg.initializationFailed() {
 		return
 	}
-	if cg.GetAppContext().GetAppState() {
+	if cg.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -410,7 +410,7 @@ func (cg *CoreWithGin) RegisterModuleSwagger(fs FrameStarter, managers ...IProvi
 	if cg.initializationFailed() {
 		return
 	}
-	if cg.GetAppContext().GetAppState() {
+	if cg.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -443,7 +443,7 @@ func (cg *CoreWithGin) RegisterAppHooks(fs FrameStarter, managers ...IProviderMa
 	if cg.initializationFailed() {
 		return
 	}
-	if cg.GetAppContext().GetAppState() {
+	if cg.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -480,7 +480,7 @@ func (cg *CoreWithGin) AppCoreRun(managers ...IProviderManager) error {
 		return cg.initErr
 	}
 
-	if cg.GetAppContext().GetAppState() {
+	if cg.GetAppContext().Phase() >= PhaseServing {
 		return nil
 	}
 

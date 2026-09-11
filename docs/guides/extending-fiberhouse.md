@@ -322,7 +322,7 @@ func (p *EchoCoreProvider) Initialize(
 
 ```go
 func (c *CoreWithEcho) InitCoreApp(fs fh.FrameStarter, managers ...fh.IProviderManager) {
-	if c.GetAppContext().GetAppState() {
+	if c.GetAppContext().Phase() >= fiberhouse.PhaseServing {
 		return
 	}
 	_, replaced, err := fh.LoadProviderManagersAtLocation(

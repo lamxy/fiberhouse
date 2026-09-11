@@ -182,7 +182,7 @@ func (fa *FrameApplication) GetTask() TaskRegister {
 
 // RegisterToCtx 注册应用启动器对象到应用上下文
 func (fa *FrameApplication) RegisterToCtx(as ApplicationStarter) {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	fa.GetContext().RegisterStarterApp(as)
@@ -195,7 +195,7 @@ func (fa *FrameApplication) RegisterToCtx(as ApplicationStarter) {
 // 注册自定义新增语言的验证器实例到验证其包装器中
 // 注册自定义验证器tag和tag的语言翻译
 func (fa *FrameApplication) RegisterApplicationGlobals(managers ...IProviderManager) {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -234,7 +234,7 @@ func (fa *FrameApplication) RegisterApplicationGlobals(managers ...IProviderMana
 
 // RegisterGlobalInitializers 注册全局对象初始化器
 func (fa *FrameApplication) RegisterGlobalInitializers() {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -248,7 +248,7 @@ func (fa *FrameApplication) RegisterGlobalInitializers() {
 
 // InitializeGlobalRequired 初始化应用启动时必要的全局对象
 func (fa *FrameApplication) InitializeGlobalRequired() {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	if fa.GetApplication() != nil {
@@ -266,7 +266,7 @@ func (fa *FrameApplication) InitializeGlobalRequired() {
 
 // InitializeCustomValidateInitializers 初始化自定义新增语言的验证器到验证包装器
 func (fa *FrameApplication) InitializeCustomValidateInitializers() {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	if fa.GetApplication() != nil {
@@ -294,7 +294,7 @@ func (fa *FrameApplication) InitializeCustomValidateInitializers() {
 
 // RegisterValidatorCustomTags 注册验证器自定义的tag及翻译，详细使用见 https://github.com/go-playground/validator README & _examples
 func (fa *FrameApplication) RegisterValidatorCustomTags() {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	if fa.GetApplication() != nil {
@@ -321,7 +321,7 @@ func (fa *FrameApplication) RegisterValidatorCustomTags() {
 //
 // 方便直接使用已附加来源标记的子日志器记录日志
 func (fa *FrameApplication) RegisterLoggerWithOriginToContainer() {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	logOriginMap := fa.GetContext().GetConfig().GetLogOriginMap()
@@ -338,7 +338,7 @@ func (fa *FrameApplication) RegisterLoggerWithOriginToContainer() {
 
 // RegisterTaskServer 注册启动异步任务服务器后台工作器服务
 func (fa *FrameApplication) RegisterTaskServer(managers ...IProviderManager) {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -378,7 +378,7 @@ func (fa *FrameApplication) RegisterTaskServer(managers ...IProviderManager) {
 // 默认关闭（application.globalManage.healthCheck）。连接池型对象的失效恢复依赖驱动层
 // 与 connMaxLifetime/connMaxIdleTime 配置，通常无需开启；开启后仅用于日志观测。
 func (fa *FrameApplication) RegisterGlobalsHealthCheck(managers ...IProviderManager) {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 
