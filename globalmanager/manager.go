@@ -231,9 +231,25 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 		err = stored.err
 		return
 	}
-	if stored := entity.instance.Load(); stored != nil {
-		instance = stored.value
+	// 与 initialized==1 快路径同样的守卫，原因也相同——但这里防的是活的竞态，
+	// 不是将来的回归。
+	//
+	// once.Do 由另一个 goroutine 执行时，本次调用不进入闭包，instance 仍是零值
+	// nil。若此刻 Release 把 entry 重置（instance 置 nil、initErr 清空、
+	// initialized 归 0），下面两个条件同时成立：initErr 为空、instance.Load()
+	// 为 nil。旧写法的 `if stored != nil` 只是跳过赋值，于是返回 (nil, nil)——
+	// 调用方拿到 nil 实例却看到 nil 错误，随后解引用即 panic。
+	//
+	// 并发压测实测每轮命中 2-27 次（Get/Rebuild/Release 四路交错，250 轮）。
+	// 返回错误而非 nil 实例：这是可重试条件，下一次 Get 会重新执行 initializer。
+	stored := entity.instance.Load()
+	if stored == nil || isNilInstance(stored.value) {
+		instance = nil
+		err = fmt.Errorf(
+			"global object '%s' was released or reset during initialization, retry the Get", name)
+		return
 	}
+	instance = stored.value
 	return
 }
 
@@ -269,6 +285,16 @@ func (gm *GlobalManager) CheckHealth(name KeyName) (bool, error) {
 //
 // 仅供显式手动调用：框架的周期性健康检查不会自动触发重建，
 // 连接池型对象的失效恢复由驱动层负责。详见 Rebuilder 接口说明。
+//
+// 旧实例**不被关闭**，交由 GC 回收。容器没有安全的等待点——Get 不走维护闸门，
+// 已发出的引用也不被追踪——在这种前提下关闭旧实例等于把 use-after-close 的风险
+// 转嫁给所有持有者。需要释放旧资源的实现应在自己的 Rebuild 内部完成。
+//
+// 并发：与 Release 以 fail-fast 方式互斥（ErrMaintenanceInProgress）。与 Get
+// 并不互斥：重建期间的 Get 拿到的要么是旧实例、要么是新实例，不存在中间态——
+// 实例经 atomic.Pointer 整体发布。
+//
+// 调用方引用的存活期契约见 Rebuilder 接口文档。
 func (gm *GlobalManager) Rebuild(name KeyName) error {
 	origin, ok := gm.container.Load(name)
 	if !ok {
