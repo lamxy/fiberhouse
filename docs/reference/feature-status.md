@@ -76,6 +76,30 @@ JSON 流量编解码逐条对照：条件 1，四条路径有契约，且「没�
 
 ## 内部工具
 
+**本节四项均不参与晋级**，不计入 §2 的公共能力门槛。它们是框架内部的实现工具，
+而非对外承诺的能力：`API 受众` 一列标为「内部工具」即此意。因此本节各行的
+「晋级阻塞」不是待办事项——不存在要晋级的目标。
+
+逐项理由：
+
+- **Dig 容器**：全库**零个非测试** `Provide`/`Invoke` 调用者（已复核），
+  仅 `CmdContext` 持有容器字段、CLI 示例只调用 `NewCmdContextOnce`。
+  没有任何执行路径，条件 5 在结构上不可满足。是否移除该字段留待用户决定。
+- **jsonconvert**：只服务 recovery 错误处理的内部转换，不在公共 API 上暴露。
+  当前只有 bench 测试（`convert_vs_opt_bench_test.go`），无正确性测试——
+  若将来要晋级，这是必须先补的一项。
+- **mongodecimal**：位于 `component/database/dbmongo/internal/mongodecimal/`。
+  Go 的 `internal/` 包**无法被仓库外的示例导入**，因此条件 5「文档示例确实执行
+  该路径」在结构上不可满足——一个 `internal/` 包本质上不可能是公共能力。
+  它的行为随 `dbmongo.NewClient` 构造自动注册，应视为 MySQL/MongoDB 行的实现
+  细节而非独立能力。
+- **logging writer 与框架 adaptor**：Gin adapter 使用进程级 hook，多个 engine
+  共享同一个框架日志器——这是架构性限制而非可修的缺陷（见
+  [Web 运行时](../guides/web-runtime.md)、[日志指南](../guides/logging.md)）。
+  异步 writer 本身的关闭顺序已定义且正确（两个 writer 各自 CAS 幂等，
+  最终 Flush 由 consume goroutine 完成以避免并发写 `bufio.Writer`），
+  `LoggerWrap.Close` 也已具备幂等守卫。
+
 | 能力 | 实现阶段 | 支持级别 | API 受众 | 启用方式 | 生命周期完整度 | 验证级别 | 限制与主指南 |
 |---|---|---|---|---|---|---|---|
 | Dig 容器 | 已实现 | 实验性 | 内部工具 | `CmdContext` 持有单例容器字段；**仓库内无任何 `Provide`/`Invoke` 调用者**，CLI 示例只调用 `NewCmdContextOnce` | 创建、运行、失败返回和 reset 有路径；没有通用资源关闭编排 | 单元/契约（41.7%） | **晋级阻塞：条件 5**——没有文档示例实际执行该路径。Web 运行时不推荐使用，`ResetDigContainer` 非并发安全；见[组件目录](components.md)、[命令行指南](../guides/command-line.md) |
