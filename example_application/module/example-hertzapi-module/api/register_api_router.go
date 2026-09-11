@@ -17,6 +17,9 @@ func RegisterRouteHandlers(ctx fiberhouse.IApplicationContext, router route.IRou
 
 	commonAPI := NewCommonHandler(ctx)
 	registerCommonRoutes(router, commonAPI)
+
+	binaryAPI := NewBinaryHandler(ctx)
+	registerBinaryRoutes(router, binaryAPI)
 }
 
 // registerHealthRoutes 注册与应用健康状态的路由
@@ -35,6 +38,16 @@ func registerExampleRoutes(router route.IRouter, handler *ExampleHandler) {
 	router.GET("/examples", handler.List)
 	router.PUT("/examples/:id", handler.Update)
 	router.DELETE("/examples/:id", handler.Delete)
+}
+
+// registerBinaryRoutes 註冊二進制回應協商的示範路由。
+//
+// /examples/binary 與 registerExampleRoutes 的 /examples/:id 同層，
+// hertz 路由樹優先匹配靜態段，故兩者共存且與註冊順序無關
+// （已實測：GET /examples/binary 命中本 handler，
+// GET /examples/someid 仍進入 ExampleHandler.Get）。
+func registerBinaryRoutes(router route.IRouter, handler *BinaryHandler) {
+	router.GET("/examples/binary", handler.Negotiate)
 }
 
 func registerCommonRoutes(router route.IRouter, handler *CommonHandler) {

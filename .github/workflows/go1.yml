@@ -126,6 +126,53 @@ jobs:
       - name: Check HTTP path
         run: curl --fail --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/health/livez
 
+      # 二进制响应协商的冒烟断言：feature-status.md 对 MsgPack / Protobuf 的
+      # 晋级条件 5（文档示例确实执行该路径）由 GET /examples/binary 闭合。
+      # 只断言 Content-Type 不够——曾出现过 Content-Type 正确但 data 被静默丢弃
+      # 的情况（structpb.NewValue 不接受自定义 struct，RespInfoPB.Reset 吞掉错误），
+      # 故同时断言 body 可解码且 data 内容完整。
+      - name: Check binary response negotiation
+        run: |
+          set -euo pipefail
+
+          # MsgPack：Content-Type 必须回显，body 必须能解出 code/msg/data。
+          mp_ct="$(curl --fail --silent --show-error \
+            -H 'Content-Type: application/msgpack' \
+            -o "$RUNNER_TEMP/binary.msgpack" \
+            -w '%{content_type}' \
+            'http://127.0.0.1:8080/examples/binary?echo=mp')"
+          if [[ "$mp_ct" != "application/msgpack" ]]; then
+            echo "msgpack: unexpected Content-Type: $mp_ct" >&2
+            exit 1
+          fi
+
+          # Protobuf：同上，且 body 必须远大于仅含 msg 的退化情形。
+          pb_ct="$(curl --fail --silent --show-error \
+            -H 'Content-Type: application/x-protobuf' \
+            -o "$RUNNER_TEMP/binary.pb" \
+            -w '%{content_type}' \
+            'http://127.0.0.1:8080/examples/binary?echo=pb')"
+          if [[ "$pb_ct" != "application/x-protobuf" ]]; then
+            echo "protobuf: unexpected Content-Type: $pb_ct" >&2
+            exit 1
+          fi
+
+          # 未指定协商标头时必须回退 JSON，且不得返回 406。
+          json_ct="$(curl --fail --silent --show-error \
+            -o "$RUNNER_TEMP/binary.json" \
+            -w '%{content_type}' \
+            'http://127.0.0.1:8080/examples/binary?echo=plain')"
+          case "$json_ct" in
+            application/json*) ;;
+            *) echo "fallback: unexpected Content-Type: $json_ct" >&2; exit 1 ;;
+          esac
+
+          # 逐个解码，断言 data 完整（而非 Content-Type 对但 payload 为空）。
+          go run ./.github/scripts/verify_binary_response.go \
+            --msgpack "$RUNNER_TEMP/binary.msgpack" \
+            --protobuf "$RUNNER_TEMP/binary.pb" \
+            --json "$RUNNER_TEMP/binary.json"
+
       - name: Run live integration tests
         timeout-minutes: 2
         run: go test -tags=liveintegration ./... -run 'TestLive_' -v -count=1 -coverprofile=coverage-live.out -covermode=atomic

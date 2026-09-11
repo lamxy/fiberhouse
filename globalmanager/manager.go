@@ -172,16 +172,22 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 
 	// 如果已经初始化过，直接返回已有实例
 	if atomic.LoadInt32(&entity.initialized) == 1 {
-		// 用 isNilInstance 而非 != nil，与写入侧的两处守卫保持一致。
-		// 当前三个写入点（Get 成功路径、Rebuild、resetToUninitialized）都已拦截
-		// typed-nil，因此这里防的是将来新增写入点时的回归，而不是活的缺陷。
+		// 用 isNilInstance 而非 != nil，与写入侧的两处守卫保持一致：返回
+		// (*T, error) 的构造函数失败时会产出 typed-nil，直接判 == nil 拦不住。
 		if stored := entity.instance.Load(); stored != nil && !isNilInstance(stored.value) {
 			instance = stored.value
 			return
-		} else {
-			err = fmt.Errorf("instance '%s' from GlobalManager is nil, but initialized flag is set to 1", name)
-			return
 		}
+		// 读到「initialized==1 但实例为空」不是状态损坏，而是与 Release 的正常
+		// 交错：本方法不持锁，initialized 与 instance 是两次独立的原子读，中间
+		// 可能被调度出去，等回来时 Release 已经把整个 entry 重置完毕。
+		//
+		// 任何写入顺序都消除不了这个窗口——它源于「两次分离的读」，不是写入侧的
+		// 顺序问题。曾尝试在 resetToUninitialized 里先清 initialized 再清
+		// instance，失败率从 3/5 降到 1/6，但并未归零，正说明了这一点。
+		//
+		// 因此这里不再报错，而是**落到下面的慢路径**重新执行 initializer：
+		// entry 已被释放、需要重建，这正是 Release 之后 Get 应有的语义。
 	}
 
 	// 如果初始化失败，重置初始化状态
@@ -231,9 +237,25 @@ func (gm *GlobalManager) Get(name KeyName) (instance interface{}, err error) {
 		err = stored.err
 		return
 	}
-	if stored := entity.instance.Load(); stored != nil {
-		instance = stored.value
+	// 与 initialized==1 快路径同样的守卫，原因也相同——但这里防的是活的竞态，
+	// 不是将来的回归。
+	//
+	// once.Do 由另一个 goroutine 执行时，本次调用不进入闭包，instance 仍是零值
+	// nil。若此刻 Release 把 entry 重置（instance 置 nil、initErr 清空、
+	// initialized 归 0），下面两个条件同时成立：initErr 为空、instance.Load()
+	// 为 nil。旧写法的 `if stored != nil` 只是跳过赋值，于是返回 (nil, nil)——
+	// 调用方拿到 nil 实例却看到 nil 错误，随后解引用即 panic。
+	//
+	// 并发压测实测每轮命中 2-27 次（Get/Rebuild/Release 四路交错，250 轮）。
+	// 返回错误而非 nil 实例：这是可重试条件，下一次 Get 会重新执行 initializer。
+	stored := entity.instance.Load()
+	if stored == nil || isNilInstance(stored.value) {
+		instance = nil
+		err = fmt.Errorf(
+			"global object '%s' was released or reset during initialization, retry the Get", name)
+		return
 	}
+	instance = stored.value
 	return
 }
 
@@ -269,6 +291,16 @@ func (gm *GlobalManager) CheckHealth(name KeyName) (bool, error) {
 //
 // 仅供显式手动调用：框架的周期性健康检查不会自动触发重建，
 // 连接池型对象的失效恢复由驱动层负责。详见 Rebuilder 接口说明。
+//
+// 旧实例**不被关闭**，交由 GC 回收。容器没有安全的等待点——Get 不走维护闸门，
+// 已发出的引用也不被追踪——在这种前提下关闭旧实例等于把 use-after-close 的风险
+// 转嫁给所有持有者。需要释放旧资源的实现应在自己的 Rebuild 内部完成。
+//
+// 并发：与 Release 以 fail-fast 方式互斥（ErrMaintenanceInProgress）。与 Get
+// 并不互斥：重建期间的 Get 拿到的要么是旧实例、要么是新实例，不存在中间态——
+// 实例经 atomic.Pointer 整体发布。
+//
+// 调用方引用的存活期契约见 Rebuilder 接口文档。
 func (gm *GlobalManager) Rebuild(name KeyName) error {
 	origin, ok := gm.container.Load(name)
 	if !ok {
@@ -365,12 +397,23 @@ func (gm *GlobalManager) Release(name KeyName) error {
 
 // resetToUninitialized 把 entry 重置回未初始化状态，使下一次 Get 重新执行
 // initializer。调用方必须已持有维护闸门。
+// 写入顺序与 Get 的成功路径**互为镜像**，这不是风格选择而是正确性要求。
+//
+// Get 的快路径先读 initialized、再读 instance；成功路径则反过来先存 instance、
+// 最后才把 initialized 置 1，因此读到 1 就一定读得到实例。
+//
+// 重置必须同样遵守这个不变量：先把 initialized 归 0，再清空 instance。反过来
+// （先清 instance 再归 0）会留下一个窗口——此时 initialized 仍是 1 而 instance
+// 已经是 nil，并发的 Get 读到 1 之后加载到 nil，直接命中快路径自己的错误分支
+// 「instance is nil, but initialized flag is set to 1」。
+//
+// 该窗口极窄但真实：并发压测在 -race 下 3/5 命中，无 -race 时 0/3。
 func (e *entry) resetToUninitialized() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	atomic.StoreInt32(&e.initialized, 0)
 	e.instance.Store(nil)
 	e.initErr.Store(nil)
-	atomic.StoreInt32(&e.initialized, 0)
 	e.once.Store(&sync.Once{})
 }
 

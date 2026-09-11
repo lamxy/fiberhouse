@@ -79,7 +79,14 @@ func TestDefaultStorage_ConcurrentReadersAndWriters(t *testing.T) {
 	}
 }
 
-func TestAppContext_BootConfigAndAppStateRegisterOnce(t *testing.T) {
+// TestAppContext_BootConfigRegisterOnce 锁定 BootConfig 的一次性注册，并覆盖
+// AppState 转接层在 AppPhase 之上的新语义。
+//
+// 旧版本断言的是 `RegisterAppState(false)` 之后 `(true)` 仍为 false —— 那是
+// sync.Once latch 的行为，也正是 AppPhase 要消除的缺陷：使用方提前 pin 一次，
+// 状态便永久冻结，Shutdown 的守卫据此跳过全部资源回收。转接层改为「false 忽略、
+// true 推进到 PhaseServing」，因此这里断言的是新契约。
+func TestAppContext_BootConfigRegisterOnce(t *testing.T) {
 	cfg := appconfig.NewAppConfig()
 	logger := zerolog.Nop()
 	ctx := NewAppContext(cfg, bootstrap.NewLoggerWrap(&logger))
@@ -92,8 +99,13 @@ func TestAppContext_BootConfigAndAppStateRegisterOnce(t *testing.T) {
 
 	assert.False(t, ctx.GetAppState())
 	ctx.RegisterAppState(false)
+	assert.False(t, ctx.GetAppState(), "false must not move the state machine")
+	assert.Equal(t, PhaseCreated, ctx.Phase())
+
 	ctx.RegisterAppState(true)
-	assert.False(t, ctx.GetAppState())
+	assert.True(t, ctx.GetAppState(), "true must advance the machine to PhaseServing")
+	assert.Equal(t, PhaseServing, ctx.Phase())
+
 	assert.Same(t, cfg, ctx.GetConfig())
 	assert.Same(t, ctx.GetLogger(), ctx.GetLogger())
 	assert.NotNil(t, ctx.GetContainer())

@@ -53,9 +53,10 @@ func TestLive_TaskWorkerDispatcher_EnqueueConsumeShutdown(t *testing.T) {
 		return nil
 	})
 
-	// RunAsync 是非阻塞的：内部用 goroutine 执行 server.Run，错误只在内部被
-	// recover/记录日志，函数本身永远返回 nil。因此这里不依赖其返回值判断
-	// worker 是否成功启动，而是用下方"10 秒内是否收到消费信号"作为证据。
+	// RunAsync 是非阻塞的：内部用 goroutine 执行 server.Run。它现在会同步校验
+	// 可启动性并返回错误（worker 已关闭时返回 ErrTaskWorkerClosed），但运行期
+	// 失败仍只能在 goroutine 内被 recover/记录日志——调用方此时已经拿到返回值。
+	// 因此这里仍以下方"10 秒内是否收到消费信号"作为真正启动成功的证据。
 	require.NoError(t, worker.RunAsync())
 	t.Cleanup(func() {
 		shutdownDone := make(chan struct{})

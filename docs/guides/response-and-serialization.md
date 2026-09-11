@@ -80,7 +80,11 @@ JSON 写出错误的接口语义并不对称：`FiberContext.JSON` 直接返回 
 | `application/msgpack` | `RespInfoMagPack` | map 中始终有 `code`、`msg`，`data != nil` 时才加入 `data` |
 | `application/x-protobuf` | `RespInfoPB` | `response/pb.RespInfoProto{code,msg,data}`，data 通过 `structpb.Value` 包进 `Any` |
 
-MsgPack 和 Protobuf 只改变响应 body 编码，不改变 HTTP status 或业务 code。Protobuf 的 `Reset` 在 `structpb.NewValue` / `anypb.New` 失败时不会向调用方返回转换错误，而是留下 nil/旧值边界；复杂自定义 Go 类型不应假定都能无损转成 `structpb.Value`。MsgPack 客户端解析 helper 对字段具体类型做直接断言，面对不受信任或不同 schema 的数据可能 panic，调用方需要额外校验。
+MsgPack 和 Protobuf 只改变响应 body 编码，不改变 HTTP status 或业务 code。Protobuf 的 `Reset` 在 `structpb.NewValue` / `anypb.New` 失败时不会向调用方返回转换错误，而是留下 nil/旧值边界；复杂自定义 Go 类型不应假定都能无损转成 `structpb.Value`。
+
+**这不是理论风险，是实际会静默丢数据的坑。** `structpb.NewValue` 只接受 `nil`、`bool`、数值类型、`string`、`[]byte`、`map[string]interface{}` 与 `[]interface{}`，**不接受自定义 struct**。而 `RespInfoPB.Reset`（`response/response_proto_impl.go:109-117`）的两处 `if err == nil` 都没有 else 分支，转换失败时 `r.pb.Data` 静默留为 nil，调用方收不到任何错误。实测把一个两字段的自定义 struct 交给 Protobuf 分支，响应 body 只剩 4 bytes（仅 `msg` 存活，`code` 因 proto3 零值省略、`data` 被丢弃）；换成等价的 `map[string]interface{}` 后同一 payload 完整往返（103 bytes）。
+
+因此走二进制响应时，`data` 应使用 map 或上述受支持类型构造；若必须传自定义 struct，调用方需自行先转成 map。可执行示例见 `example_application/module/example-hertzapi-module/api/binary_api.go` 的 `GET /examples/binary`。MsgPack 客户端解析 helper 对字段具体类型做直接断言，面对不受信任或不同 schema 的数据可能 panic，调用方需要额外校验。
 
 ## 对象池所有权与传播风险
 
@@ -90,7 +94,7 @@ MsgPack 和 Protobuf 只改变响应 body 编码，不改变 HTTP status 或业�
 
 - `ResponseWrap.SendWithCtx` 自身 `defer r.Release()`；JSON 分支又调用会自行释放的 `RespInfo.JsonWithCtx`，使同一个内层响应可能被重复放回池。
 - 二进制分支的 `resp.From(r.IResponse, true)` 已释放源 `RespInfo`，facade 返回时又会通过 wrapper 再释放源对象。
-- Protobuf `SendWithCtx` 会释放自身；MsgPack `SendWithCtx` 不会释放自身，因此两种二进制实现的所有权不对称。
+- ~~Protobuf `SendWithCtx` 会释放自身；MsgPack `SendWithCtx` 不会释放自身，因此两种二进制实现的所有权不对称。~~ **该描述已过时**：两种实现现在是对称的，`SendWithCtx` 与 `JsonWithCtx` 四个方法都以 `defer r.Release()` 开头（`response_msgpack_impl.go:53,77`、`response_proto_impl.go:69,86`），由 `response_binary_ownership_test.go` 的对称性用例钉住。
 - `ResponseWrap` 没有覆盖 `JsonWithCtx`。经 facade 构造后若直接调用提升的 `JsonWithCtx`，内层 `RespInfo` 会归还，但外层 wrapper 没有对应归还动作。
 - `ICoreContext.JSON/Send` 会归还 adaptor；只读 header 或没有发送动作的路径不会。
 
@@ -111,5 +115,7 @@ MsgPack 和 Protobuf 只改变响应 body 编码，不改变 HTTP status 或业�
 - error/recovery 与响应 facade 的组合路径。
 
 因此基础 `RespInfo` 测试通过不能证明二进制协商或对象池组合链安全。
+
+上述空白已由根 package 的 `response_facade_test.go`（Fiber 与 Gin 真实内核的协商往返，解码断言 body）、`response/response_binary_ownership_test.go`（两种二进制实现的释放对称性与重复 `Release` 幂等）以及 CI smoke job 的 `GET /examples/binary`（MsgPack、Protobuf、JSON 回退三条路径断言 Content-Type 与 `data` 完整性，见 `.github/scripts/verify_binary_response.go`）部分覆盖。仍未覆盖的是：`ResponseWrap` 自身与内层 `RespInfo` 的重复归还风险、Context adaptor 的池所有权，以及 error/recovery 与 facade 的组合路径——这些仍属上文「对象池所有权与传播风险」记录的静态结论，未经竞态或复用故障复现验证。
 
 源码入口：[`response_facade.go`](../../response_facade.go)、[`response`](../../response/)、[`response_providers_and_manager.go`](../../response_providers_and_manager.go)、[`adaptor/context`](../../adaptor/context/) 与 [`exception`](../../exception/)。

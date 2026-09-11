@@ -7,6 +7,7 @@
 package fiberhouse
 
 import (
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -17,12 +18,28 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// ErrCoreInitFailed 标记核心装配失败。
+//
+// 装配失败此前只能以 panic 表达，调用方无从选择。本哨兵使失败可被 errors.Is
+// 分类：生命周期方法短路后，AppCoreRun / Shutdown 会把它作为错误返回。
+var ErrCoreInitFailed = errors.New("fiberhouse: core initialization failed")
+
 // CoreWithFiber 应用核心启动器
 type CoreWithFiber struct {
 	ctx     IApplicationContext
 	CoreCfg *fiber.Config
 	coreApp *fiber.App
 	json    JsonWrapper
+	// initErr 记录装配期失败，与 Gin 的同名字段同义。
+	//
+	// Fiber 此前完全没有这套机制（Gin 有 13 处使用、hertzcore 有 15 处）：
+	// JSON codec 解析失败时直接 panic，既无法短路后续装配，也无法让调用方
+	// 观测到「核心没起来」。现在失败被记录，后续生命周期方法一律短路，
+	// 运行与关闭入口把它作为错误返回。
+	//
+	// 原 panic 行为保留在 InitCoreAppMust：条件 4 要求 panic 入口与返回 error
+	// 的入口成对出现，而不是消除 panic。
+	initErr error
 	// globalsCleared 保证全局对象只回收一次。
 	//
 	// 回收有两个入口：Shutdown 顶部的 defer，以及 fiber 的 OnShutdown hook（应用
@@ -67,14 +84,57 @@ func (cf *CoreWithFiber) GetAppContext() IApplicationContext {
 	return cf.ctx
 }
 
+// initializationFailed 报告核心装配是否已失败。
+//
+// 与 core_gin_starter_impl.go 的同名方法同义：为真时全部生命周期方法短路，
+// 运行与关闭入口把 initErr 作为错误返回。
+func (cf *CoreWithFiber) initializationFailed() bool {
+	return cf.initErr != nil
+}
+
+// recordInitFailure 记录装配失败并写入框架日志。
+//
+// 统一入口保证三件事一致：错误链上始终带 ErrCoreInitFailed 以便 errors.Is
+// 分类、原始错误得以保留、失败必定留下日志。
+func (cf *CoreWithFiber) recordInitFailure(err error) {
+	if err == nil || cf.initErr != nil {
+		return
+	}
+	cf.initErr = fmt.Errorf("%w: %w", ErrCoreInitFailed, err)
+	if ctx := cf.GetAppContext(); ctx != nil && ctx.GetLogger() != nil && ctx.GetConfig() != nil {
+		ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).
+			Str("applicationStarter", "FrameApplication").
+			Err(cf.initErr).
+			Msg("InitCoreApp failed")
+	}
+}
+
 // GetCoreApp 获取应用核心实例
 func (cf *CoreWithFiber) GetCoreApp() interface{} {
 	return cf.coreApp
 }
 
 // InitCoreApp 初始化应用核心（框架应用基于 fiber.App）
+// InitCoreAppMust 初始化应用核心，装配失败时 panic。
+//
+// 与 InitCoreApp 成对出现，遵循 stdlib 的 regexp.MustCompile / template.Must
+// 惯例：需要 fail-fast 的调用方用本入口，需要处理错误的调用方用 InitCoreApp
+// 并检查 AppCoreRun / Shutdown 的返回值。
+//
+// 装配失败在启动期不可恢复，因此 panic 本身是合理的默认；条件 4 要求的不是
+// 消除 panic，而是让调用方**有的选**。
+func (cf *CoreWithFiber) InitCoreAppMust(fs FrameStarter, managers ...IProviderManager) {
+	cf.InitCoreApp(fs, managers...)
+	if cf.initializationFailed() {
+		panic(cf.initErr)
+	}
+}
+
 func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManager) {
-	if cf.GetAppContext().GetAppState() {
+	if cf.initializationFailed() {
+		return
+	}
+	if cf.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -102,13 +162,24 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 		// 标准启动链会传入非 nil fs，此时仍需完成编解码器装配，避免 cf.json 保持 nil
 		// 导致后续 RegisterAppMiddleware 使用 cf.json.Marshal 时 panic。
 		if fs != nil {
-			cf.json = cf.resolveJSONCodec(fs, managers...)
+			json, codecErr := cf.resolveJSONCodec(fs, managers...)
+			if codecErr != nil {
+				cf.recordInitFailure(codecErr)
+				cf.coreApp = nil
+				return
+			}
+			cf.json = json
 		}
 		return
 	}
 
 	cfg := cf.GetAppContext().GetConfig()
-	cf.json = cf.resolveJSONCodec(fs, managers...)
+	json, codecErr := cf.resolveJSONCodec(fs, managers...)
+	if codecErr != nil {
+		cf.recordInitFailure(codecErr)
+		return
+	}
+	cf.json = json
 
 	// IErrorHandler接口实例
 	eh := NewErrorHandlerOnce(cf.GetAppContext())
@@ -160,7 +231,7 @@ func (cf *CoreWithFiber) InitCoreApp(fs FrameStarter, managers ...IProviderManag
 // resolveJSONCodec 解析JSON编解码器实例。
 // 该逻辑在默认核心配置路径和自定义 CoreCfg 路径下均需要执行，
 // 抽取为独立方法避免自定义 CoreCfg 路径遗漏 cf.json 赋值。
-func (cf *CoreWithFiber) resolveJSONCodec(fs FrameStarter, managers ...IProviderManager) JsonWrapper {
+func (cf *CoreWithFiber) resolveJSONCodec(fs FrameStarter, managers ...IProviderManager) (JsonWrapper, error) {
 	// fiberhouse.JsonWrapper序列化反序列化接口，默认编解码器实例
 	// JSON := GetMustInstance[JsonWrapper](fs.GetApplication().GetDefaultTrafficCodecKey())
 
@@ -185,33 +256,30 @@ func (cf *CoreWithFiber) resolveJSONCodec(fs FrameStarter, managers ...IProvider
 		}
 
 		if jsonCodecManager == nil {
-			msg := "No JSON codec manager found in provided managers, using default JSON codec."
-			cf.GetAppContext().GetLogger().InfoWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
-				Msg(msg)
-			panic(msg)
+			return nil, errors.New("no JSON codec manager found in the provided managers")
 		}
 
 		jcodec, err := jsonCodecManager.LoadProvider()
 
 		if err != nil {
-			cf.GetAppContext().GetLogger().ErrorWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
-				Str("applicationStarter", "CoreWithFiber").
-				Err(err).
-				Msg("Failed to load providers into Fiber application starter")
-			panic(err)
+			return nil, fmt.Errorf("load JSON codec provider: %w", err)
 		}
 
 		if json, jOk = jcodec.(JsonWrapper); !jOk {
-			panic("Loaded JSON codec provider does not implement JsonWrapper interface")
+			return nil, fmt.Errorf(
+				"loaded JSON codec provider (%T) does not implement JsonWrapper", jcodec)
 		}
 	}
 
-	return json
+	return json, nil
 }
 
 // RegisterAppMiddleware 注册应用级的中间件
 func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IProviderManager) {
-	if cf.GetAppContext().GetAppState() {
+	if cf.initializationFailed() {
+		return
+	}
+	if cf.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -277,7 +345,10 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IPro
 
 // RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器、etc...
 func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter, managers ...IProviderManager) {
-	if cf.GetAppContext().GetAppState() {
+	if cf.initializationFailed() {
+		return
+	}
+	if cf.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -311,7 +382,10 @@ func (cf *CoreWithFiber) RegisterModuleInitialize(fs FrameStarter, managers ...I
 
 // RegisterModuleSwagger 注册模块/子系统级的swagger
 func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter, managers ...IProviderManager) {
-	if cf.GetAppContext().GetAppState() {
+	if cf.initializationFailed() {
+		return
+	}
+	if cf.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -341,7 +415,10 @@ func (cf *CoreWithFiber) RegisterModuleSwagger(fs FrameStarter, managers ...IPro
 
 // RegisterAppHooks 注册核心应用的生命周期钩子函数（如果存在）
 func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProviderManager) {
-	if cf.GetAppContext().GetAppState() {
+	if cf.initializationFailed() {
+		return
+	}
+	if cf.GetAppContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -369,6 +446,19 @@ func (cf *CoreWithFiber) RegisterAppHooks(fs FrameStarter, managers ...IProvider
 		if fiber.IsChild() {
 			return nil
 		}
+
+		// 监听已真正建立，此刻才是 PhaseServing 的置位时机。
+		//
+		// 不能等 Listen 返回后再置位：Listen 会一直阻塞到服务器停止，那时置位
+		// 恰好把语义颠倒——「正在服务」写在了已经停止服务之后。迁移失败（例如
+		// 关闭已先行开始）不应阻断监听，因此只记录不返回错误。
+		if err := cf.GetAppContext().TransitionTo(PhaseServing); err != nil {
+			cf.GetAppContext().GetLogger().WarnWith(cf.GetAppContext().GetConfig().LogOriginFrame()).
+				Str("applicationStarter", "FrameApplication").
+				Err(err).
+				Msg("App phase transition to serving was rejected")
+		}
+
 		scheme := "http"
 		if listenData.TLS {
 			scheme = "https"
@@ -422,7 +512,12 @@ func (cf *CoreWithFiber) clearApplicationGlobalsOnce() {
 
 // AppCoreRun 监听核心应用套接字
 func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
-	if cf.GetAppContext().GetAppState() {
+	// 装配失败的核心不能运行。返回 initErr 使失败在调用方（boot.go 的
+	// coordinateServerRun）可观测，而不是交出一个静默不工作的核心。
+	if cf.initializationFailed() {
+		return cf.initErr
+	}
+	if cf.GetAppContext().Phase() >= PhaseServing {
 		return nil
 	}
 
@@ -448,8 +543,9 @@ func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
 		return err
 	}
 
-	// 设置应用状态：标记应用已正常运行并监听在套接字上
-	cf.GetAppContext().RegisterAppState(true)
+	// 这里不再置位「已启动」：Listen 返回意味着服务器**已经停止**，此处置位会把
+	// 语义颠倒。PhaseServing 由 RegisterAppHooks 安装的 OnListen hook 在监听真正
+	// 建立的那一刻置位。
 	return nil
 }
 
@@ -465,9 +561,25 @@ func (cf *CoreWithFiber) AppCoreRun(managers ...IProviderManager) error {
 func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
 	defer cf.clearApplicationGlobalsOnce()
 
-	if cf.GetAppContext().GetAppState() {
+	// 关闭结束时推进到 PhaseTerminated。迁移失败说明已有其他路径先行终结，
+	// 不影响本次回收（回收本身经 once 守卫）。
+	defer func() { _ = cf.GetAppContext().TransitionTo(PhaseTerminated) }()
+
+	// 与 Gin 一致：装配失败时把 initErr 作为错误返回。顶部的 defer 仍会执行，
+	// 因此即使核心从未装配成功，已注册的全局对象依旧得到回收。
+	if cf.initializationFailed() {
+		return cf.initErr
+	}
+
+	// 守卫读的是「关闭是否已经开始」，而不再是旧的 GetAppState()。
+	//
+	// 旧守卫的缺陷：GetAppState() 在使用方提前 pin 之后恒为 true，Shutdown 于是
+	// 直接返回并跳过全部资源回收。改读阶段之后，只有真正进入关闭的调用才会被
+	// 挡住，重复关闭仍是幂等的。
+	if cf.GetAppContext().Phase() >= PhaseShuttingDown {
 		return nil
 	}
+	_ = cf.GetAppContext().TransitionTo(PhaseShuttingDown)
 
 	_, replaced, err := LoadProviderManagersAtLocation(
 		managers,
@@ -508,6 +620,11 @@ func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
 	if err != nil {
 		return fmt.Errorf("failed to load post-shutdown providers: %w", err)
 	}
+
+	// 关闭 provider 持有的资源。位置夹在两端之间：ServerShutdownAfter 之后
+	// （该位点的 provider 仍可能使用这些资源），全局对象释放与日志器关闭之前
+	// （关闭失败要靠框架日志器上报）。
+	closeShutdownChainProviders(cf.GetAppContext(), managers)
 
 	// 日志器由顶部 defer 的 clearApplicationGlobalsOnce 关闭：它必须在全局对象释放
 	// 之后才关，否则逐 key 上报的释放失败会写进已关闭的 writer。此处不再重复关闭

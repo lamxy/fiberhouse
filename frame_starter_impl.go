@@ -11,6 +11,7 @@ package fiberhouse
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -122,22 +123,56 @@ func releaseApplicationGlobals(ctx IApplicationContext) {
 	}, true)
 }
 
+// ErrNoFrameStarterOption 标记未提供任何框架启动器选项。
+//
+// 装配期的用法错误：没有选项就没有注册器，启动器无事可做。
+var ErrNoFrameStarterOption = errors.New(
+	"fiberhouse: no registrar option available for injection into the application starter")
+
+// ErrApplicationNotRegistered 标记应用注册器尚未注册。
+//
+// 装配期的顺序错误：多个注册方法都要求先 RegisterApplication。
+//
+// 文本与旧实现 panic 的 error 逐字一致：RegisterGlobalInitializers 现在委派给
+// 姊妹方法后再 panic，既有调用方（含测试）依赖这个具体文本，不能因改造而变。
+var ErrApplicationNotRegistered = errors.New(
+	"application that implements the ApplicationRegister interface is nil. Please RegisterApplication first")
+
+// ErrTaskWorkerUnavailable 标记异步任务 worker 无法从容器取得。
+//
+// 装配期失败：应用启用了 task server 但 worker 实例解析失败（key 未注册、
+// 或注册的对象类型不符）。
+var ErrTaskWorkerUnavailable = errors.New("fiberhouse: task worker is unavailable")
+
 // NewFrameApplication 创建一个应用启动器对象
+//
+// 未提供选项时 panic。需要处理该错误的调用方请改用 NewFrameApplicationWithError。
 func NewFrameApplication(ctx IApplicationContext, opts ...FrameStarterOption) FrameStarter {
+	starter, err := NewFrameApplicationWithError(ctx, opts...)
+	if err != nil {
+		panic(err)
+	}
+	return starter
+}
+
+// NewFrameApplicationWithError 与 NewFrameApplication 相同，但未提供选项时返回
+// 错误而非 panic。
+func NewFrameApplicationWithError(ctx IApplicationContext, opts ...FrameStarterOption) (FrameStarter, error) {
 	fApp := &FrameApplication{
 		Ctx: ctx,
 	}
 	if len(opts) == 0 {
-		msg := "no registrar option available for injection into the application starter via NewFrameApplication"
-		ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(msg)
-		panic(msg)
+		if ctx != nil && ctx.GetLogger() != nil && ctx.GetConfig() != nil {
+			ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(ErrNoFrameStarterOption.Error())
+		}
+		return nil, ErrNoFrameStarterOption
 	}
 
 	for _, opt := range opts {
 		opt(fApp)
 	}
 
-	return fApp
+	return fApp, nil
 }
 
 // GetContext 获取应用上下文
@@ -182,7 +217,7 @@ func (fa *FrameApplication) GetTask() TaskRegister {
 
 // RegisterToCtx 注册应用启动器对象到应用上下文
 func (fa *FrameApplication) RegisterToCtx(as ApplicationStarter) {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	fa.GetContext().RegisterStarterApp(as)
@@ -195,7 +230,7 @@ func (fa *FrameApplication) RegisterToCtx(as ApplicationStarter) {
 // 注册自定义新增语言的验证器实例到验证其包装器中
 // 注册自定义验证器tag和tag的语言翻译
 func (fa *FrameApplication) RegisterApplicationGlobals(managers ...IProviderManager) {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -233,22 +268,40 @@ func (fa *FrameApplication) RegisterApplicationGlobals(managers ...IProviderMana
 }
 
 // RegisterGlobalInitializers 注册全局对象初始化器
+// 未注册应用时 panic。需要处理该错误的调用方请改用
+// RegisterGlobalInitializersWithError。
 func (fa *FrameApplication) RegisterGlobalInitializers() {
-	if fa.GetContext().GetAppState() {
-		return
+	if err := fa.RegisterGlobalInitializersWithError(); err != nil {
+		panic(err)
+	}
+}
+
+// RegisterGlobalInitializersWithError 与 RegisterGlobalInitializers 相同，但未
+// 注册应用时返回错误而非 panic。
+//
+// 装配期的顺序错误：本方法要求先 RegisterApplication。一并补上原实现缺少的
+// 类型断言检查——原代码直接断言，类型不符时 panic 信息不含任何上下文。
+func (fa *FrameApplication) RegisterGlobalInitializersWithError() error {
+	if fa.GetContext().Phase() >= PhaseServing {
+		return nil
 	}
 
 	if fa.GetApplication() == nil {
-		panic(errors.New("application that implements the ApplicationRegister interface is nil. Please RegisterApplication first"))
+		return ErrApplicationNotRegistered
 	}
 
-	appRegister := fa.GetApplication().(ApplicationRegister)
+	appRegister, ok := fa.GetApplication().(ApplicationRegister)
+	if !ok {
+		return fmt.Errorf("%w: registered application is %T, not an ApplicationRegister",
+			ErrApplicationNotRegistered, fa.GetApplication())
+	}
 	fa.GetContext().GetContainer().Registers(appRegister.ConfigGlobalInitializers())
+	return nil
 }
 
 // InitializeGlobalRequired 初始化应用启动时必要的全局对象
 func (fa *FrameApplication) InitializeGlobalRequired() {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	if fa.GetApplication() != nil {
@@ -266,7 +319,7 @@ func (fa *FrameApplication) InitializeGlobalRequired() {
 
 // InitializeCustomValidateInitializers 初始化自定义新增语言的验证器到验证包装器
 func (fa *FrameApplication) InitializeCustomValidateInitializers() {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	if fa.GetApplication() != nil {
@@ -294,7 +347,7 @@ func (fa *FrameApplication) InitializeCustomValidateInitializers() {
 
 // RegisterValidatorCustomTags 注册验证器自定义的tag及翻译，详细使用见 https://github.com/go-playground/validator README & _examples
 func (fa *FrameApplication) RegisterValidatorCustomTags() {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	if fa.GetApplication() != nil {
@@ -321,7 +374,7 @@ func (fa *FrameApplication) RegisterValidatorCustomTags() {
 //
 // 方便直接使用已附加来源标记的子日志器记录日志
 func (fa *FrameApplication) RegisterLoggerWithOriginToContainer() {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 	logOriginMap := fa.GetContext().GetConfig().GetLogOriginMap()
@@ -338,7 +391,7 @@ func (fa *FrameApplication) RegisterLoggerWithOriginToContainer() {
 
 // RegisterTaskServer 注册启动异步任务服务器后台工作器服务
 func (fa *FrameApplication) RegisterTaskServer(managers ...IProviderManager) {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 
@@ -362,9 +415,16 @@ func (fa *FrameApplication) RegisterTaskServer(managers ...IProviderManager) {
 			return
 		}
 		// 从容器获取任务工作者实例
+		//
+		// 解析失败此前直接 panic。改为记录并返回：task server 是可选能力
+		// （application.task.enableServer 控制），它起不来不应连带打断整个
+		// 应用启动——Web 服务本身仍可正常对外提供。
 		worker, err := fa.GetTask().GetTaskWorker(fa.GetContext().GetStarter().GetApplication().GetTaskServerKey())
 		if err != nil {
-			panic(err)
+			fa.GetContext().GetLogger().ErrorWith(fa.GetContext().GetConfig().LogOriginFrame()).
+				Err(fmt.Errorf("%w: %w", ErrTaskWorkerUnavailable, err)).
+				Msg("RegisterTaskServer failed, the async task server will not start")
+			return
 		}
 		// 获取并注册批量任务处理器
 		worker.RegisterHandlers(fa.GetTask().GetTaskHandlerMap())
@@ -378,7 +438,7 @@ func (fa *FrameApplication) RegisterTaskServer(managers ...IProviderManager) {
 // 默认关闭（application.globalManage.healthCheck）。连接池型对象的失效恢复依赖驱动层
 // 与 connMaxLifetime/connMaxIdleTime 配置，通常无需开启；开启后仅用于日志观测。
 func (fa *FrameApplication) RegisterGlobalsHealthCheck(managers ...IProviderManager) {
-	if fa.GetContext().GetAppState() {
+	if fa.GetContext().Phase() >= PhaseServing {
 		return
 	}
 

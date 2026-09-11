@@ -8,6 +8,8 @@
 package commandstarter
 
 import (
+	"errors"
+
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/globalmanager"
 )
@@ -24,14 +26,53 @@ import (
 // ICommandContext.GetStarterApp() 返回的是 CommandStarter，类型不同。CLI 的健康
 // 检查本身也是一次性的（注册阶段执行一轮，没有后台 ticker），没有需要停止的东西，
 // 因此这里只做「释放资源」与「清空条目」两步。
+// 命令执行错误不经由返回值传出（签名保持 void），而是写入 CLI 日志器。
+// 需要拿到该错误的调用方请改用 RunCommandStarterWithError。
+//
+// 不改本函数签名是刻意的：它是已发布的公共入口，改成返回 error 属 breaking
+// change，而仓库已两次明确排除该变更（follow-up-local-patch-optimization-todo.md:40
+// 与 v1-production-readiness-tasklist.md:223）。补姊妹入口既消除了「静默丢弃」，
+// 又不动既有调用方——与本轮其余 42 处 panic 采用的是同一惯例。
 func RunCommandStarter(starter fiberhouse.CommandStarter) {
+	if err := RunCommandStarterWithError(starter); err != nil {
+		reportCommandRunFailure(starter, err)
+	}
+}
+
+// RunCommandStarterWithError 与 RunCommandStarter 相同，但把命令执行错误返回给
+// 调用方。
+//
+// 此前 AppCoreRun 的错误被 `_ =` 直接丢弃：命令失败时进程以退出码 0 结束，
+// 在 CI、cron 与容器编排里等于「成功」。这正是 CLI 能力卡住条件 5 的那一项。
+//
+// 关闭段仍由 defer 保证：无论命令成功、失败还是 panic，全局对象都会被回收。
+func RunCommandStarterWithError(starter fiberhouse.CommandStarter) error {
 	starter.InitCoreApp()
 	starter.RegisterGlobalErrHandler(starter.GetFrameCmdApp())
 	starter.RegisterCommands(starter.GetFrameCmdApp())
 	starter.RegisterCoreGlobalOptional(starter.GetFrameCmdApp())
 	starter.RegisterApplicationGlobals()
 	defer releaseCommandGlobals(starter)
-	_ = starter.AppCoreRun()
+	return starter.AppCoreRun()
+}
+
+// reportCommandRunFailure 把命令执行失败写入 CLI 日志器。
+//
+// 全程 nil 防护：starter 的实现可能不持有真实上下文（例如只记录调用顺序的
+// 测试替身），此时应安静跳过而不是 panic——与 releaseCommandGlobals 一致。
+func reportCommandRunFailure(starter fiberhouse.CommandStarter, err error) {
+	if starter == nil {
+		return
+	}
+	ctx := starter.GetContext()
+	if ctx == nil {
+		return
+	}
+	logger, cfg := ctx.GetLogger(), ctx.GetConfig()
+	if logger == nil || cfg == nil {
+		return
+	}
+	logger.Error(cfg.LogOriginCMD()).Err(err).Msg("command run failed")
 }
 
 // releaseCommandGlobals 释放 CLI 注册的全局对象，并按 key 上报关闭失败。
@@ -75,23 +116,43 @@ type FrameCmdApplication struct {
 	application fiberhouse.ApplicationCmdRegister
 }
 
+// ErrNoCmdStarterOption 标记未提供任何命令启动器选项。
+//
+// 装配期的用法错误：没有选项就没有注册器，启动器无事可做。
+var ErrNoCmdStarterOption = errors.New(
+	"fiberhouse/commandstarter: no registrar option available for injection into the command starter")
+
 // NewFrameCmdApplication 创建一个命令启动器对象，实现FrameCmdStarter接口
+//
+// 未提供选项时 panic。需要处理该错误的调用方请改用
+// NewFrameCmdApplicationWithError。
 func NewFrameCmdApplication(ctx fiberhouse.ICommandContext, opts ...fiberhouse.FrameCmdStarterOption) fiberhouse.FrameCmdStarter {
+	starter, err := NewFrameCmdApplicationWithError(ctx, opts...)
+	if err != nil {
+		panic(err)
+	}
+	return starter
+}
+
+// NewFrameCmdApplicationWithError 与 NewFrameCmdApplication 相同，但未提供选项时
+// 返回错误而非 panic。
+func NewFrameCmdApplicationWithError(ctx fiberhouse.ICommandContext, opts ...fiberhouse.FrameCmdStarterOption) (fiberhouse.FrameCmdStarter, error) {
 	fca := &FrameCmdApplication{
 		Ctx: ctx,
 	}
 
 	if len(opts) == 0 {
-		msg := "No registrar option available for injection into the command starter"
-		ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(msg)
-		panic(msg)
+		if ctx != nil && ctx.GetLogger() != nil && ctx.GetConfig() != nil {
+			ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(ErrNoCmdStarterOption.Error())
+		}
+		return nil, ErrNoCmdStarterOption
 	}
 
 	for _, opt := range opts {
 		opt(fca)
 	}
 
-	return fca
+	return fca, nil
 }
 
 // GetContext 获取全局上下文

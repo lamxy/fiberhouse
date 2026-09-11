@@ -8,6 +8,7 @@
 package bootstrap
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -65,6 +66,13 @@ type LoggerWrapper interface {
 type LoggerWrap struct {
 	logger  *zerolog.Logger
 	wCloser io.WriteCloser // 用于回收底层writer
+	// closeOnce / closeErr 保证 wCloser 只被关闭一次，并让后续调用复用首次结果。
+	//
+	// 关闭入口有多个（Fiber 的 clearApplicationGlobalsOnce、Gin 的 Shutdown
+	// 尾部、CLI 的 releaseCommandGlobals、应用自行调用），守卫必须在这一层，
+	// 契约才对任意注入的 io.WriteCloser 成立。
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // NewLoggerWrap 创建一个新的LoggerWrap实例
@@ -91,11 +99,24 @@ func (lw *LoggerWrap) GetZeroLogger() *zerolog.Logger {
 }
 
 // Close 关闭日志写入器
+//
+// 幂等：底层 wCloser 只被关闭一次，后续调用返回首次的结果。
+//
+// 这不是锦上添花。日志器的关闭有多个入口——Fiber 的 clearApplicationGlobalsOnce、
+// Gin 的 Shutdown 尾部、CLI 的 releaseCommandGlobals、以及应用自行调用——此前
+// 本方法直接转发给 wCloser，重复关闭是否安全完全取决于注入的 writer。框架自带的
+// 两个异步 writer 恰好以 CAS + closeDone 实现了幂等（async_channel_writer.go:146、
+// async_diode_writer.go:134），但那是它们的实现细节，不是 LoggerWrapper 的契约；
+// 使用方注入的任意 io.WriteCloser 没有义务容忍重复 Close。
+//
+// 守卫放在这一层，契约才对所有注入的 writer 成立。
 func (lw *LoggerWrap) Close() error {
-	if lw.wCloser != nil {
-		return lw.wCloser.Close()
-	}
-	return nil
+	lw.closeOnce.Do(func() {
+		if lw.wCloser != nil {
+			lw.closeErr = lw.wCloser.Close()
+		}
+	})
+	return lw.closeErr
 }
 
 // Debug 和 DebugWith 方法用于记录调试级别的日志
@@ -211,7 +232,7 @@ func NewConfigOnce(path ...string) appconfig.IAppConfig {
 				return key, v
 			}), nil)
 			if err != nil {
-				panic("LoadEnv: " + err.Error())
+				recordConfigLoadFailure(fmt.Errorf("LoadEnv: %w", err))
 			}
 			return aConf
 		})
@@ -243,7 +264,7 @@ func NewConfigOnce(path ...string) appconfig.IAppConfig {
 				return key, v
 			}), nil)
 			if err != nil {
-				panic("LoadEnvConf: " + err.Error())
+				recordConfigLoadFailure(fmt.Errorf("LoadEnvConf: %w", err))
 			}
 			return aConf
 		})
@@ -318,8 +339,64 @@ func NewWriterSync(cfg appconfig.IAppConfig, filename string) io.WriteCloser {
 	return writer.NewSyncLumberjackWriter(cfg, filename)
 }
 
+// ErrConfigBootstrapFailed 标记引导期配置加载失败。
+//
+// 环境变量加载失败发生在 cfgOnce 的初始化闭包内，且外层 LoadFunc 回调只返回
+// IAppConfig、没有 error 通道，因此失败只能先记录、再由 NewConfigOnceWithError
+// 取回。
+var ErrConfigBootstrapFailed = errors.New("fiberhouse/bootstrap: config bootstrap failed")
+
+// configBootstrapErr 保存引导期配置加载失败的原因。
+//
+// 与 AppConfigured 一同被 cfgOnce 守卫：闭包只执行一次，失败之后的调用不会
+// 重跑，若不记录错误，后续调用便无从得知配置是带伤加载的。
+var configBootstrapErr error
+
+// recordConfigLoadFailure 记录引导期配置加载失败。
+//
+// 只记录首个失败：后续失败往往是首个失败的连锁反应，覆盖它反而丢掉根因。
+func recordConfigLoadFailure(err error) {
+	if err == nil || configBootstrapErr != nil {
+		return
+	}
+	configBootstrapErr = fmt.Errorf("%w: %w", ErrConfigBootstrapFailed, err)
+}
+
+// NewConfigOnceWithError 与 NewConfigOnce 相同，但引导期配置加载失败时一并返回
+// 错误。
+//
+// 环境变量加载失败此前直接 panic，调用方无从选择。现在改为记录并在此返回：
+// 环境变量解析失败通常意味着某个 APP_ENV_ / APP_CONF_ 变量格式有误，应用往往
+// 仍能以文件配置继续启动，因此这类失败应当可被处理而不是终止进程。
+//
+// 返回的配置实例始终可用：失败只影响那一层环境变量覆盖，其余配置照常加载。
+func NewConfigOnceWithError(path ...string) (appconfig.IAppConfig, error) {
+	cfg := NewConfigOnce(path...)
+	return cfg, configBootstrapErr
+}
+
+// ErrAsyncWriterUnavailable 标记异步日志 writer 不可用。
+//
+// 两种装配失败：配置指定的 writer 类型未注册（配置键写错），或注册的实例不是
+// io.WriteCloser（容器 key 冲突）。
+var ErrAsyncWriterUnavailable = errors.New("fiberhouse/bootstrap: async log writer is unavailable")
+
 // NewWriterAsync 异步写日志
+//
+// 装配失败时 panic。需要处理该错误的调用方请改用 NewWriterAsyncWithError。
 func NewWriterAsync(cfg appconfig.IAppConfig, filename string) io.WriteCloser {
+	logWriter, err := NewWriterAsyncWithError(cfg, filename)
+	if err != nil {
+		panic(err)
+	}
+	return logWriter
+}
+
+// NewWriterAsyncWithError 与 NewWriterAsync 相同，但装配失败时返回错误而非 panic。
+//
+// 日志 writer 装配失败是可恢复的：调用方可以退回同步 writer 或 console，
+// 让应用带着降级的日志继续启动，而不是在启动期直接终止进程。
+func NewWriterAsyncWithError(cfg appconfig.IAppConfig, filename string) (io.WriteCloser, error) {
 	// 注册默认异步Writer写入器
 	cfg.GetContainer().Register(constant.LogWriterKeyPrefix+"chan", func() (interface{}, error) {
 		return writer.NewAsyncChannelWriter(cfg, filename), nil
@@ -333,11 +410,13 @@ func NewWriterAsync(cfg appconfig.IAppConfig, filename string) io.WriteCloser {
 	// 获取配置的异步writer写入器实例
 	internalWriter, err := cfg.GetContainer().Get(constant.LogWriterKeyPrefix + writerType)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to get async logger: '%s' from container: %v", writerType, err))
+		return nil, fmt.Errorf("%w: get async log writer '%s' from container: %w",
+			ErrAsyncWriterUnavailable, writerType, err)
 	}
 	logWriter, ok := internalWriter.(io.WriteCloser)
 	if !ok {
-		panic(fmt.Sprintf("Async logger writer type '%s' is not io.WriteCloser", writerType))
+		return nil, fmt.Errorf("%w: async log writer '%s' is %T, not an io.WriteCloser",
+			ErrAsyncWriterUnavailable, writerType, internalWriter)
 	}
-	return logWriter
+	return logWriter, nil
 }

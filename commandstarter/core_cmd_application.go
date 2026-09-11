@@ -8,11 +8,13 @@ package commandstarter
 
 import (
 	"errors"
-	"github.com/lamxy/fiberhouse"
-	"github.com/urfave/cli/v2"
+	"fmt"
 	"os"
 	"sort"
 	"time"
+
+	"github.com/lamxy/fiberhouse"
+	"github.com/urfave/cli/v2"
 )
 
 // CoreCmdCli 核心命令行应用cli启动器
@@ -100,28 +102,89 @@ func (ccc *CoreCmdCli) AppCoreRun() error {
 	return nil
 }
 
+// ErrCmdApplicationNotRegistered 标记命令行应用注册器尚未注册。
+//
+// 装配期的顺序错误：三个 Register* 方法都要求先 RegisterApplication。
+var ErrCmdApplicationNotRegistered = errors.New(
+	"fiberhouse/commandstarter: application of ApplicationCmdRegister is nil, please RegisterApplication first")
+
 // RegisterGlobalErrHandler 核心应用全局错误处理器
+//
+// 未注册应用时 panic。需要处理该错误的调用方请改用
+// RegisterGlobalErrHandlerWithError。
 func (ccc *CoreCmdCli) RegisterGlobalErrHandler(fca fiberhouse.FrameCmdStarter) {
-	if fca.GetApplication() == nil {
-		panic(errors.New("application of ApplicationCmdRegister is nil, please RegisterApplication first"))
+	if err := ccc.RegisterGlobalErrHandlerWithError(fca); err != nil {
+		panic(err)
+	}
+}
+
+// RegisterGlobalErrHandlerWithError 与 RegisterGlobalErrHandler 相同，但未注册
+// 应用时返回错误而非 panic。
+func (ccc *CoreCmdCli) RegisterGlobalErrHandlerWithError(fca fiberhouse.FrameCmdStarter) error {
+	register, err := resolveCmdRegister(fca)
+	if err != nil {
+		return err
 	}
 	// 注册全局错误处理器
-	fca.GetApplication().(fiberhouse.ApplicationCmdRegister).RegisterGlobalErrHandler(ccc.coreApp)
+	register.RegisterGlobalErrHandler(ccc.coreApp)
+	return nil
 }
 
 // RegisterCommands 注册命令列表到核心应用
+//
+// 未注册应用时 panic。需要处理该错误的调用方请改用 RegisterCommandsWithError。
 func (ccc *CoreCmdCli) RegisterCommands(fca fiberhouse.FrameCmdStarter) {
-	if fca.GetApplication() == nil {
-		panic(errors.New("application of ApplicationCmdRegister is nil, please RegisterApplication first"))
+	if err := ccc.RegisterCommandsWithError(fca); err != nil {
+		panic(err)
 	}
-	fca.GetApplication().(fiberhouse.ApplicationCmdRegister).RegisterCommands(ccc.coreApp)
+}
+
+// RegisterCommandsWithError 与 RegisterCommands 相同，但未注册应用时返回错误。
+func (ccc *CoreCmdCli) RegisterCommandsWithError(fca fiberhouse.FrameCmdStarter) error {
+	register, err := resolveCmdRegister(fca)
+	if err != nil {
+		return err
+	}
+	register.RegisterCommands(ccc.coreApp)
+	return nil
 }
 
 // RegisterCoreGlobalOptional 注册应用核心的全局可选项
+//
+// 未注册应用时 panic。需要处理该错误的调用方请改用
+// RegisterCoreGlobalOptionalWithError。
 func (ccc *CoreCmdCli) RegisterCoreGlobalOptional(fca fiberhouse.FrameCmdStarter) {
-	if fca.GetApplication() == nil {
-		panic(errors.New("application of ApplicationCmdRegister is nil, please RegisterApplication first"))
+	if err := ccc.RegisterCoreGlobalOptionalWithError(fca); err != nil {
+		panic(err)
+	}
+}
+
+// RegisterCoreGlobalOptionalWithError 与 RegisterCoreGlobalOptional 相同，但未
+// 注册应用时返回错误。
+func (ccc *CoreCmdCli) RegisterCoreGlobalOptionalWithError(fca fiberhouse.FrameCmdStarter) error {
+	register, err := resolveCmdRegister(fca)
+	if err != nil {
+		return err
 	}
 	// 注册应用核心的全局可选项
-	fca.GetApplication().(fiberhouse.ApplicationCmdRegister).RegisterCoreGlobalOptional(ccc.coreApp)
+	register.RegisterCoreGlobalOptional(ccc.coreApp)
+	return nil
+}
+
+// resolveCmdRegister 取出命令行应用注册器，未注册或类型不符时返回错误。
+//
+// 三个 Register* 方法共用同一段前置校验；抽出来保证它们的错误完全一致，
+// 也顺带补上了原实现缺少的类型断言检查——原代码直接断言，类型不符时
+// panic 信息不含任何上下文。
+func resolveCmdRegister(fca fiberhouse.FrameCmdStarter) (fiberhouse.ApplicationCmdRegister, error) {
+	if fca == nil || fca.GetApplication() == nil {
+		return nil, ErrCmdApplicationNotRegistered
+	}
+	register, ok := fca.GetApplication().(fiberhouse.ApplicationCmdRegister)
+	if !ok {
+		return nil, fmt.Errorf(
+			"%w: registered application is %T, not an ApplicationCmdRegister",
+			ErrCmdApplicationNotRegistered, fca.GetApplication())
+	}
+	return register, nil
 }

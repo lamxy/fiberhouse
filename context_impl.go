@@ -7,7 +7,9 @@
 package fiberhouse
 
 import (
+	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/bootstrap"
@@ -17,6 +19,48 @@ import (
 	"github.com/lamxy/fiberhouse/globalmanager"
 	"github.com/rs/zerolog"
 )
+
+// AppPhase 应用生命周期阶段。
+//
+// 取代原先的 `appState bool`：单一布尔承载了三种互斥语义——「尚未装配完成」
+// 「正在服务」「已进入关闭」——调用方无法区分「还没起来」与「已经停了」。
+// 有序阶段把三者拆开，且只允许正向迁移，使生命周期契约可被测试锁定。
+type AppPhase int32
+
+const (
+	// PhaseCreated 上下文已创建，装配尚未开始。
+	PhaseCreated AppPhase = iota
+	// PhaseInitializing 正在装配：注册提供者、中间件、路由与全局对象。
+	PhaseInitializing
+	// PhaseServing 监听已真正建立，应用正在接受流量。
+	//
+	// 置位时机是监听建立的那一刻（Fiber 走 OnListen hook，Gin 在 net.Listen 成功
+	// 之后、Serve 之前），而不是阻塞的 Listen 调用返回之后——后者意味着服务器
+	// 已经停止，用它标记「正在服务」恰好把语义颠倒了。
+	PhaseServing
+	// PhaseShuttingDown 关闭链正在执行。
+	PhaseShuttingDown
+	// PhaseTerminated 关闭完成，资源已回收。
+	PhaseTerminated
+)
+
+// String 返回阶段的可读名称，用于日志与迁移错误。
+func (p AppPhase) String() string {
+	switch p {
+	case PhaseCreated:
+		return "created"
+	case PhaseInitializing:
+		return "initializing"
+	case PhaseServing:
+		return "serving"
+	case PhaseShuttingDown:
+		return "shutting_down"
+	case PhaseTerminated:
+		return "terminated"
+	default:
+		return fmt.Sprintf("unknown(%d)", int32(p))
+	}
+}
 
 var (
 	// applicationContext Web应用上下文单例
@@ -30,30 +74,33 @@ var (
 
 // AppContext Web应用上下文实现
 type AppContext struct {
-	IStorage     // 内存键值存储接口实现
-	cfg          appconfig.IAppConfig
-	logger       bootstrap.LoggerWrapper
-	container    *globalmanager.GlobalManager
-	starterApp   ApplicationStarter
-	appState     bool
-	appStateOnce sync.Once
-	vw           *validate.Wrap
-	storage      map[string]interface{}
-	lock         sync.RWMutex
-	bootCfg      *BootConfig
-	bootCfgOnce  sync.Once
+	IStorage   // 内存键值存储接口实现
+	cfg        appconfig.IAppConfig
+	logger     bootstrap.LoggerWrapper
+	container  *globalmanager.GlobalManager
+	starterApp ApplicationStarter
+	// phase 保存当前 AppPhase，以 atomic 承载并发读写。
+	//
+	// 原先是 `appState bool` + `sync.Once`：普通布尔读写没有任何同步保护，而
+	// sync.Once 使首次写入即定值、无法回退——使用方提前 pin true 会让 Shutdown
+	// 的守卫直接返回并跳过全部资源回收。
+	phase       atomic.Int32
+	vw          *validate.Wrap
+	storage     map[string]interface{}
+	lock        sync.RWMutex
+	bootCfg     *BootConfig
+	bootCfgOnce sync.Once
 }
 
 // NewAppContext 获取新的全局上下文对象
 func NewAppContext(cfg appconfig.IAppConfig, logger bootstrap.LoggerWrapper) IApplicationContext {
+	// phase 的零值即 PhaseCreated，无需显式初始化。
 	return &AppContext{
-		IStorage:     NewDefaultStorage(),
-		cfg:          cfg,
-		logger:       logger,
-		container:    globalmanager.NewGlobalManagerOnce(),
-		appState:     false,
-		appStateOnce: sync.Once{},
-		vw:           validate.NewWrap(cfg),
+		IStorage:  NewDefaultStorage(),
+		cfg:       cfg,
+		logger:    logger,
+		container: globalmanager.NewGlobalManagerOnce(),
+		vw:        validate.NewWrap(cfg),
 	}
 }
 
@@ -78,17 +125,59 @@ func (c *AppContext) RegisterBootConfig(bc *BootConfig) {
 	})
 }
 
+// Phase 获取当前生命周期阶段
+func (c *AppContext) Phase() AppPhase {
+	return AppPhase(c.phase.Load())
+}
+
+// IsServing 报告应用是否正在接受流量。
+//
+// 严格对应 PhaseServing：关闭一旦开始即转 false，关闭链因此不会把「正在服务」
+// 误读成仍可接受流量。
+func (c *AppContext) IsServing() bool {
+	return c.Phase() == PhaseServing
+}
+
+// TransitionTo 把生命周期推进到 target，仅允许正向迁移。
+//
+// 允许跳跃（如装配失败时从 PhaseInitializing 直接到 PhaseTerminated）；逆向与
+// 原地重入都返回 error 且不改变状态。以 CAS 循环实现，并发下只有一个调用者能
+// 完成同一次迁移，其余收到 error——这正是「置位一次」可被调用方依赖的来源。
+func (c *AppContext) TransitionTo(target AppPhase) error {
+	for {
+		current := AppPhase(c.phase.Load())
+		if target <= current {
+			return fmt.Errorf(
+				"fiberhouse: illegal app phase transition from %s to %s: phases only move forward",
+				current, target,
+			)
+		}
+		if c.phase.CompareAndSwap(int32(current), int32(target)) {
+			return nil
+		}
+		// CAS 失败说明另一个调用者刚推进了阶段，重读后重新判定。
+	}
+}
+
 // RegisterAppState 注册应用启动状态
+//
+// Deprecated: 改用 TransitionTo。本方法是迁移期的转接层：true 映射为迁移到
+// PhaseServing，false 被忽略——旧签名无法表达「回退」，而状态机不接受逆向迁移。
+// 迁移失败（已处于 PhaseServing 或更后阶段）被静默吞掉，以保持旧的无返回值契约。
 func (c *AppContext) RegisterAppState(state bool) {
-	// 仅启动完成时注册一次
-	c.appStateOnce.Do(func() {
-		c.appState = state
-	})
+	if !state {
+		return
+	}
+	_ = c.TransitionTo(PhaseServing)
 }
 
 // GetAppState 获取应用状态
+//
+// Deprecated: 改用 IsServing 或 Phase。本方法由 AppPhase 推导而非独立字段：
+// 语义是「装配阶段已结束」（PhaseServing 及之后），与旧实现在装配守卫上的用法
+// 一致；要判断「此刻正在接受流量」请用 IsServing。
 func (c *AppContext) GetAppState() bool {
-	return c.appState
+	return c.Phase() >= PhaseServing
 }
 
 // GetConfig 获取全局配置

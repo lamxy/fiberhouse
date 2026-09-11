@@ -1,6 +1,6 @@
 # Web 启动生命周期
 
-本文记录 `(*FiberHouse).RunServer` 的当前执行顺序。它不是对所有 `DefaultPLocation` 名称的推测，也不表示每个传入 Starter 的 Manager 都会被内置实现加载。Provider 系统整体为[已接入](../reference/feature-status.md)，但扩展运行位点与关闭链仍是实验性能力。
+本文记录 `(*FiberHouse).RunServer` 的当前执行顺序。它不是对所有 `DefaultPLocation` 名称的推测，也不表示每个传入 Starter 的 Manager 都会被内置实现加载。Provider 系统与扩展运行位点/关闭链均已在[《功能状态》](../reference/feature-status.md)中晋级为稳定公共能力；需注意的是该位点在仓库内唯一的默认消费者是 pprof 关闭提供者，而它只在 test profile 下启用。
 
 ## `RunServer` 之前已经发生什么
 
@@ -90,8 +90,8 @@ Fiber 与 Gin 都在 goroutine 中启动 HTTP server，在调用 `AppCoreRun` �
 
 | Core | 运行 | 收到信号后 | 当前限制 |
 |---|---|---|---|
-| Fiber | `fiber.App.Listen(host + ":" + port)` | 依次消费 shutdown 的 main/before 位点，调用 `fiber.App.Shutdown()`，再消费 after 位点；随后由 `Shutdown` 顶部的 defer 停止并等待默认健康检查，逐项释放 `GlobalManager` 内已初始化对象，清空容器、记录日志并关闭日志器 | `RegisterAppState(true)` 在 `Listen` 返回后才执行，并非“开始监听成功”标志 |
-| Gin | 无 TLS 配置时调用 `http.Server.ListenAndServe()`；已加载 TLS 配置时调用 `ListenAndServeTLS("", "")` | 最多等待 30 秒 `Shutdown`，随后停止并等待默认健康检查、逐项释放并清空容器、记录日志并关闭日志器 | TLS 证书加载已有单元/契约测试，但没有真实 listener/握手集成验证；应用状态同样在 server 返回后才写入 |
+| Fiber | `fiber.App.Listen(host + ":" + port)` | 依次消费 shutdown 的 main/before 位点，调用 `fiber.App.Shutdown()`，再消费 after 位点；随后由 `Shutdown` 顶部的 defer 停止并等待默认健康检查，逐项释放 `GlobalManager` 内已初始化对象，清空容器、记录日志并关闭日志器 | `PhaseServing` 由 `OnListen` hook 在监听真正建立时置位；`Listen` 返回后不再置位 |
+| Gin | `net.Listen("tcp", addr)` 绑定成功后置位 `PhaseServing`，再调用 `http.Server.Serve(listener)`；已加载 TLS 配置时调用 `ServeTLS(listener, "", "")` | 最多等待 30 秒 `Shutdown`，随后停止并等待默认健康检查、逐项释放并清空容器、记录日志并关闭日志器 | TLS 证书加载已有单元/契约测试，但没有真实 listener/握手集成验证 |
 
 `LocationServerRun` 与 `LocationServerShutdown` 的 Manager 虽被传给 `AppCoreRun`，当前两种 Core 都不读取它们。`LocationServerRunAfter` 只有在 `AppCoreRun` 返回后才执行；如果 fatal/panic/进程强退阻断返回，after-run 也没有保证。
 

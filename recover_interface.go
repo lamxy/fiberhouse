@@ -16,7 +16,13 @@ type IErrorHandler interface {
 	DefaultStackTraceHandler(adaptorctx.ICoreContext, interface{})
 	ErrorHandler(adaptorctx.ICoreContext, error) error
 	GetContext() IApplicationContext
+	// RecoverMiddleware 返回恢复中间件
+	//
+	// 装配失败时 panic；需要处理该错误请改用 RecoverMiddlewareWithError。
 	RecoverMiddleware(...RecoverConfig) any
+	// RecoverMiddlewareWithError 与 RecoverMiddleware 相同，但装配失败时返回
+	// 错误而非 panic
+	RecoverMiddlewareWithError(...RecoverConfig) (any, error)
 }
 
 // IRecover 恢复惊慌接口，用于获取不同框架的请求上下文中的参数、查询参数、获取tranceID以及定义恢复中间件方法

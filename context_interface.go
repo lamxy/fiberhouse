@@ -40,9 +40,19 @@ type IApplicationContext interface {
 	RegisterStarterApp(sApp ApplicationStarter)
 	// GetStarterApp 获取框架应用启动器实例(如WebApplication)
 	GetStarterApp() ApplicationStarter
+	// Phase 获取当前生命周期阶段
+	Phase() AppPhase
+	// IsServing 报告应用是否正在接受流量（严格对应 PhaseServing）
+	IsServing() bool
+	// TransitionTo 推进生命周期阶段，仅允许正向迁移，逆向返回 error
+	TransitionTo(AppPhase) error
 	// RegisterAppState 注册应用启动状态
+	//
+	// Deprecated: 改用 TransitionTo。保留以维持 v1.x 的接口兼容性。
 	RegisterAppState(bool)
 	// GetAppState 获取应用启动状态
+	//
+	// Deprecated: 改用 IsServing 或 Phase。保留以维持 v1.x 的接口兼容性。
 	GetAppState() bool
 	// GetBootConfig 获取启动配置
 	GetBootConfig() *BootConfig

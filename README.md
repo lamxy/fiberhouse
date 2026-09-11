@@ -24,11 +24,15 @@ Go Web 服务通常需要分别处理配置加载、日志输出、中间件顺�
 
 框架提供默认的框架级启动器（FrameStarter）和核心启动器（CoreStarter），两者都可以定制或替换。样例应用（`example_application`）展示了上层业务结构与接入方式，便于从可运行路径理解各类扩展点。
 
-## 🚧 目前是什么状态
+## 📊 目前是什么状态
 
-FiberHouse 仍在持续迭代，**目前尚未承诺可直接用于生产环境的稳定性**。Web 主链已经覆盖 Fiber/Gin、配置与日志、统一响应、参数校验、Provider 幂等初始化和信号关闭；`GlobalManager` 以及 MySQL、MongoDB、Redis、缓存、asynq 任务、CLI 等组件也已有明确接入路径，具体见下面的[核心能力](#-核心能力)。
+**15 项公共 API 能力已全部达到「稳定公共能力」**：创建、运行、失败、关闭四段生命周期契约明确，单元/契约测试与 race 检测进入 CI，涉及外部依赖的能力有可重复的 live integration 覆盖，调用方本可处理的错误不以 panic 表达，且文档示例确实执行对应路径。逐项证据见[功能状态](docs/reference/feature-status.md)。
 
-启动运行与关闭链已经具备专项回归测试，但统一资源所有权、完整并发契约、可恢复错误边界和外部依赖验证仍需继续完善，公开接口也可能调整。各项能力的成熟度和限制以[功能状态](docs/reference/feature-status.md)为准；`example_main`/`example_config`/`example_application` 用于展示调用路径，不应直接作为生产模板。
+具体而言：跨组件资源所有权由 `ClosableProvider` + `IProviderManager.CloseProviders` 形成统一关闭契约，关闭链按注册逆序回收；应用生命周期由 `AppPhase` 有序状态机承载；框架装配期的 panic 已逐条裁决，每一处都有返回 error 的替代入口（见 [panic 裁决表](docs/reference/panic-adjudication.md)）；外部依赖的验证由 Redis、MySQL、MongoDB、asynq 与二级缓存的 live integration 用例覆盖，含并发读写、故障注入与关闭排空。
+
+需要明确的边界：**「稳定」指该能力的生命周期契约、验证证据与文档已闭合，不等于导出符号已冻结。** 兼容承诺将在 v2.0.0 统一给出，在此之前仍可能发生 breaking rename 或签名调整，此类改动会在 CHANGELOG 与功能状态页同步记录。另有 4 项内部工具（Dig 容器、jsonconvert、mongodecimal、logging writer 与 adaptor）按设计不参与晋级，它们是框架内部实现工具而非对外承诺的能力。
+
+`example_main`/`example_config`/`example_application` 用于展示调用路径，包含固定凭据与调试开关，不应直接作为生产模板。
 
 ## ✨ 核心能力
 
@@ -176,7 +180,7 @@ go vet ./...
 
 当前提交以 `go test ./... -count=1`、`go test -race ./... -count=1` 和 `go vet ./...` 作为基础验证，其中 vet 是独立的静态检查门禁。验证结果只对应当前提交，历史版本应以相应的 Git tag 和 release note 为准。
 
-CI 在 GitHub Actions 上拆成三个 job：`quality` 跑普通测试、覆盖率和 vet，`race` 单独跑 race 检测，`smoke` 拉起真实的 Redis/MongoDB/MySQL 启动完整示例、检查一条 HTTP 路径，并定向执行带 `liveintegration` 标签的测试（覆盖 Redis、asynq、MySQL、MongoDB 各自的创建-读写-关闭路径，不含并发或故障注入场景）。这三个 job 是否会阻止合并，取决于仓库分支保护是否将它们设为必需检查。
+CI 在 GitHub Actions 上拆成三个 job：`quality` 跑普通测试、覆盖率和 vet，`race` 单独跑 race 检测，`smoke` 拉起真实的 Redis/MongoDB/MySQL 启动完整示例、检查健康路径与二进制响应协商（断言 MsgPack、Protobuf 与 JSON 回退三条路径的 Content-Type 及 `data` 完整性），并定向执行带 `liveintegration` 标签的测试。live 覆盖包含 Redis、asynq、MySQL、MongoDB 与二级缓存各自的创建-读写-关闭路径，以及并发读写叠加健康检查、handler 持续失败的重试-归档、就绪探针的依赖故障与恢复、关闭前排空在途异步写等并发与故障注入场景。这三个 job 是否会阻止合并，取决于仓库分支保护是否将它们设为必需检查。
 
 `Makefile` 同时提供 `build`、`lint` 和交叉编译目标，执行前应确认目标路径与本机工具链一致。
 

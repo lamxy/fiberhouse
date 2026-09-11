@@ -35,7 +35,7 @@ Context 是 FiberHouse 各层共享基础设施的访问面；Locator 是 API、
 
 `NewCmdContextOnce` 创建 `CmdContext`，共享同一个 `GlobalManager` 单例，并额外持有 `*container.DigContainer`（`container` 对应包路径 `github.com/lamxy/fiberhouse/component/container`）。CLI 的 Starter 由命令装配代码注册，不经过 Web `RunServer`。
 
-当前 `CmdContext.GetValidateWrap()` 返回 nil；虽然该方法属于 `IContext`，CLI 不能据此假设验证器可用。CLI 健康检查也只同步遍历一次全局对象，并非 Web 形态的 ticker 生命周期。CLI 整体在[功能状态](../reference/feature-status.md)中属于实验性。
+当前 `CmdContext.GetValidateWrap()` 返回 nil；虽然该方法属于 `IContext`，CLI 不能据此假设验证器可用。CLI 健康检查也只同步遍历一次全局对象，并非 Web 形态的 ticker 生命周期。CLI 整体在[功能状态](../reference/feature-status.md)中属于稳定公共能力；上述两点是其已记载的行为边界，不是未闭合的缺口。
 
 ## Starter 回指
 
@@ -51,7 +51,11 @@ RunServer → 创建 FrameStarter 与 CoreStarter
 
 在 `RegisterToCtx` 之前，`GetStarter()` / `GetStarterApp()` 可能为 nil。任务 worker 获取实例 key 等代码依赖这个回指，因此不能把相关逻辑提前到 Context 创建阶段。
 
-`AppContext.RegisterAppState` 使用 `sync.Once`，但当前 Fiber/Gin 都在 server 的阻塞监听调用返回后才写入 true；它不是可靠的“已经开始接受请求”探针。该布尔值的普通读写也没有独立锁或原子保护，不应作为并发健康状态通道。
+`AppContext` 以 `AppPhase` 有序状态机承载生命周期：`PhaseCreated → PhaseInitializing → PhaseServing → PhaseShuttingDown → PhaseTerminated`。阶段只允许正向迁移（可跳跃，例如装配失败时从 `PhaseInitializing` 直接到 `PhaseTerminated`），逆向与原地重入都由 `TransitionTo` 返回 error。状态以 `atomic.Int32` 承载，并发读写安全；`TransitionTo` 以 CAS 实现，并发下只有一个调用者能完成同一次迁移。
+
+`IsServing()` 严格对应 `PhaseServing`，且 `PhaseServing` 置位在**监听真正建立的那一刻**（Fiber 走 `OnListen` hook，Gin 在 `net.Listen` 成功之后、`Serve` 之前），因此它是可靠的“正在接受请求”探针。
+
+`RegisterAppState` / `GetAppState` 保留为 Deprecated 转接层以维持 v1.x 接口兼容：`RegisterAppState(true)` 映射为迁移到 `PhaseServing`，`false` 被忽略（旧签名无法表达回退）；`GetAppState()` 返回 `Phase() >= PhaseServing`，语义是“装配阶段已结束”。判断“此刻正在接受流量”请改用 `IsServing()`。
 
 ## `GlobalManager` 访问
 

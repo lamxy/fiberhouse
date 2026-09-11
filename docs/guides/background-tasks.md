@@ -2,7 +2,7 @@
 
 FiberHouse 用 asynq 封装 Redis 队列，提供 `TaskWorker`、`TaskDispatcher` 和应用侧 `TaskRegister` 契约。框架负责在 Web 启动链的任务位点调用注册器、挂载 handler 并选择是否启动 worker；任务类型、Redis 实例、队列配置、dispatcher/worker initializer 和资源回收都由应用决定。
 
-这套能力已有运行路径，但统一错误传播和关闭编排尚不完整，因此当前属于实验性能力。
+这套能力的创建、运行、失败与关闭四条路径均有明确契约：`TaskDispatcher.Close` 与 `TaskWorker.Shutdown` 已补齐并实作 `globalmanager.Closable`，经容器 `ReleaseAll` 回收，`RunAsync` 不再恒返回 nil。在[《功能状态》](../reference/feature-status.md)中属于稳定公共能力。
 
 ## 三个角色
 
@@ -77,12 +77,15 @@ worker 和 dispatcher 都依赖调用方传入的 `*redis.Client`。框架不验
 
 当前 wrapper 的生命周期边界是：
 
-- `TaskWorker` 没有自己的 `Close`/`Shutdown` 方法，但 `GetServer()` 返回原始 `*asynq.Server`；应用可使用底层 API 建立停止与等待协议。
-- `TaskDispatcher` 没有 wrapper 级 `Close`，但公开 `Client *asynq.Client`；创建者仍需按 asynq/Redis 的所有权规则回收。
-- 标准 Fiber/Gin shutdown 不会停止 worker 或 dispatcher，只会清空 GlobalManager；清空不调用资源关闭方法。
+- `TaskWorker` 实现 `globalmanager.Closable`：`Close()` 调用底层 `asynq.Server.Shutdown()`，等待在途 handler 完成后停止接收。重复调用是空操作——asynq 的 `Shutdown()` 不可重入，幂等守卫由 wrapper 提供。仍可用 `GetServer()` 取得原始 `*asynq.Server` 自建停止协议。
+- `TaskDispatcher` 实现 `globalmanager.Closable`：`Close()` 之后 `Enqueue`/`EnqueueContext` 返回包装了 `ErrTaskDispatcherClosed` 的错误，而不是把调用转发给一个不该再被使用的 client。**它不关闭 Redis 连接**——`NewTaskDispatcher` 走 `asynq.NewClientFromRedisClient`，连接由调用方注入，asynq 对这种客户端拒绝关闭（其 `Close()` 恒定返回 "redis connection is shared…"），因为同一个 `*redis.Client` 通常还供缓存与 worker 使用。连接回收仍由其所有者负责。
+- 因此，只要两者注册进 `GlobalManager`，标准 Fiber/Gin shutdown 的 `ReleaseAll` 就会回收它们。注意 `ReleaseAll` 只关闭**已初始化**的对象：仅 `Register` 而从未 `Get` 过的 key 不持有实例，也就无从关闭。
+- async worker goroutine、GlobalManager 健康检查和日志 writer 仍不共享统一 cancel tree。
 - async worker goroutine、GlobalManager 健康检查和日志 writer 不共享统一 cancel tree。
 
-建议的应用关闭顺序是：先停止新请求和新入队，停止 worker 接收并等待在途 handler，关闭 dispatcher，最后按所有权关闭 Redis 与日志。若 Redis 同时供缓存使用，应在所有消费者都停止后才关闭。当前框架没有替应用执行或验证这条顺序。
+建议的应用关闭顺序是：先停止新请求和新入队，停止 worker 接收并等待在途 handler，关闭 dispatcher，最后按所有权关闭 Redis 与日志。若 Redis 同时供缓存使用，应在所有消费者都停止后才关闭。
+
+框架现在会在 `ReleaseAll` 中关闭 worker 与 dispatcher，但**不保证两者之间的先后顺序**——容器的释放顺序只区分组合对象与普通对象（见 `CompositeClosable`），worker 与 dispatcher 同属普通对象。若应用需要「先停消费者再停生产者」这条严格顺序，仍应自行编排，或让持有两者的组合对象实现 `CompositeClosable` 来声明所有权。Redis client 的关闭顺序同样由应用负责。
 
 ## 错误与并发边界
 
