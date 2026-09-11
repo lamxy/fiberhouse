@@ -29,7 +29,7 @@
 
 `DefaultProviders()` 和 `DefaultPManagers(ctx)` 是进程级集合。示例在启动期一次性合并它们；不要在服务已开始处理请求后继续调用 `Add` 或 `Except` 重配共享集合。
 
-示例的 `RegisterFiberAppCoreHook` shutdown hook 只记录一条日志。释放并清空 GlobalManager、再关闭 logger 的是 `CoreWithFiber.RegisterAppHooks` 另行注册的内建 shutdown hook：它调用 `clearApplicationGlobals`（停止健康检查 → 逐项释放 → 删除条目）后调用 logger `Close`。容器内已初始化的数据库、缓存实例会被 `Close`；未纳入容器的任务与后台 goroutine 仍需要应用设计可验证的停止顺序，在该内建 hook 关闭 logger 之前也必须停止日志生产者。
+示例的 `RegisterFiberAppCoreHook` shutdown hook 只记录一条日志。释放并清空 GlobalManager 的是 `CoreWithFiber.Shutdown` 顶部的 `defer`：它以每实例 `sync.Once` 守卫调用 `clearApplicationGlobals`（停止健康检查 → 逐项释放 → 删除条目），再关闭 logger。该 `defer` 覆盖 `Shutdown` 的全部提前返回路径；`RegisterAppHooks` 注册的内建 `OnShutdown` hook 委派同一个 once 守卫的清理函数，因此重复触发是 no-op。`LocationServerShutdownAfter` 位点保证在释放与 logger 关闭**之前**执行，该位点的 provider 仍可正常记录日志。容器内已初始化的数据库、缓存实例会被 `Close`；未纳入容器的任务与后台 goroutine 仍需要应用设计可验证的停止顺序，在该内建 hook 关闭 logger 之前也必须停止日志生产者。
 
 ## 配置示例
 

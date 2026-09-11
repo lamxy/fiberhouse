@@ -10,7 +10,6 @@
 
 | 组件 / package | 用途 | 主要调用者 | 生命周期、错误与并发边界 | 状态 | 相关指南 |
 |---|---|---|---|---|---|
-| `component/bufferpool` | 分片 `bytes.Buffer` 池与泛型 `sync.Pool` | 当前仓库没有运行时调用者，`createStringBuilderPool` 仅为包内示例 | pool 可并发获取/归还；借出的对象仍由单个调用方独占，归还后不得继续引用；超出容量范围的 buffer 不回收 | 内部工具 | 本页 |
 | `component/container` | 基于 Uber Dig 的启动期依赖注入容器与泛型解析包装器 | `CmdContext`、CLI `test-orm` 与其 service 装配 | 单例容器只用于启动装配；`Provide` 错误显式收集，`ResetDigContainer` 不支持并发运行期调用 | 内部工具 | [命令行指南](../guides/command-line.md) |
 | `component/cache` | 通用 `Cache` 接口、选项池、缓存读取工具与保护机制 | 示例 service、任务注册器和应用全局 initializer | 实例由应用显式注册；目录不统一接管 local/remote/L2 的创建、等待和关闭 | 实验性 | [缓存指南](../guides/cache.md)、[GlobalManager](../guides/global-manager.md) |
 | `component/cache/cachelocal` | 基于 Ristretto 的本地缓存 | Web/CLI 应用 initializer 与 L2 cache | 应用持有实例；异步写入后可调用 `Wait`，关闭后操作返回缓存关闭错误 | 实验性 | [缓存指南](../guides/cache.md) |
@@ -28,7 +27,7 @@
 | `component/mq` | 消息队列的目录意图 | 无 Go 调用者 | 只有 RabbitMQ 方向说明，没有 client、consumer 或生命周期 | 预留/占位 | [功能状态](feature-status.md) |
 | `component/rpc` | RPC 的目录意图 | 无 Go 调用者 | 无 RPC client/server；`response/pb` 仅提供 HTTP 统一响应的 Protobuf 数据契约，不提供 RPC 生命周期 | 预留/占位 | [功能状态](feature-status.md)、[响应与序列化](../guides/response-and-serialization.md) |
 
-组件装配应在服务进入并发处理前完成。对象池条目、Dig 容器、验证器注册表和异步 writer 的可变状态具有不同并发语义，不能把 package 级单例等同于任意时刻都可安全重配。数据库、日志与任务组件的关闭错误也不会由目录结构自动汇总；应用需要为资源建立明确的创建者、停止顺序和错误出口。
+组件装配应在服务进入并发处理前完成。Dig 容器、验证器注册表和异步 writer 的可变状态具有不同并发语义，不能把 package 级单例等同于任意时刻都可安全重配。数据库、日志与任务组件的关闭错误也不会由目录结构自动汇总；应用需要为资源建立明确的创建者、停止顺序和错误出口。
 
 ## 如何使用这张表
 
@@ -40,11 +39,7 @@
 
 “相关指南”指向主解释位置；本页只保留跨组件索引和其他指南未覆盖的实现细节。
 
-## 池化与转换辅助
-
-`bufferpool.BufferPool` 只把容量命中既有 shard 的 buffer 放回池。调用者应把 `Get`/`Put` 视为所有权转移，不能在 `Put` 后保留切片或 builder 的可变引用。
-
-泛型 `Pool[T]` 会在归还时调用 `resetFn`。重置函数由创建者负责，若它没有清理敏感或大型引用，池会延长这些对象的生命周期。
+## 转换辅助
 
 `jsonconvert.DataWrap` 也是池化对象。`NewDataWrap` 判定复杂值是否尝试 JSON 编码，标量走字符串转换，运行时错误转成错误文本。
 

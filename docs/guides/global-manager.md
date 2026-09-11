@@ -138,7 +138,7 @@ if err := gm.Release(key); errors.Is(err, globalmanager.ErrMaintenanceInProgress
 
 当前 Fiber 与 Gin 受控关闭路径按三步执行：停止并等待默认健康检查 → `ReleaseAllWithObserver`（失败写入框架日志器）→ `ClearAll(true)`。因此这两条路径下容器内已初始化对象的 `Close` 会被调用。
 
-**CLI 与 `example_application/hertzcore` 不走这条路径**：`commandstarter/` 没有任何关闭入口，hertzcore 的 `Shutdown` 不调用 `clearApplicationGlobals`，这两种场景下资源创建者仍须自行安排 `Close` / `Disconnect`。
+**CLI 与 `example_application/hertzcore` 不经 `clearApplicationGlobals`，但同样会释放**：两者的上下文类型与导出边界不同——`ICommandContext.GetStarterApp()` 返回 `CommandStarter` 而非 `ApplicationStarter`；hertzcore 的包定位是「仅依赖框架的导出 API」，而 `clearApplicationGlobals` 未导出——因此各自直接调用容器已导出的 `ReleaseAllWithObserver` + `ClearAll`。四条关闭路径的释放失败均按 key 上报且不中断回收。
 
 ## 启动与运行期边界
 

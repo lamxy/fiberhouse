@@ -64,7 +64,6 @@ JSON 流量编解码逐条对照：条件 1，四条路径有契约，且「没�
 
 | 能力 | 实现阶段 | 支持级别 | API 受众 | 启用方式 | 生命周期完整度 | 验证级别 | 限制与主指南 |
 |---|---|---|---|---|---|---|---|
-| bufferpool 与对象池 | 已实现 | 实验性 | 内部工具 | 不注册、不自动启用；调用方直接构造或借用分片 `bytes.Buffer` 池、泛型 `sync.Pool` | 创建、运行有实现；失败与关闭没有独立生命周期 | 单元/契约 | 当前仓库没有生产调用者，池中对象不能被调用方并发复用；见[组件目录](components.md) |
 | Dig 容器 | 已接入 | 实验性 | 内部工具 | `CmdContext` 持有单例容器，CLI ORM 示例显式用于启动和命令装配 | 创建、运行、失败返回和 reset 有路径；没有通用资源关闭编排 | 单元/契约 | Web 运行时不推荐使用，`ResetDigContainer` 非并发安全；见[组件目录](components.md)、[命令行指南](../guides/command-line.md) |
 | jsonconvert | 已接入 | 实验性 | 内部工具 | recovery 错误处理按调用借用 wrapper，用后显式 `Release` | 创建、运行、失败回退、释放均有路径；单个 wrapper 不支持并发复用 | 单元/契约 | 主要把任意数据转换为 JSON 或字符串；见[组件目录](components.md)、[错误与恢复](../guides/errors-and-recovery.md) |
 | mongodecimal | 已接入 | 实验性 | 内部工具 | 随 `dbmongo.NewClient` 构造自动注册到 BSON registry，不是独立服务 | 创建和运行随 Mongo client；失败与关闭也依附 client，没有独立生命周期 | 无专项测试 | 只服务 `decimal.Decimal` BSON 编解码，外部 Mongo live 行为未验证；见[组件目录](components.md)、[数据库指南](../guides/database.md) |
