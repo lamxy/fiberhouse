@@ -8,6 +8,8 @@
 package commandstarter
 
 import (
+	"errors"
+
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/globalmanager"
 )
@@ -75,23 +77,43 @@ type FrameCmdApplication struct {
 	application fiberhouse.ApplicationCmdRegister
 }
 
+// ErrNoCmdStarterOption 标记未提供任何命令启动器选项。
+//
+// 装配期的用法错误：没有选项就没有注册器，启动器无事可做。
+var ErrNoCmdStarterOption = errors.New(
+	"fiberhouse/commandstarter: no registrar option available for injection into the command starter")
+
 // NewFrameCmdApplication 创建一个命令启动器对象，实现FrameCmdStarter接口
+//
+// 未提供选项时 panic。需要处理该错误的调用方请改用
+// NewFrameCmdApplicationWithError。
 func NewFrameCmdApplication(ctx fiberhouse.ICommandContext, opts ...fiberhouse.FrameCmdStarterOption) fiberhouse.FrameCmdStarter {
+	starter, err := NewFrameCmdApplicationWithError(ctx, opts...)
+	if err != nil {
+		panic(err)
+	}
+	return starter
+}
+
+// NewFrameCmdApplicationWithError 与 NewFrameCmdApplication 相同，但未提供选项时
+// 返回错误而非 panic。
+func NewFrameCmdApplicationWithError(ctx fiberhouse.ICommandContext, opts ...fiberhouse.FrameCmdStarterOption) (fiberhouse.FrameCmdStarter, error) {
 	fca := &FrameCmdApplication{
 		Ctx: ctx,
 	}
 
 	if len(opts) == 0 {
-		msg := "No registrar option available for injection into the command starter"
-		ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(msg)
-		panic(msg)
+		if ctx != nil && ctx.GetLogger() != nil && ctx.GetConfig() != nil {
+			ctx.GetLogger().ErrorWith(ctx.GetConfig().LogOriginFrame()).Msg(ErrNoCmdStarterOption.Error())
+		}
+		return nil, ErrNoCmdStarterOption
 	}
 
 	for _, opt := range opts {
 		opt(fca)
 	}
 
-	return fca
+	return fca, nil
 }
 
 // GetContext 获取全局上下文
