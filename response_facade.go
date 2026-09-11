@@ -7,6 +7,8 @@
 package fiberhouse
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -19,23 +21,57 @@ import (
 var (
 	respInfoPManagerOnce     sync.Once
 	respInfoPManagerInstance *RespInfoPManager
+	// respInfoPManagerErr 保存单例解析失败的原因。
+	//
+	// 必须与实例一同缓存：sync.Once 只执行一次闭包，失败之后的调用不会重跑，
+	// 若不记录错误，后续调用只能看到一个 nil 实例而不知为何为 nil。
+	respInfoPManagerErr error
 )
 
+// ErrRespInfoPManagerUnavailable 标记响应信息管理器单例不可用。
+//
+// 两种装配失败：位点上没有任何管理器（应用未装配响应 provider 集合），
+// 或位点首个管理器不是 *RespInfoPManager（装配了错误的管理器）。
+var ErrRespInfoPManagerUnavailable = errors.New("fiberhouse: RespInfoPManager is unavailable")
+
 // NewRespInfoPManagerOnce 获取响应信息提供者管理器单例
+//
+// 装配失败时 panic。需要处理该错误的调用方请改用
+// NewRespInfoPManagerOnceWithError——这正是 feature-status.md 判定
+// MsgPack / Protobuf 卡住条件 4 的那处缺口：此前唯一入口即 panic。
 func NewRespInfoPManagerOnce() *RespInfoPManager {
+	manager, err := NewRespInfoPManagerOnceWithError()
+	if err != nil {
+		panic(err)
+	}
+	return manager
+}
+
+// NewRespInfoPManagerOnceWithError 与 NewRespInfoPManagerOnce 相同，但装配失败时
+// 返回错误而非 panic。
+//
+// 失败结果同样被 sync.Once 缓存：第一次调用失败后，后续调用返回同一个错误，
+// 而不是重新尝试解析。这与容器的 Get 不同——位点绑定是启动期的一次性动作，
+// 重试不会改变结果。
+func NewRespInfoPManagerOnceWithError() (*RespInfoPManager, error) {
 	respInfoPManagerOnce.Do(func() {
 		managers := ProviderLocationDefault().LocationResponseInfoInit.GetManagers()
-		if len(managers) > 0 {
-			if manager, ok := managers[0].(*RespInfoPManager); ok {
-				respInfoPManagerInstance = manager
-				return
-			} else {
-				panic("first manager in ProviderLocationDefault().LocationResponseInfoInit is not a RespInfoPManager")
-			}
+		if len(managers) == 0 {
+			respInfoPManagerErr = fmt.Errorf(
+				"%w: no RespInfoPManager found in ProviderLocationDefault().LocationResponseInfoInit",
+				ErrRespInfoPManagerUnavailable)
+			return
 		}
-		panic("no RespInfoPManager found in ProviderLocationDefault().LocationResponseInfoInit")
+		manager, ok := managers[0].(*RespInfoPManager)
+		if !ok {
+			respInfoPManagerErr = fmt.Errorf(
+				"%w: first manager in ProviderLocationDefault().LocationResponseInfoInit is not a RespInfoPManager (got %T)",
+				ErrRespInfoPManagerUnavailable, managers[0])
+			return
+		}
+		respInfoPManagerInstance = manager
 	})
-	return respInfoPManagerInstance
+	return respInfoPManagerInstance, respInfoPManagerErr
 }
 
 // ------------------------------------------------------------------------------------------------------------------
