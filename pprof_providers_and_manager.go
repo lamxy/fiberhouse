@@ -130,6 +130,26 @@ func (p *PprofStartProvider) Initialize(ctx IContext, _ ...ProviderInitFunc) (an
 	return nil, nil
 }
 
+// Close 经由 ClosableProvider 契约关闭诊断服务。
+//
+// 实现本接口是「谁持有谁负责关闭」的直接表达：服务由本提供者在 Initialize 中拉起，
+// 因此交还资源也应由它负责。此前关闭只有一条路径——ServerShutdownAfter 位点上的
+// PprofShutdownProvider——那条路径依赖装配方把关闭提供者也一并注册，漏装即泄漏。
+//
+// 两条路径并存且都幂等：PprofServer.Shutdown 在 !started 时直接返回 nil，
+// 因此先触发哪条都安全（pprof_server.go:121）。
+func (p *PprofStartProvider) Close(ctx context.Context) error {
+	pprofServerMu.Lock()
+	server := pprofServerInstance
+	pprofServerMu.Unlock()
+
+	// 从未创建实例（提供者未初始化，或未启用诊断服务）时无事可做。
+	if server == nil {
+		return nil
+	}
+	return server.Shutdown(ctx)
+}
+
 /*
 	关闭提供者
 */

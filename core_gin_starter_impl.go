@@ -614,6 +614,11 @@ func (cg *CoreWithGin) Shutdown(managers ...IProviderManager) error {
 		return fmt.Errorf("failed to load post-shutdown providers: %w", err)
 	}
 
+	// 关闭 provider 持有的资源。位置夹在两端之间：ServerShutdownAfter 之后
+	// （该位点的 provider 仍可能使用这些资源），全局对象释放与日志器关闭之前
+	// （关闭失败要靠框架日志器上报）。
+	closeShutdownChainProviders(cg.GetAppContext(), managers)
+
 	// 清理资源
 	cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginFrame()).
 		Str("applicationStarter", "GinApplication").

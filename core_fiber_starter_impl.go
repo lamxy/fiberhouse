@@ -533,6 +533,11 @@ func (cf *CoreWithFiber) Shutdown(managers ...IProviderManager) error {
 		return fmt.Errorf("failed to load post-shutdown providers: %w", err)
 	}
 
+	// 关闭 provider 持有的资源。位置夹在两端之间：ServerShutdownAfter 之后
+	// （该位点的 provider 仍可能使用这些资源），全局对象释放与日志器关闭之前
+	// （关闭失败要靠框架日志器上报）。
+	closeShutdownChainProviders(cf.GetAppContext(), managers)
+
 	// 日志器由顶部 defer 的 clearApplicationGlobalsOnce 关闭：它必须在全局对象释放
 	// 之后才关，否则逐 key 上报的释放失败会写进已关闭的 writer。此处不再重复关闭
 	// ——LoggerWrap.Close 没有幂等保护，重复关闭是否安全完全取决于注入的 writer。
