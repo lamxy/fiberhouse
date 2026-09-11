@@ -30,7 +30,7 @@ Go Web 服务通常需要分别处理配置加载、日志输出、中间件顺�
 
 具体而言：跨组件资源所有权由 `ClosableProvider` + `IProviderManager.CloseProviders` 形成统一关闭契约，关闭链按注册逆序回收；应用生命周期由 `AppPhase` 有序状态机承载；框架装配期的 panic 已逐条裁决，每一处都有返回 error 的替代入口（见 [panic 裁决表](docs/reference/panic-adjudication.md)）；外部依赖的验证由 Redis、MySQL、MongoDB、asynq 与二级缓存的 live integration 用例覆盖，含并发读写、故障注入与关闭排空。
 
-需要明确的边界：**「稳定」指该能力的生命周期契约、验证证据与文档已闭合，不等于导出符号已冻结。** 兼容承诺将在 v2.0.0 统一给出，在此之前仍可能发生 breaking rename 或签名调整，此类改动会在 CHANGELOG 与功能状态页同步记录。另有 4 项内部工具（Dig 容器、jsonconvert、mongodecimal、logging writer 与 adaptor）按设计不参与晋级，它们是框架内部实现工具而非对外承诺的能力。
+需要明确的边界：**「稳定」指该能力的生命周期契约、验证证据与文档已闭合，不等于导出符号已冻结。** 兼容承诺将在 v2.0.0 统一给出，在此之前仍可能发生 breaking rename 或签名调整，此类改动会在 CHANGELOG 与功能状态页同步记录。下一个大版本 v2.0.0 将在 v1.x.x 达到生产稳定后重新设计，丢弃 v1 的历史包袱，并引入插件扩展机制以降低应用的启动配置复杂度（方向见 [plugins](plugins/README.md)）。另有 4 项内部工具（Dig 容器、jsonconvert、mongodecimal、logging writer 与 adaptor）按设计不参与晋级，它们是框架内部实现工具而非对外承诺的能力。
 
 `example_main`/`example_config`/`example_application` 用于展示调用路径，包含固定凭据与调试开关，不应直接作为生产模板。
 
