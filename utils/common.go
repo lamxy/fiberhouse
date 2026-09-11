@@ -7,6 +7,7 @@
 package utils
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,21 +22,49 @@ import (
 )
 
 // GetExecPath 获取当前可执行文件执行时目录
+//
+// 解析失败时 panic。需要处理该错误的调用方请改用 GetExecPathWithError。
 func GetExecPath() string {
+	dir, err := GetExecPathWithError()
+	if err != nil {
+		panic(err)
+	}
+	return dir
+}
+
+// GetExecPathWithError 与 GetExecPath 相同，但解析失败时返回错误而非 panic。
+//
+// os.Executable 在少数平台与容器环境下会失败（例如可执行文件被删除后重启）。
+// 调用方通常有可用的回退路径——退回工作目录或配置指定的路径——因此这类失败
+// 应当可被处理，而不是终止进程。
+func GetExecPathWithError() (string, error) {
 	dir, err := os.Executable()
 	if err != nil {
-		panic("GetExecPath Error: " + err.Error())
+		return "", fmt.Errorf("resolve executable path: %w", err)
 	}
-	return filepath.Dir(dir)
+	return filepath.Dir(dir), nil
 }
 
 // GetWD 获取当前工作目录
+//
+// 解析失败时 panic。需要处理该错误的调用方请改用 GetWDWithError。
 func GetWD() string {
-	dir, err := os.Getwd()
+	dir, err := GetWDWithError()
 	if err != nil {
-		panic("GetWD Error: " + err.Error())
+		panic(err)
 	}
 	return dir
+}
+
+// GetWDWithError 与 GetWD 相同，但解析失败时返回错误而非 panic。
+//
+// os.Getwd 会在工作目录已被删除时失败，这在长期运行的进程里确实会发生。
+func GetWDWithError() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+	return dir, nil
 }
 
 // JsonValidString 检查字符串是否时有效json
