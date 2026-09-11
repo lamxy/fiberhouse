@@ -7,6 +7,8 @@
 package validate
 
 import (
+	"fmt"
+
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
@@ -20,19 +22,19 @@ type EnValidate struct {
 	translator ut.Translator
 }
 
-func NewEnValidate() *EnValidate {
+func NewEnValidate() (*EnValidate, error) {
 	va := validator.New(validator.WithRequiredStructEnabled())
 	localeEn := en.New()
 	uniTrans := ut.New(localeEn, localeEn)
 	trans, _ := uniTrans.GetTranslator("en")
 	if err := enTranslation.RegisterDefaultTranslations(va, trans); err != nil {
-		panic(err)
+		return nil, fmt.Errorf("validate: register %s translations: %w", LangEn, err)
 	}
 	return &EnValidate{
 		validator:  va,
 		lang:       LangEn,
 		translator: trans,
-	}
+	}, nil
 }
 
 // RegisterToWrap 注册英文验证器和翻译器到包装器
@@ -44,7 +46,7 @@ func (v *EnValidate) RegisterToWrap(wrap *Wrap) {
 
 // GetEnValidateInitializer 获取英文验证器初始化器
 func GetEnValidateInitializer() ValidateInitializer {
-	return func() ValidateRegister {
+	return func() (ValidateRegister, error) {
 		return NewEnValidate()
 	}
 }

@@ -1,8 +1,10 @@
 package validate
 
 import (
+	"errors"
 	"testing"
 
+	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
 	"github.com/lamxy/fiberhouse/appconfig"
 	"github.com/lamxy/fiberhouse/constant"
@@ -49,9 +51,13 @@ func TestValidate_LanguagesAndUnsupportedFallback(t *testing.T) {
 	assert.Len(t, w.GetTranslators(), 3)
 	assert.Same(t, w.GetValidate(LangEn), w.GetValidate("unsupported"))
 	assert.Same(t, w.GetTranslator(LangEn), w.GetTranslator("unsupported"))
-	assert.NotNil(t, GetEnValidateInitializer()())
-	assert.NotNil(t, GetZhCNValidateInitializer()())
-	assert.NotNil(t, GetZhTWValidateInitializer()())
+	for _, initializer := range []ValidateInitializer{
+		GetEnValidateInitializer(), GetZhCNValidateInitializer(), GetZhTWValidateInitializer(),
+	} {
+		register, err := initializer()
+		require.NoError(t, err)
+		assert.NotNil(t, register)
+	}
 	assert.Equal(t, LangEn, GetDefaultLang())
 }
 
@@ -135,6 +141,91 @@ func TestValidate_DuplicateRegistrationContracts(t *testing.T) {
 	assert.Equal(t, 2, countLangFlag(w.GetLangList(), "task6-duplicate"), "language registration currently preserves duplicates")
 	require.NoError(t, second.RegisterValidation("task6-validator-duplicate", func(validator.FieldLevel) bool { return true }))
 	require.NoError(t, second.RegisterValidation("task6-validator-duplicate", func(validator.FieldLevel) bool { return false }))
+}
+
+// failingValidateInitializer 模拟语言包翻译注册失败：这是 ValidateInitializer 改为
+// 返回 error 之后必须成立的契约——失败的语言被跳过并上报，其余语言照常注册。
+func failingValidateInitializer(err error) ValidateInitializer {
+	return func() (ValidateRegister, error) {
+		return nil, err
+	}
+}
+
+// nilValidateInitializer 返回 nil register 且不报错，验证 NewWrapWithErrors 不会因此崩溃。
+func nilValidateInitializer() ValidateInitializer {
+	return func() (ValidateRegister, error) {
+		return nil, nil
+	}
+}
+
+func TestValidate_NewWrapWithErrorsReportsFailuresAndKeepsOtherLanguages(t *testing.T) {
+	cfg := appconfig.NewAppConfig().LoadDefault(map[string]interface{}{
+		"application.validate.langFlags": []string{LangEn, LangZhCN},
+	})
+	w, errs := NewWrapWithErrors(cfg)
+
+	require.NotNil(t, w, "NewWrapWithErrors must always return a usable Wrap")
+	assert.Nil(t, errs, "all built-in locales register cleanly")
+	assert.ElementsMatch(t, []LangFlag{LangEn, LangZhCN}, w.GetLangList())
+	require.NotNil(t, w.GetValidate(), "English fallback must exist")
+	require.NotNil(t, w.GetTranslator())
+}
+
+// TestValidate_FailingInitializerIsSkippedNotFatal 是本次把 panic 改为 error 的红线测试：
+// 改动前 initializer 内部失败会 panic 掉整个进程，改动后必须只跳过该语言并返回错误。
+func TestValidate_FailingInitializerIsSkippedNotFatal(t *testing.T) {
+	boom := errors.New("locale registration blew up")
+
+	var w *Wrap
+	var errs []error
+	require.NotPanics(t, func() {
+		w = &Wrap{
+			validators: make(map[string]*validator.Validate),
+			langList:   []LangFlag{},
+			transMap:   make(map[string]ut.Translator),
+		}
+		initializers := []ValidateInitializer{
+			GetEnValidateInitializer(),
+			failingValidateInitializer(boom),
+			nilValidateInitializer(),
+			GetZhCNValidateInitializer(),
+		}
+		for i := range initializers {
+			register, err := initializers[i]()
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if register == nil {
+				continue
+			}
+			register.RegisterToWrap(w)
+		}
+	}, "a failing language initializer must not panic")
+
+	require.Len(t, errs, 1)
+	assert.ErrorIs(t, errs[0], boom)
+
+	// 失败的语言缺席，其余语言与英文回退都不受影响。
+	assert.ElementsMatch(t, []LangFlag{LangEn, LangZhCN}, w.GetLangList())
+	require.NotNil(t, w.GetValidate(LangEn))
+	require.NotNil(t, w.GetValidate("unsupported"), "English fallback survives a failed sibling locale")
+}
+
+// TestValidate_BuiltinConstructorsReturnErrorsInsteadOfPanicking 锁定构造函数签名契约：
+// 三个内置语言构造函数都返回 (register, error)，且在正常路径下 error 为 nil。
+func TestValidate_BuiltinConstructorsReturnErrorsInsteadOfPanicking(t *testing.T) {
+	en, err := NewEnValidate()
+	require.NoError(t, err)
+	require.NotNil(t, en)
+
+	zhCN, err := NewZhCNValidate()
+	require.NoError(t, err)
+	require.NotNil(t, zhCN)
+
+	zhTW, err := NewZhTWValidate()
+	require.NoError(t, err)
+	require.NotNil(t, zhTW)
 }
 
 func countLangFlag(flags []LangFlag, target LangFlag) int {

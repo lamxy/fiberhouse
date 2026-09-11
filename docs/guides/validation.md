@@ -6,7 +6,7 @@ FiberHouse 的 [`component/validate`](../../component/validate/) 包装 go-playg
 
 ## 内建语言与初始化
 
-`validate.NewWrap(cfg)` 读取 `application.validate.langFlags`：
+`validate.NewWrap(cfg)` 读取 `application.validate.langFlags`（需要感知语言包初始化失败的调用方改用 `validate.NewWrapWithErrors(cfg)`，它额外返回 `[]error`；两者都保证返回非 nil 的 `*Wrap`，失败的语言缺席但不影响其余语言）：
 
 - 配置为空时，只注册默认 `en`。
 - 非空时逐项转为小写，只识别 `en`、`zh-cn`、`zh-tw`；因此 YAML 中的 `zh-CN`、`zh-TW` 可以使用。
@@ -31,7 +31,7 @@ ConfigValidatorCustomTags() []validate.RegisterValidatorTagFunc
 2. 调用其 `RegisterToWrap(*validate.Wrap)` 添加 validator、translator 和 lang flag；
 3. 调用每个 custom tag 函数，由函数向所需语言的 validator 注册 validation/translation。
 
-语言 initializer 的 `RegisterToWrap` 没有 error 返回值；内部失败只能自行 panic 或采用其他记录方式。custom tag 函数可返回 error，但 FrameStarter 只汇总并记录日志，不会让启动失败。若某个 tag 是业务启动的硬要求，应用需要在自己的入口执行可失败检查，而不是只依赖内建日志。
+`ValidateInitializer` 的签名是 `func() (ValidateRegister, error)`：语言包翻译注册失败是可恢复的装配错误，实现者必须返回 error 而不是 panic。FrameStarter 收到错误时记录日志并跳过该语言，其余语言照常注册，启动不中断。`RegisterToWrap` 本身仍无 error 返回值，它只做 map 写入。custom tag 函数同样可返回 error，FrameStarter 也只汇总并记录日志，不会让启动失败。若某个 tag 是业务启动的硬要求，应用需要在自己的入口执行可失败检查，而不是只依赖内建日志。
 
 仓库的 [`validatecustom`](../../example_application/providers/validatecustom/) 展示日语、韩语和自定义 tag 的接线，但其中语言字符串和 translation 分支仍有不完善处，只适合阅读接口关系。它不扩展框架的内建语言承诺。
 

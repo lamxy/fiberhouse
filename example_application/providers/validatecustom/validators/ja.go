@@ -1,6 +1,8 @@
 package validators
 
 import (
+	"fmt"
+
 	"github.com/go-playground/locales/en"
 	"github.com/go-playground/locales/ja"
 	ut "github.com/go-playground/universal-translator"
@@ -16,20 +18,20 @@ type JaValidate struct {
 	translator ut.Translator
 }
 
-func NewJaValidate() *JaValidate {
+func NewJaValidate() (*JaValidate, error) {
 	va := validator.New(validator.WithRequiredStructEnabled())
 	localeEn := en.New()
 	localeJa := ja.New()
 	uniTrans := ut.New(localeEn, localeJa)
 	trans, _ := uniTrans.GetTranslator("ja")
 	if err := translation.RegisterDefaultTranslations(va, trans); err != nil {
-		panic(err)
+		return nil, fmt.Errorf("validators: register %s translations: %w", LangJa, err)
 	}
 	return &JaValidate{
 		validator:  va,
 		lang:       LangJa,
 		translator: trans,
-	}
+	}, nil
 }
 
 // RegisterToWrap 注册到验证器包装器
@@ -41,7 +43,7 @@ func (v *JaValidate) RegisterToWrap(wrap *validate.Wrap) {
 
 // GetJaValidateInitializer 获取日语验证器初始化器
 func GetJaValidateInitializer() validate.ValidateInitializer {
-	return func() validate.ValidateRegister {
+	return func() (validate.ValidateRegister, error) {
 		return NewJaValidate()
 	}
 }

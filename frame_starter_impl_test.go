@@ -216,9 +216,16 @@ func TestFrameApplication_ApplicationGlobalsInitializesObservableContracts(t *te
 			},
 		},
 		required: []globalmanager.KeyName{key, missing},
-		validateInits: []validate.ValidateInitializer{func() validate.ValidateRegister {
-			return &frameTestValidateRegister{called: &validateInitCalls}
-		}},
+		validateInits: []validate.ValidateInitializer{
+			func() (validate.ValidateRegister, error) {
+				return &frameTestValidateRegister{called: &validateInitCalls}, nil
+			},
+			// 失败的语言 initializer 必须被记录并跳过，不能中断其余语言的注册，
+			// 更不能 panic 掉启动流程。
+			func() (validate.ValidateRegister, error) {
+				return nil, errors.New("custom locale initializer failed")
+			},
+		},
 		tagRegistrations: []validate.RegisterValidatorTagFunc{
 			func(*validate.Wrap) error { tagCalls++; return nil },
 			func(*validate.Wrap) error { tagCalls++; return errors.New("tag registration failed") },

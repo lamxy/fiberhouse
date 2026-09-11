@@ -14,8 +14,11 @@ type ValidateRegister interface {
 	RegisterToWrap(wrap *Wrap)
 }
 
-// ValidateInitializer 定义了一个函数类型，该函数返回一个 ValidateRegister 接口，用于初始化校验注册器
-type ValidateInitializer func() ValidateRegister
+// ValidateInitializer 定义了一个函数类型，该函数返回一个 ValidateRegister 接口，用于初始化校验注册器。
+//
+// 返回 error 而不是 panic：语言包的翻译注册失败是可恢复的装配错误，调用方应当能够
+// 记录并跳过该语言，而不是让整个进程崩溃。实现者不得在构造函数内 panic。
+type ValidateInitializer func() (ValidateRegister, error)
 
 // ValidateChecker 定义了一个接口，包含一个 Check 方法。该方法接受可变数量的参数，并返回一个错误。实现该接口的类型可以用于执行自定义的校验逻辑
 type ValidateChecker interface {

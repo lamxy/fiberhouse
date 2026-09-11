@@ -1,6 +1,8 @@
 package validators
 
 import (
+	"fmt"
+
 	"github.com/go-playground/locales/en"
 	"github.com/go-playground/locales/ko"
 	ut "github.com/go-playground/universal-translator"
@@ -16,20 +18,20 @@ type KoValidate struct {
 	translator ut.Translator
 }
 
-func NewKoValidate() *KoValidate {
+func NewKoValidate() (*KoValidate, error) {
 	va := validator.New(validator.WithRequiredStructEnabled())
 	localeEn := en.New()
 	localeKo := ko.New()
 	uniTrans := ut.New(localeEn, localeKo)
 	trans, _ := uniTrans.GetTranslator("ko")
 	if err := translation.RegisterDefaultTranslations(va, trans); err != nil {
-		panic(err)
+		return nil, fmt.Errorf("validators: register %s translations: %w", LangKo, err)
 	}
 	return &KoValidate{
 		validator:  va,
 		lang:       LangKo,
 		translator: trans,
-	}
+	}, nil
 }
 
 // RegisterToWrap 注册到验证包装器
@@ -41,7 +43,7 @@ func (v *KoValidate) RegisterToWrap(wrap *validate.Wrap) {
 
 // GetKoValidateInitializer 获取韩语验证器初始化器
 func GetKoValidateInitializer() validate.ValidateInitializer {
-	return func() validate.ValidateRegister {
+	return func() (validate.ValidateRegister, error) {
 		return NewKoValidate()
 	}
 }

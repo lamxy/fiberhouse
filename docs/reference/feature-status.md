@@ -5,7 +5,7 @@
 ## 如何理解状态
 
 - **实现阶段**：`已实现`表示有可执行实现但未证明进入框架或示例主链；`已接入`表示存在明确入口和可达运行路径。
-- **支持级别**：`实验性`表示兼容、生命周期、错误、并发或验证仍未达到晋级要求；`稳定公共能力`必须满足本文末尾全部晋级条件（条件 2 在 v2.0.0 前豁免，见文末说明）。GlobalManager、MySQL / MongoDB、本地缓存与 Redis 缓存、JSON 流量编解码与 JSON 响应四项已完成晋级，其余能力仍为实验性。
+- **支持级别**：`实验性`表示兼容、生命周期、错误、并发或验证仍未达到晋级要求；`稳定公共能力`必须满足本文末尾全部晋级条件（条件 2 在 v2.0.0 前豁免，见文末说明）。GlobalManager、MySQL / MongoDB、本地缓存与 Redis 缓存、JSON 流量编解码与 JSON 响应、参数验证五项已完成晋级，其余能力仍为实验性。
 - **API 受众**：`公共 API`面向使用方；`内部工具`描述设计受众，不覆盖 Go package 实际可导入的兼容事实。
 
 表中的“默认集合”表示对象是否由 `DefaultProviders()` 或 `DefaultPManagers(ctx)` 收集，不表示 `Default()` 自动装配。状态以完整能力为单位，而不是以单个导出符号为单位；阅读每一行时必须同时检查启用方式，以及创建、运行、失败、关闭四段生命周期。
@@ -32,11 +32,21 @@ JSON 流量编解码逐条对照：条件 1，四条路径有契约，且「没�
 [响应与序列化](../guides/response-and-serialization.md)描述该路径，示例经 `resolveJSONCodec`
 实际执行。条件 2 依 v2.0.0 前豁免不作门槛。
 
+参数验证逐条对照：条件 1，创建、运行、失败、关闭四条路径有契约，且「没有独立关闭资源」是完整
+契约——包内不存在任何 `Close`/`Shutdown`；条件 3，单元/契约测试随 `go test ./...` 与独立 race job
+进入 CI，含「失败 initializer 被跳过而非 panic」的红线回归，且不依赖外部服务故无需 live；条件 4，
+`ValidateInitializer` 由 `func() ValidateRegister` 改为 `func() (ValidateRegister, error)`，
+框架三个语言包与示例的日语、韩语验证器均以 error 返回翻译注册失败，全包已无 `panic`/`fatal`；
+条件 5，[验证指南](../guides/validation.md)描述该路径，示例经 `ConfigCustomValidateInitializers`
+实际执行。条件 2 依 v2.0.0 前豁免不作门槛。**该晋级含 breaking change**：`ValidateInitializer`
+签名变更，自定义语言验证器需同步改为返回 `(ValidateRegister, error)`。
+
 | 能力 | 实现阶段 | 支持级别 | API 受众 | 启用方式 | 生命周期完整度 | 验证级别 | 限制与主指南 |
 |---|---|---|---|---|---|---|---|
 | GlobalManager | 已接入 | 稳定公共能力 | 公共 API | `New()` 获取进程级单例；应用显式注册具体 initializer，且应在启动期完成 | 注册、懒初始化、健康检查、重建、释放、清空四段路径均有明确契约；`Rebuild`/`Release` 在同一 entry 上 fail-fast 互斥，冲突返回包装 `ErrMaintenanceInProgress` 的错误，可 `errors.Is` 分类重试；`Release` 对已初始化对象一律重置（非 `Closable` 也生效），`Close` 失败保留实例并返回错误，未初始化 entry 为幂等空操作；`ReleaseAll` 按嵌套深度由外向内释放组合对象（`CompositeClosable` / `CompositeOwnershipInspector`），失败经 `ReleaseAllWithObserver` 逐 key 上报；`ClearAll` 只删除条目、不关闭资源，须在 `ReleaseAll` 之后调用；初始化失败不会发布 typed-nil 实例；删除不取消已开始的 `Get` 初始化；健康检查具备取消、等待退出与重复停止语义 | 单元/契约 + race（含 200/300 轮关闭顺序、嵌套排序、持有成环终止、包外 sentinel 分类） | `Get`/`Rebuild`/`Release` 的完整并发状态机与调用方已取得引用的存活期契约仍未闭合，`Rebuild` 不会安全退役旧实例；持有关系成环时只保证终止、不保证顺序；`ReleaseAll` 现由四条关闭路径调用——Fiber/Gin 经 `clearApplicationGlobals`，CLI 与 hertzcore 因上下文类型与匯出边界不同而直接调用 `ReleaseAllWithObserver` + `ClearAll`；自定义 `FrameStarter` 的健康检查停止由自定义实现负责；见[GlobalManager](../guides/global-manager.md) |
 | MySQL / MongoDB | 已接入 | 稳定公共能力 | 公共 API | 不默认创建；由应用 initializer 显式注册 GORM/MySQL、MongoDB v2 client，并决定是否在启动期强制初始化 | client/连接池/模型 locator 的创建、运行、失败/健康检查、关闭四条路径均有明确契约；两者均刻意不实现 `Rebuilder`，`Client` 构造后不再被替换，读侧无需加锁，连接失效恢复交由 database/sql 驱动层与 mongo-driver SDAM 负责，配合 `connMaxLifetime`/`connMaxIdleTime`；`Close` 幂等——Mongo 自带 `closed` 原子标志吸收 `ErrClientDisconnected`，MySQL 依赖 `sql.DB.Close` 的幂等语义（已由 live 测试实测）；模型构造提供 `NewMysqlModelWithError`/`NewMongoModelWithError`，把 key 未注册与类型不符作为可恢复错误返回并保留错误链 | 单元/契约 + race + live integration（建表/collection-写入-读取-清理、并发读写叠加健康检查、`Close` 幂等） | Mongo decimal codec 随 client 构造；连接失败会使需要资源的装配失败；`NewMysqlModel`/`NewMongoModel` 仍为 panic 变体，供 wire 生成的装配链使用，能处理错误的调用方应改用 `*WithError`；关闭在 Fiber/Gin/CLI/hertzcore 四条路径上均生效；见[数据库指南](../guides/database.md) |
 | JSON 流量编解码与 JSON 响应 | 已接入 | 稳定公共能力 | 公共 API | Fiber/Gin 的 Std/Sonic provider 与 JSON manager 在默认集合中但需显式装配；`CoreType`、`TrafficCodec` 和 default/fast global key 必须按消费者匹配 | codec 与统一 `RespInfo` JSON 的创建、运行、失败回退四条路径均有明确契约；**没有独立关闭资源**是完整契约而非缺口——`JsonWrapper` 只有 `Marshal`/`Unmarshal`，包内不存在任何 `Close`/`Shutdown`，故无资源所有权需要交接 | 单元/契约 + race（`component/codec/json` 覆盖率 100%，随 `go test ./...` 与 race job 进入 CI） | 全包无 `panic`/`fatal`，装配与运行错误一律以 error 返回；示例注册两个 Sonic 实例并选择 `sonic_json_codec`，`resolveJSONCodec` 是实际执行路径；基础响应、缓存、task payload 与 recovery stack 使用的 codec key 不是统一前置；`gojson.go` 仅有包声明、不是可运行实现（`go-json` 未接线）；见[响应与序列化](../guides/response-and-serialization.md) |
+| 参数验证 | 已接入 | 稳定公共能力 | 公共 API | Web `AppContext` 自动调用 `validate.NewWrap(cfg)`；需要感知语言包初始化失败的调用方改用 `NewWrapWithErrors(cfg)`；CLI 必须自行构造、注册并持有 wrapper | en、zh-cn、zh-tw、错误映射及自定义 tag/translator 的创建、运行、失败映射四条路径均有明确契约；`ValidateInitializer` 签名为 `func() (ValidateRegister, error)`，语言包翻译注册失败作为可恢复错误返回，FrameStarter 记录日志并跳过该语言、不中断启动；`NewWrapWithErrors` 始终返回非 nil `*Wrap`，失败语言缺席但不影响其余语言与英文回退；**没有独立关闭资源**是完整契约——包内不存在任何 `Close`/`Shutdown`，可变注册只适合启动期 | 单元/契约 + race（含失败 initializer 被跳过而非 panic 的红线回归） | 全包无 `panic`/`fatal`；Web 未配置语言时只注册 en，`CmdContext.GetValidateWrap()` 固定返回 nil；示例还追加日语、韩语和自定义 tag，两者同样以 error 返回失败；见[验证指南](../guides/validation.md) |
 | 本地缓存与 Redis 缓存 | 已接入 | 稳定公共能力 | 公共 API | 不在默认集合；应用通过 GlobalManager 显式注册实例，Redis 还需服务、配置和 `CacheOption` | `cachelocal`、`cacheremote` 的创建、TTL/序列化运行、失败/健康检查和关闭四条路径均有明确契约；Redis 刻意不实现 `Rebuilder`，连接失效恢复交由 go-redis 内建连接池与重试负责，读侧通过 `clientSnapshot()` 加锁访问；`Close` 幂等（`closed` 原子标志），关闭后操作返回 `ErrCacheClosed`；应用关闭时由 `clearApplicationGlobals` 先释放再清空 | 单元/契约 + race + Redis live integration（创建-读写-关闭、并发读写叠加健康检查、就绪探针故障与恢复端到端） | 示例把 Redis、本地缓存、远端缓存别名与 L2 缓存一并列入 `ConfigRequiredGlobalKeys`，`InitializeGlobalRequired` 会在启动期逐个 `Get` 从而真正构造它们，使组合对象关闭排序进入示例路径（注意该初始化失败只记录日志、不中断启动，见 `frame_starter_impl.go:257-263`）；资源释放在 Fiber/Gin/CLI/hertzcore 四条路径上均生效（后两者直接调用容器已匯出的释放入口，不经 `clearApplicationGlobals`）；见[缓存指南](../guides/cache.md) |
 
 ## 已接入的核心能力
@@ -47,7 +57,6 @@ JSON 流量编解码逐条对照：条件 1，四条路径有契约，且「没�
 | Provider / Manager / Location | 已接入 | 实验性 | 公共 API | 默认集合与预定义 location 需显式传给 `WithProviders`、`WithPManagers`；`DefaultProviders()`/`DefaultPManagers(ctx)` 集合是进程级单例，`Add`/`Except` 只应在启动装配期修改；自定义能力还需匹配 type、target、manager/location 和初始化输入 | type、manager 与 location 驱动创建、运行和失败分发；Provider 使用不可变状态值，Manager 缓存初始化结果或错误、避免重复初始化，`GroupExtendReplace` 只替代同一 location 的默认逻辑；没有统一的 provider 关闭契约 | 单元/契约 | 未匹配 provider 会交给默认 manager；`example_main` 展示集合合并而非自动发现；状态 API 近期存在不兼容调整，见[Provider 系统](../concepts/provider-system.md) |
 | bootstrap、配置与日志 | 已接入 | 实验性 | 公共 API | `New()` 自动初始化配置与日志单例，不经过 provider 集合；应用需提供可读配置目录，异步日志由配置选择 | 文件/环境配置和 console/轮转文件、同步/异步 writer 的创建、运行、失败有路径；关闭存在 writer 入口，但停止生产者和关闭顺序由应用负责 | 单元/契约 | `Default()` 使用 `./config`、`./logs`，示例改用 `./example_config`、`./example_main/logs`；见[配置指南](../guides/configuration.md)、[日志指南](../guides/logging.md) |
 | panic recovery 与错误响应 | 已接入 | 实验性 | 公共 API | Fiber/Gin recovery provider 与 manager 在默认集合中，需随所选内核显式装配 | 两种 recovery 和核心错误中间件的创建、运行、失败响应有路径；没有独立关闭资源，装配失败仍可能 panic 或 fatal | 单元/契约 | 调试信息受 recovery 配置控制，生产环境应关闭详细输出；示例的 `debugMode` 只适合本地演示；见[错误与恢复](../guides/errors-and-recovery.md) |
-| 参数验证 | 已接入 | 实验性 | 公共 API | Web `AppContext` 自动调用 `validate.NewWrap(cfg)`；CLI 必须自行构造、注册并持有 wrapper | en、zh-cn、zh-tw、错误映射及自定义 tag/translator 的创建、运行、失败映射有路径；没有独立关闭资源，可变注册只适合启动期 | 单元/契约 | Web 未配置语言时只注册 en，`CmdContext.GetValidateWrap()` 固定返回 nil；示例还追加日语、韩语和自定义 tag；见[验证指南](../guides/validation.md) |
 
 ## 实验性或存在明显限制的公共能力
 

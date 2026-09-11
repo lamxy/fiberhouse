@@ -7,6 +7,8 @@
 package validate
 
 import (
+	"fmt"
+
 	"github.com/go-playground/locales/en"
 	"github.com/go-playground/locales/zh"
 	ut "github.com/go-playground/universal-translator"
@@ -21,20 +23,20 @@ type ZhCNValidate struct {
 	translator ut.Translator
 }
 
-func NewZhCNValidate() *ZhCNValidate {
+func NewZhCNValidate() (*ZhCNValidate, error) {
 	va := validator.New(validator.WithRequiredStructEnabled())
 	localeEn := en.New()
 	localeZh := zh.New()
 	uniTrans := ut.New(localeEn, localeZh)
 	trans, _ := uniTrans.GetTranslator("zh")
 	if err := translation.RegisterDefaultTranslations(va, trans); err != nil {
-		panic(err)
+		return nil, fmt.Errorf("validate: register %s translations: %w", LangZhCN, err)
 	}
 	return &ZhCNValidate{
 		validator:  va,
 		lang:       LangZhCN,
 		translator: trans,
-	}
+	}, nil
 }
 
 // RegisterToWrap 注册中文(简体)验证器和翻译器到包装器
@@ -46,7 +48,7 @@ func (v *ZhCNValidate) RegisterToWrap(wrap *Wrap) {
 
 // GetZhCNValidateInitializer 获取中文验证器初始化器
 func GetZhCNValidateInitializer() ValidateInitializer {
-	return func() ValidateRegister {
+	return func() (ValidateRegister, error) {
 		return NewZhCNValidate()
 	}
 }

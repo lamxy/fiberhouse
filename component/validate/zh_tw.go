@@ -7,6 +7,8 @@
 package validate
 
 import (
+	"fmt"
+
 	"github.com/go-playground/locales/en"
 	zhtw "github.com/go-playground/locales/zh_Hant_TW"
 	ut "github.com/go-playground/universal-translator"
@@ -21,20 +23,20 @@ type ZhTWValidate struct {
 	translator ut.Translator
 }
 
-func NewZhTWValidate() *ZhTWValidate {
+func NewZhTWValidate() (*ZhTWValidate, error) {
 	va := validator.New(validator.WithRequiredStructEnabled())
 	localeEn := en.New()
 	localeZhtw := zhtw.New()
 	uniTrans := ut.New(localeEn, localeZhtw)
 	trans, _ := uniTrans.GetTranslator("zh_Hant_TW")
 	if err := translation.RegisterDefaultTranslations(va, trans); err != nil {
-		panic(err)
+		return nil, fmt.Errorf("validate: register %s translations: %w", LangZhTW, err)
 	}
 	return &ZhTWValidate{
 		validator:  va,
 		lang:       LangZhTW,
 		translator: trans,
-	}
+	}, nil
 }
 
 // RegisterToWrap 注册中文(繁体)验证器和翻译器到包装器
@@ -45,7 +47,7 @@ func (v *ZhTWValidate) RegisterToWrap(wrap *Wrap) {
 }
 
 func GetZhTWValidateInitializer() ValidateInitializer {
-	return func() ValidateRegister {
+	return func() (ValidateRegister, error) {
 		return NewZhTWValidate()
 	}
 }

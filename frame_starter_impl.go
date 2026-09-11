@@ -275,7 +275,18 @@ func (fa *FrameApplication) InitializeCustomValidateInitializers() {
 		validateInitializers := appRegister.ConfigCustomValidateInitializers()
 		if len(validateInitializers) > 0 {
 			for i := range validateInitializers {
-				validateInitializers[i]().RegisterToWrap(fa.GetContext().GetValidateWrap().(*validate.Wrap))
+				// 语言包注册失败是可恢复的装配错误：记录后跳过该语言，其余语言照常注册。
+				validateRegister, err := validateInitializers[i]()
+				if err != nil {
+					fa.GetContext().GetLogger().ErrorWith(fa.GetContext().GetConfig().LogOriginFrame()).Err(err).
+						Str("applicationStarter", "FrameApplication").
+						Msg("InitializeCustomValidateInitializers: skip language whose initializer failed")
+					continue
+				}
+				if validateRegister == nil {
+					continue
+				}
+				validateRegister.RegisterToWrap(fa.GetContext().GetValidateWrap().(*validate.Wrap))
 			}
 		}
 	}

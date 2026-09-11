@@ -53,7 +53,20 @@ type Wrap struct {
 }
 
 // NewWrap 创建并初始化验证器包装器，根据配置文件语言标志设置对应的验证器和翻译器，未设置则使用默认英文。
+//
+// 语言包注册失败时该语言被跳过，其余语言照常注册；错误由 NewWrapWithErrors 返回。
+// 本函数丢弃这些错误以保持既有签名，需要感知失败的调用方应改用 NewWrapWithErrors。
 func NewWrap(cfg appconfig.IAppConfig) *Wrap {
+	vw, _ := NewWrapWithErrors(cfg)
+	return vw
+}
+
+// NewWrapWithErrors 与 NewWrap 相同，但额外返回各语言初始化过程中累积的错误。
+//
+// 返回的 *Wrap 始终非 nil：某个语言包注册失败只会导致该语言缺席，不影响其余语言，
+// 也不影响 GetValidate/GetTranslator 在未知语言时回退到英文。若英文本身注册失败，
+// 其错误同样出现在返回切片中，此时回退语言缺席，由调用方决定如何处置。
+func NewWrapWithErrors(cfg appconfig.IAppConfig) (*Wrap, []error) {
 	vw := &Wrap{
 		validators: make(map[string]*validator.Validate),
 		langList:   []LangFlag{},
@@ -78,12 +91,23 @@ func NewWrap(cfg appconfig.IAppConfig) *Wrap {
 		}
 	}
 
+	errs := make([]error, 0, len(defaultValidateList))
 	for i := range defaultValidateList {
-		validateInstance := defaultValidateList[i]()
+		validateInstance, err := defaultValidateList[i]()
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if validateInstance == nil {
+			continue
+		}
 		validateInstance.RegisterToWrap(vw)
 	}
 
-	return vw
+	if len(errs) == 0 {
+		return vw, nil
+	}
+	return vw, errs
 }
 
 // RegisterValidator 注册指定语言的验证器

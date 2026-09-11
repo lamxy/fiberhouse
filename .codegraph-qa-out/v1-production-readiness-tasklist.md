@@ -385,6 +385,32 @@ live paths」步驟：拼接 hermetic 與 live 兩份 atomic profile 後以 `go 
 合併總覆蓋率高於任一單份，證明拼接確實合併而非首條覆蓋。另以合成用例驗證：同一代碼塊
 count 0 與 count 7 拼接後判定為 100.0%。未引入 gocovmerge 等外部工具。
 
+### T6 — 參數驗證晉級 ✅ 已完成（本輪新增，經用戶授權的 breaking change）
+
+`ValidateInitializer` 由 `func() ValidateRegister` 改為 `func() (ValidateRegister, error)`，
+卡住條件 4 的 6 處 `panic(err)` 全部改為回傳 error：框架 `en.go`/`zh_cn.go`/`zh_tw.go`，
+示例 `ja.go`/`ko.go`，共 5 個語言包（`zh_tw.go` 原有 1 處）。
+
+**關鍵判斷：缺陷在契約而非呼叫點。** 只改框架 3 處的話，示例的 ja/ko 仍 panic，
+任何自訂語言也仍會 panic，條件 4 依舊不滿足。
+
+**刻意不改的**：`NewWrap(cfg) *Wrap` 保持原簽章——它經 `NewAppContext` 有約 45 個
+傳遞呼叫點，擴大簽章毫無收益。改為新增 `NewWrapWithErrors(cfg) (*Wrap, []error)`，
+`NewWrap` 委派並丟棄錯誤，沿用倉庫既有的 `RegisterCustomTags() []error` 慣例。
+`FrameApplication.InitializeCustomValidateInitializers` 記錄日誌並跳過失敗語言，不中斷啟動。
+
+**契約保證**：`NewWrapWithErrors` 恆回傳非 nil `*Wrap`；失敗語言缺席但不影響其餘語言，
+也不影響英文回退（既有的 fallback 測試 `:164-180` 仍綠）。
+
+新增 3 個測試（含「失敗 initializer 被跳過而非 panic」紅線回歸），`frame_starter_impl_test.go`
+加入一個必定失敗的 initializer。實測：`component/validate` 無 `panic`/`fatal`，
+`example_application/providers/validatecustom` 同樣為零。全套件與 `-race` 皆通過。
+
+**已知殘留**：`NewWrapWithErrors` 覆蓋率 78.9%，未覆蓋的是內建語言包注冊失敗的累積分支——
+該分支需注入故障才可達，現行測試以手動驅動迴圈的方式覆蓋等價邏輯。
+
+晉級後穩定公共能力由 4 項增至 **5 項**。
+
 ### 額外完成（不在原清單）
 
 - 刪除 `component/bufferpool`（零匯入者，`go list` 實測確認），同步移除
