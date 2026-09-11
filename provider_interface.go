@@ -58,7 +58,11 @@ type IProvider interface {
 	// SetType 设置提供者类型，仅允许设置一次
 	SetType(IProviderType) IProvider
 	// Check 检查提供者是否设置类型值
+	//
+	// 类型未设置时 panic；需要处理该错误请改用 CheckWithError。
 	Check() bool
+	// CheckWithError 与 Check 相同，但类型未设置时返回错误而非 panic
+	CheckWithError() (bool, error)
 	// BindToUniqueManagerIfSingleton 将提供者绑定到唯一的管理器
 	// 注意：传入的管理器对象应当是一个单例实现，以确保全局唯一性
 	// 该方法内部调用管理器的 BindToUniqueProvider 方法进行彼此唯一绑定
@@ -66,7 +70,11 @@ type IProvider interface {
 	// 生效条件：1. 传入的管理器对象是单例实现；2. 子类提供者重载该方法且子类实例本身调用该方法；3. 需要将子类实例反向挂载到父类属性上
 	BindToUniqueManagerIfSingleton(IProviderManager) IProvider
 	// MountToParent 将当前提供者挂载到父级提供者中
+	//
+	// 参数不合法时 panic；需要处理该错误请改用 MountToParentWithError。
 	MountToParent(son ...IProvider) IProvider
+	// MountToParentWithError 与 MountToParent 相同，但参数不合法时返回错误而非 panic
+	MountToParentWithError(son ...IProvider) (IProvider, error)
 	// ReturnAndSetSuccessInitialize 设置提供者状态并返回成功的初始化结果
 	// 用于子类重载 initialize 方法内调用
 	ReturnAndSetSuccessInitialize(any, error) (any, error)
@@ -114,17 +122,30 @@ type IProviderManager interface {
 	// InitializeProvider 通过管理器统一初始化提供者，并复用已完成的初始化结果
 	InitializeProvider(provider IProvider, initFunc ...ProviderInitFunc) (any, error)
 	// Check 检查提供者管理器是否设置类型值
+	//
+	// 类型未设置时 panic；需要处理该错误请改用 CheckWithError。
 	Check()
+	// CheckWithError 与 Check 相同，但类型未设置时返回错误而非 panic
+	CheckWithError() error
 	// BindToUniqueProvider 绑定唯一的提供者到管理器
 	// 确保管理器有且仅有一个提供者注册进来
 	// 如果已存在相同的提供者记录，视为注册成功
 	// 如果已存在多个提供者，则 panic 错误
 	// 返回管理器自身以支持链式调用
+	//
+	// 绑定失败时 panic；需要处理该错误请改用 BindToUniqueProviderWithError。
 	BindToUniqueProvider(IProvider) IProviderManager
+	// BindToUniqueProviderWithError 与 BindToUniqueProvider 相同，但绑定失败时
+	// 返回错误而非 panic
+	BindToUniqueProviderWithError(IProvider) (IProviderManager, error)
 	// IsUnique 返回管理器是否处于唯一提供者模式
 	IsUnique() bool
 	// MountToParent 将当前管理器挂载到父级管理器中
+	//
+	// 参数不合法时 panic；需要处理该错误请改用 MountToParentWithError。
 	MountToParent(son ...IProviderManager) IProviderManager
+	// MountToParentWithError 与 MountToParent 相同，但参数不合法时返回错误而非 panic
+	MountToParentWithError(son ...IProviderManager) (IProviderManager, error)
 	// CloseProviders 按注册逆序关闭实现了 ClosableProvider 的已初始化提供者
 	//
 	// 单个提供者关闭失败不中断其余关闭，全部错误经 errors.Join 聚合后返回。

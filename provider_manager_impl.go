@@ -47,10 +47,22 @@ func NewProviderManager(ctx IContext) *ProviderManager {
 }
 
 // Check 检查提供者类型是否设置，未设置则抛出异常，强制LoadProvider方法内优先进行检查
+//
+// 类型未设置时 panic。需要处理该错误的调用方请改用 CheckWithError。
 func (m *ProviderManager) Check() {
-	if m.pType.GetTypeID() == ProviderTypeDefault().ZeroType.GetTypeID() {
-		panic(fmt.Errorf("manager '%s' type is not set", m.name))
+	if err := m.CheckWithError(); err != nil {
+		panic(err)
 	}
+}
+
+// CheckWithError 与 Check 相同，但类型未设置时返回错误而非 panic。
+//
+// 错误链上带 ErrProviderTypeNotSet 以便 errors.Is 分类，并包含管理器名称。
+func (m *ProviderManager) CheckWithError() error {
+	if m.pType.GetTypeID() == ProviderTypeDefault().ZeroType.GetTypeID() {
+		return fmt.Errorf("manager '%s' type is not set: %w", m.name, ErrProviderTypeNotSet)
+	}
+	return nil
 }
 
 // Name 返回提供者管理器名称
@@ -219,12 +231,30 @@ func (m *ProviderManager) IsUnique() bool {
 // 如果已存在相同的提供者记录，视为注册成功并设置唯一属性为 true
 // 如果已存在多个提供者，则 panic 错误
 // 返回管理器自身以支持链式调用
+// 需要处理绑定错误的调用方请改用 BindToUniqueProviderWithError。
 func (m *ProviderManager) BindToUniqueProvider(provider IProvider) IProviderManager {
+	bound, err := m.BindToUniqueProviderWithError(provider)
+	if err != nil {
+		panic(err)
+	}
+	return bound
+}
+
+// BindToUniqueProviderWithError 与 BindToUniqueProvider 相同，但绑定失败时返回
+// 错误而非 panic。
+//
+// 两种失败都是装配期的用法错误：管理器已有多个提供者，或已有一个**不同的**
+// 提供者。重复绑定同一提供者视为成功，与原方法语义一致。
+//
+// 错误链上带 ErrProviderIsUnique，并包含管理器名称。
+func (m *ProviderManager) BindToUniqueProviderWithError(provider IProvider) (IProviderManager, error) {
 	providerCount := len(m.providers)
 
 	// 检查是否已存在多个提供者
 	if providerCount > 1 {
-		panic(fmt.Errorf("manager '%s' already has multiple providers (%d), cannot bind unique provider", m.name, providerCount))
+		return nil, fmt.Errorf(
+			"manager '%s' already has multiple providers (%d), cannot bind unique provider: %w",
+			m.name, providerCount, ErrProviderIsUnique)
 	}
 
 	// 检查是否已存在一个提供者
@@ -234,11 +264,13 @@ func (m *ProviderManager) BindToUniqueProvider(provider IProvider) IProviderMana
 			// 相同提供者，视为注册成功
 			if existingProvider == provider {
 				m.isUnique = true
-				return m
+				return m, nil
 			}
 		}
 		// 已存在不同的提供者，无法绑定
-		panic(fmt.Errorf("manager '%s' already has a different provider, cannot bind unique provider '%s'", m.name, provider.Name()))
+		return nil, fmt.Errorf(
+			"manager '%s' already has a different provider, cannot bind unique provider '%s': %w",
+			m.name, provider.Name(), ErrProviderIsUnique)
 	}
 
 	// 没有提供者，直接注册
@@ -247,7 +279,7 @@ func (m *ProviderManager) BindToUniqueProvider(provider IProvider) IProviderMana
 	// 永远不被 List()/CloseProviders 看到。
 	m.order = append(m.order, provider.Name())
 	m.isUnique = true
-	return m
+	return m, nil
 }
 
 // CloseProviders 按注册逆序关闭实现了 ClosableProvider 的已初始化提供者
@@ -285,15 +317,35 @@ func (m *ProviderManager) CloseProviders(ctx context.Context) error {
 }
 
 // MountToParent 将子类管理器实例挂载到父类管理器的 sonManager 字段上
+//
+// 参数不合法时 panic。需要处理该错误的调用方请改用 MountToParentWithError。
 func (m *ProviderManager) MountToParent(son ...IProviderManager) IProviderManager {
+	mounted, err := m.MountToParentWithError(son...)
+	if err != nil {
+		panic(err)
+	}
+	return mounted
+}
+
+// MountToParentWithError 与 MountToParent 相同，但参数不合法时返回错误而非 panic。
+//
+// 两种不合法：son 为空，或 son 就是接收者自身（自引用会让 LoadProvider 无限
+// 递归——基类的 LoadProvider 正是委派给 sonManager）。
+//
+// 错误链上带 ErrProviderMountInvalid，并包含管理器名称。
+func (m *ProviderManager) MountToParentWithError(son ...IProviderManager) (IProviderManager, error) {
 	if len(son) == 0 {
-		panic(fmt.Errorf("MountToParent() from base class '%s' must provide at least one IProviderManager", m.name))
+		return nil, fmt.Errorf(
+			"MountToParent() from base class '%s' must provide at least one IProviderManager: %w",
+			m.name, ErrProviderMountInvalid)
 	}
 	if m == son[0] {
-		panic(fmt.Errorf("MountToParent() form base class '%s', sonManager parameter cannot be the same as the parent manager instance", m.name))
+		return nil, fmt.Errorf(
+			"MountToParent() from base class '%s': son cannot be the same instance as the parent: %w",
+			m.name, ErrProviderMountInvalid)
 	}
 	m.sonManager = son[0]
-	return m
+	return m, nil
 }
 
 // DefaultPManager 默认提供者管理器，实现默认的提供者加载逻辑
