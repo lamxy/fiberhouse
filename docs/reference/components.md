@@ -10,7 +10,7 @@
 
 | 组件 / package | 用途 | 主要调用者 | 生命周期、错误与并发边界 | 状态 | 相关指南 |
 |---|---|---|---|---|---|
-| `component/container` | 基于 Uber Dig 的启动期依赖注入容器与泛型解析包装器 | `CmdContext`、CLI `test-orm` 与其 service 装配 | 单例容器只用于启动装配；`Provide` 错误显式收集，`ResetDigContainer` 不支持并发运行期调用 | 内部工具 | [命令行指南](../guides/command-line.md) |
+| `component/container` | 基于 Uber Dig 的启动期依赖注入容器与泛型解析包装器 | 仅 `CmdContext` 持有字段（`context_impl.go:184`）；仓库内没有任何 `Provide`/`Invoke` 调用者，CLI 示例只调用 `NewCmdContextOnce`，不使用该容器装配 service | 单例容器只用于启动装配；`Provide` 错误显式收集，`ResetDigContainer` 不支持并发运行期调用 | 内部工具 | [命令行指南](../guides/command-line.md) |
 | `component/cache` | 通用 `Cache` 接口、选项池、缓存读取工具与保护机制 | 示例 service、任务注册器和应用全局 initializer | 实例由应用显式注册；目录不统一接管 local/remote/L2 的创建、等待和关闭 | 实验性 | [缓存指南](../guides/cache.md)、[GlobalManager](../guides/global-manager.md) |
 | `component/cache/cachelocal` | 基于 Ristretto 的本地缓存 | Web/CLI 应用 initializer 与 L2 cache | 应用持有实例；异步写入后可调用 `Wait`，关闭后操作返回缓存关闭错误 | 实验性 | [缓存指南](../guides/cache.md) |
 | `component/cache/cacheremote` | 基于 go-redis 的远程缓存、Redis client 与缓存定位辅助 | Web/CLI initializer、任务系统与 L2 cache | 应用持有 Redis client；不实现 `Rebuilder`，也不提供任何重建方法，失效连接由 go-redis 自行重试重建；熔断与关闭语义由实现暴露 | 实验性 | [缓存指南](../guides/cache.md) |

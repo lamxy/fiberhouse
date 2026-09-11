@@ -76,7 +76,7 @@ JSON 流量编解码逐条对照：条件 1，四条路径有契约，且「没�
 
 | 能力 | 实现阶段 | 支持级别 | API 受众 | 启用方式 | 生命周期完整度 | 验证级别 | 限制与主指南 |
 |---|---|---|---|---|---|---|---|
-| Dig 容器 | 已接入 | 实验性 | 内部工具 | `CmdContext` 持有单例容器，CLI ORM 示例显式用于启动和命令装配 | 创建、运行、失败返回和 reset 有路径；没有通用资源关闭编排 | 单元/契约 | Web 运行时不推荐使用，`ResetDigContainer` 非并发安全；见[组件目录](components.md)、[命令行指南](../guides/command-line.md) |
+| Dig 容器 | 已实现 | 实验性 | 内部工具 | `CmdContext` 持有单例容器字段；**仓库内无任何 `Provide`/`Invoke` 调用者**，CLI 示例只调用 `NewCmdContextOnce` | 创建、运行、失败返回和 reset 有路径；没有通用资源关闭编排 | 单元/契约（41.7%） | **晋级阻塞：条件 5**——没有文档示例实际执行该路径。Web 运行时不推荐使用，`ResetDigContainer` 非并发安全；见[组件目录](components.md)、[命令行指南](../guides/command-line.md) |
 | jsonconvert | 已接入 | 实验性 | 内部工具 | recovery 错误处理按调用借用 wrapper，用后显式 `Release` | 创建、运行、失败回退、释放均有路径；单个 wrapper 不支持并发复用 | 单元/契约 | 主要把任意数据转换为 JSON 或字符串；见[组件目录](components.md)、[错误与恢复](../guides/errors-and-recovery.md) |
 | mongodecimal | 已接入 | 实验性 | 内部工具 | 随 `dbmongo.NewClient` 构造自动注册到 BSON registry，不是独立服务 | 创建和运行随 Mongo client；失败与关闭也依附 client，没有独立生命周期 | 无专项测试 | 只服务 `decimal.Decimal` BSON 编解码，外部 Mongo live 行为未验证；见[组件目录](components.md)、[数据库指南](../guides/database.md) |
 | logging writer 与框架 adaptor | 已接入 | 实验性 | 内部工具 | bootstrap 按配置选择同步/异步 writer；task logger adaptor 由示例任务显式装配；选择 Gin core 时自动安装 Gin 日志 adaptor | writer 和 adaptor 都有创建、运行与失败入口；Gin lease 有幂等 owner 停用与原始行为回退路径且不关闭框架日志器，稳定入口只在首次有效安装时写入，异步 writer 的生产者停止与关闭顺序仍未统一编排 | 单元/契约 + race | Gin adapter 的级别/字段、并发 release、稳定全局入口和回退已有测试，但使用进程级 hook 且多个 engine 共享 logger；异步 writer 仍可能丢日志，task adaptor 目前主要服务示例；见[组件目录](components.md)、[日志指南](../guides/logging.md)、[异步任务指南](../guides/background-tasks.md) |

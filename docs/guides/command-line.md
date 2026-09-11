@@ -135,13 +135,11 @@ os.Exit(exitCode) // 所有清理完成后，且只在最外层退出
 
 ## `test-orm` 示例边界
 
-[`example_application/command`](../../example_application/command/) 只用于说明装配。其 `test-orm` / `orm` 命令：
+[`example_application/command`](../../example_application/command/) 只用于说明装配。其示例命令：
 
-- 把 `ICommandContext`、MySQL model 和 service 构造器 `Provide` 到单例 Dig 容器；
-- 检查 `Provide` 错误，再用 `github.com/lamxy/fiberhouse/component/container` 包的泛型 `container.Invoke` 取得 service；
-- 每次执行都会先 `AutoMigrate`，随后按 `--method ok|orm` 运行演示操作；
-- `--operation` 和 `--id` 只在 `--method orm` 分支读取。
+- **不使用 Dig 容器**。`NewExampleCommand`（`commands/example_command.go:32-37`）以普通构造函数串联依赖：`NewExampleMysqlModel(ctx)` → `NewExampleRepository(model)` → `NewExampleMysqlService(repo)`，再由 `sync.Once` 惰性求值（`:50`）。仓库内没有任何 `Provide` / `Invoke` 调用者；`CmdContext` 虽持有 Dig 容器字段，但无人向其注册构造器。
+- 提供 `migrate`、`create`、`get`、`list`、`update` 等子命令，各自从 `cli.Context` 读取 flag。
 
-它不是 migration 工具或生产数据命令。重复执行会向同一个 Dig 容器再次注册构造器，示例又预初始化 MongoDB、Redis、两个 Sonic codec 和 MySQL，即使当前命令只需要 MySQL 也可能连接其他服务。示例中的 MongoDB command service、cron wrapper 和更多 CRUD 方法没有可达命令入口。
+它不是 migration 工具或生产数据命令。示例预初始化 MongoDB、Redis、两个 Sonic codec 和 MySQL，即使当前命令只需要 MySQL 也会连接其他服务。示例中的 MongoDB command service、cron wrapper 和更多 CRUD 方法没有可达命令入口。
 
-采用 CLI 形态前至少检查：配置工作目录、Starter 回写、所需实例 key、重复 Dig provider、错误到退出码的映射，以及所有外部资源的关闭顺序。源码入口为 [`command_interface.go`](../../command_interface.go)、[`context_impl.go`](../../context_impl.go) 和 [`commandstarter`](../../commandstarter/)。
+采用 CLI 形态前至少检查：配置工作目录、Starter 回写、所需实例 key、错误到退出码的映射，以及所有外部资源的关闭顺序。源码入口为 [`command_interface.go`](../../command_interface.go)、[`context_impl.go`](../../context_impl.go) 和 [`commandstarter`](../../commandstarter/)。
