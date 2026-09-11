@@ -204,7 +204,13 @@ Gin 之所以能用末端寫法，是因為它同時有 `defer cg.releaseGinLogg
 
 覆蓋率：`RunCommandStarter` 100%、`releaseCommandGlobals` 78.6%；`-race -count=5` 通過。
 
-### hertzcore 半部 ⏸ 待決策
+### hertzcore 半部 ✅ 已完成（commit `95db5cd`）
+
+已按下文方案 (b) 實作：`releaseHertzGlobals()` 內聯呼叫容器已匯出的 `ReleaseAllWithObserver` + `ClearAll`，
+未新增任何匯出運行入口，保住該套件「僅依賴框架匯出 API」的示範價值。以 `atomic.Bool` 每實例守衛，
+`AppCoreRun` 頂部 `defer` 涵蓋五處提前返回。四個測試無 build tag，隨 `go test ./...` 執行。
+
+以下為原始決策記錄：
 
 `core_hertz_starter.go:32,63` 已持有 `IApplicationContext`，插入點無障礙。**但**該套件的套件註解
 （`:1-12`）明言「僅依賴框架的匯出 API」，用以證明「新增核心引擎不需修改框架任何一行程式碼」。
@@ -354,9 +360,38 @@ CI 執行 `go test ./...`（整包），故不受影響。
 1. ~~T1 Makefile~~ ✅ 完成（`661a93a`）
 2. ~~T4 高優先部分：`OwnsChildren`/`OwnsInstance` 測試~~ ✅ 完成（`491467c`）
 3. ~~T5 Fiber 測試補強~~ ✅ 完成（`98b3ca0`）
-4. **← 當前戰線：T2** 紅燈測試 → 修復 → 同步四份文件（注意 T5 發現的共享單例約束）
-5. T3：CLI 優先，hertzcore 次之
-6. T4 CI 度量修正
+4. ~~T2 Fiber 關閉順序~~ ✅ 完成（`6a6d5b8`、`a507827`）
+5. ~~T3：CLI~~ ✅（`ec47e6e`）、~~hertzcore~~ ✅（`95db5cd`）
+6. ~~T4 CI 度量修正~~ ✅ 完成
+
+### T4 CI 度量修正（已完成）
+
+`quality` job 的覆蓋率步驟更名為「Report hermetic coverage」並加註：該 job 不帶
+`liveintegration` 標籤，故 `IsHealthy`/`PingTry` 等僅 live 可達的函式在此恆為 0.0%，
+屬構建標籤造成的度量假象。
+
+`smoke` job 的 live 測試改為輸出 `coverage-live.out`，新增「Report coverage including
+live paths」步驟：拼接 hermetic 與 live 兩份 atomic profile 後以 `go tool cover -func`
+報告合併總覆蓋率。
+
+**實測證據**（本機 Docker 起 MySQL 8.4）：
+
+| profile | IsHealthy | PingTry | dbmysql total |
+|---|---|---|---|
+| hermetic | 0.0% | 0.0% | 20.9% |
+| live | 100.0% | 50.0% | 28.7% |
+| 拼接合併 | **100.0%** | **50.0%** | **41.1%** |
+
+合併總覆蓋率高於任一單份，證明拼接確實合併而非首條覆蓋。另以合成用例驗證：同一代碼塊
+count 0 與 count 7 拼接後判定為 100.0%。未引入 gocovmerge 等外部工具。
+
+### 額外完成（不在原清單）
+
+- 刪除 `component/bufferpool`（零匯入者，`go list` 實測確認），同步移除
+  `components.md`、`feature-status.md` 的對應列與段落。
+- 修正三份文件的過期關閉描述：`command-line.md`（稱 CLI 不釋放）、
+  `global-manager.md`（稱 CLI/hertzcore 不走釋放路徑）、`examples.md`
+  （稱釋放由 `OnShutdown` hook 執行，實為 `Shutdown` 頂部 defer）。
 
 原始順序：
 3. **T5**：Fiber 測試補強

@@ -27,6 +27,8 @@ __pycache__/
 .codegraph-qa-out/local/
 coverage.out
 coverage.html
+coverage-*.out
+coverage-summary.txt
 .claude/artifacts/
 .agent-rules/
 docs/superpowers/

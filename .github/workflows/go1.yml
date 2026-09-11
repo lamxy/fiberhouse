@@ -31,7 +31,10 @@ jobs:
       - name: Test with coverage
         run: go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic
 
-      - name: Report total coverage
+      # 注意：本 job 不带 liveintegration 标签，故 dbmysql/dbmongo 的 IsHealthy、
+      # PingTry 等仅 live 可达的函数在此恒为 0.0%，属构建标签造成的度量假象。
+      # 含 live 路径的合并覆盖率由 smoke job 的「Report coverage including live paths」给出。
+      - name: Report hermetic coverage
         run: |
           go tool cover -func=coverage.out | tee coverage-summary.txt
           grep '^total:' coverage-summary.txt
@@ -125,7 +128,25 @@ jobs:
 
       - name: Run live integration tests
         timeout-minutes: 2
-        run: go test -tags=liveintegration ./... -run 'TestLive_' -v -count=1
+        run: go test -tags=liveintegration ./... -run 'TestLive_' -v -count=1 -coverprofile=coverage-live.out -covermode=atomic
+
+      - name: Report coverage including live paths
+        run: |
+          # 合并 hermetic 与 live 两份 profile：仅 live-tag 可达的函数（dbmysql/dbmongo
+          # 的 IsHealthy、PingTry 等）在 hermetic profile 中恒为 0.0%，只看那一份会把
+          # 构建标签造成的度量假象当成真实未覆盖。
+          # atomic 模式的 profile 可直接拼接：保留一行 mode 头，其余行原样追加；
+          # go tool cover 会对同一代码块的多次计数求和（已实测：同一代码块 count 0 与
+          # count 7 拼接后判定为 100.0%，非首条覆盖）。仓库未引入 gocovmerge 等外部工具。
+          # 这里需要再跑一次 hermetic：上一步带 -run 'TestLive_' 只执行 live 用例，
+          # 其 profile 不含普通用例的计数，故两份必须都有。代价是 quality job 的测试
+          # 在本 job 重跑一次。
+          go test ./... -count=1 -coverprofile=coverage-hermetic.out -covermode=atomic
+          head -n 1 coverage-hermetic.out > coverage.out
+          tail -n +2 coverage-hermetic.out >> coverage.out
+          tail -n +2 coverage-live.out >> coverage.out
+          go tool cover -func=coverage.out | tee coverage-summary.txt
+          grep '^total:' coverage-summary.txt
 
       - name: Print example log on failure
         if: failure()
