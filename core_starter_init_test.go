@@ -434,28 +434,68 @@ func TestCoreShutdown_SuccessfulLifecycleManagersDoNotBecomeErrors(t *testing.T)
 	}
 }
 
+// TestCoreInit_FiberRejectsMissingWrongAndFailedCodecManagers 覆盖 Fiber 的三种
+// 编解码器装配失败。
+//
+// 契约已变更（PRD C3）：这三处此前直接 panic，现在记录为 initErr 并短路后续装配。
+// 原 panic 行为保留在 InitCoreAppMust——条件 4 要求的是 panic 入口与返回 error
+// 的入口**成对出现**，不是消除 panic。下方对 Must 入口的断言即证据。
+//
+// Gin 侧仍是 panic（见下一个用例）：C3 只重建了 Fiber 的错误状态机，Gin 早已有
+// initErr，其 codec 路径属 C1 的另外 3 处，不在本次改动范围。
 func TestCoreInit_FiberRejectsMissingWrongAndFailedCodecManagers(t *testing.T) {
 	ctx := newTask4InternalAppContext(t, nil)
 	frame := &task4Frame{}
 
-	assert.PanicsWithValue(t,
-		"No JSON codec manager found in provided managers, using default JSON codec.",
-		func() { NewCoreWithFiber(ctx).InitCoreApp(frame, task4WrongManager()) },
-	)
-
-	wrongCodec := task4GoodCodecManager()
-	wrongCodec.result = struct{}{}
-	assert.PanicsWithValue(t,
-		"Loaded JSON codec provider does not implement JsonWrapper interface",
-		func() { NewCoreWithFiber(ctx).InitCoreApp(frame, wrongCodec) },
-	)
-
 	sentinel := errors.New("codec load failed")
-	failed := task4GoodCodecManager()
-	failed.err = sentinel
-	assert.PanicsWithError(t, sentinel.Error(), func() {
-		NewCoreWithFiber(ctx).InitCoreApp(frame, failed)
-	})
+	failedManager := func() *task4CodecManager {
+		failed := task4GoodCodecManager()
+		failed.err = sentinel
+		return failed
+	}
+	wrongCodecManager := func() *task4CodecManager {
+		wrong := task4GoodCodecManager()
+		wrong.result = struct{}{}
+		return wrong
+	}
+
+	for _, testCase := range []struct {
+		name    string
+		manager func() IProviderManager
+		wantErr string
+	}{
+		{
+			name:    "missing codec manager",
+			manager: func() IProviderManager { return task4WrongManager() },
+			wantErr: "no JSON codec manager found",
+		},
+		{
+			name:    "codec provider does not implement JsonWrapper",
+			manager: func() IProviderManager { return wrongCodecManager() },
+			wantErr: "JsonWrapper",
+		},
+		{
+			name:    "codec provider load fails",
+			manager: func() IProviderManager { return failedManager() },
+			wantErr: sentinel.Error(),
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			core := NewCoreWithFiber(ctx).(*CoreWithFiber)
+
+			require.NotPanics(t, func() { core.InitCoreApp(frame, testCase.manager()) },
+				"assembly failure must be recorded, not panicked")
+
+			require.True(t, core.initializationFailed())
+			assert.ErrorIs(t, core.initErr, ErrCoreInitFailed)
+			assert.ErrorContains(t, core.initErr, testCase.wantErr)
+
+			// 成对的 Must 入口保留 fail-fast 行为。
+			mustCore := NewCoreWithFiber(ctx).(*CoreWithFiber)
+			assert.Panics(t, func() { mustCore.InitCoreAppMust(frame, testCase.manager()) },
+				"the Must entry point must keep panicking on the same failure")
+		})
+	}
 }
 
 func TestCoreInit_GinRejectsMissingAndFailedCodecManagers(t *testing.T) {
