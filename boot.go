@@ -96,6 +96,12 @@ func (bc *BootConfig) Finally() *BootConfig {
 	return bc
 }
 
+// ErrBootAssemblyFailed 标记启动装配失败。
+//
+// 位点未配置管理器、提供者加载失败、加载结果类型不符——三者都是启动期不可恢复
+// 的装配错误。本哨兵使它们可被 errors.Is 分类，调用方据此与运行期错误区分。
+var ErrBootAssemblyFailed = errors.New("fiberhouse: boot assembly failed")
+
 // GetValue 获取键值存储中的值
 func (bc *BootConfig) GetValue(key string) (any, error) {
 	bc.mu.RLock()
@@ -294,7 +300,23 @@ func (fh *FiberHouse) WithPManagers(managers ...IProviderManager) *FiberHouse {
 
 // RunServer 运行应用服务器
 // 提供者状态/日志: pending、loaded、skipped、failed ???
+// 装配失败时 panic。需要处理该错误的调用方请改用 RunServerWithError。
+//
+// 保留 panic 是刻意的：装配失败意味着应用没有起来，静默返回会让调用方带着
+// 半装配的应用继续运行。与 GetValue / GetMustValue 同一惯例。
 func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
+	if err := fh.RunServerWithError(manager...); err != nil {
+		panic(err)
+	}
+}
+
+// RunServerWithError 与 RunServer 相同，但装配失败时返回错误而非 panic。
+//
+// 仅装配阶段的失败经由返回值传出：四个 resolve* 中任意一个失败都会中止启动并
+// 返回错误，此时尚未监听套接字，也未注册信号处理。进入监听之后的行为与
+// RunServer 完全一致——运行与关闭错误仍按原有方式打印，因为那时进程已经在
+// 服务，调用方拿不到控制权。
+func (fh *FiberHouse) RunServerWithError(manager ...IProviderManager) error {
 	// 引导配置完成位置点，获取该位点的提供者管理器列表并加载提供者
 	ms := ProviderLocationDefault().LocationBootStrapConfig.GetManagers()
 	if len(ms) > 0 {
@@ -312,16 +334,28 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	fh.resolveManagerWithProviders(manager...)
 
 	// 框架启动器选项初始化位置点，获取创建框架启动器所需的选项参数列表
-	fso := fh.resolveFrameStarterOpts()
+	fso, err := fh.resolveFrameStarterOptsWithError()
+	if err != nil {
+		return err
+	}
 
 	// 核心启动器选项初始化位置点，获取创建核心启动器所需的选项参数列表
-	cso := fh.resolveCoreStarterOpts()
+	cso, err := fh.resolveCoreStarterOptsWithError()
+	if err != nil {
+		return err
+	}
 
 	// 框架启动器创建位置点，加载并获取框架启动器对象
-	frameStarter := fh.resolveAndReturnFrameStarter(fso)
+	frameStarter, err := fh.resolveAndReturnFrameStarterWithError(fso)
+	if err != nil {
+		return err
+	}
 
 	// 核心启动器创建位置点，加载并获取核心启动器对象
-	coreStarter := fh.resolveAndReturnCoreStarter(cso)
+	coreStarter, err := fh.resolveAndReturnCoreStarterWithError(cso)
+	if err != nil {
+		return err
+	}
 
 	// 创建应用启动器
 	appStarter := &WebApplication{
@@ -409,6 +443,11 @@ func (fh *FiberHouse) RunServer(manager ...IProviderManager) {
 	}
 
 	fmt.Println("Application RunServer exited")
+
+	// 运行与关闭错误不经由返回值传出：走到这里意味着装配已经成功、服务已经跑过，
+	// 进程正在退出。这两类错误已按原有方式打印，且 runErr 分支已完成资源回收。
+	// 本方法的返回值只表达「装配是否成功」这一件事。
+	return nil
 }
 
 // releaseGlobalsAfterRunFailure 在运行分支失败后回收全局对象。
@@ -485,7 +524,18 @@ func (fh *FiberHouse) resolveRunAndShutdownManagers() ([]IProviderManager, []IPr
 }
 
 // resolveFrameStarterOpts 创建并返回框架启动器选项参数
+// 装配失败时 panic。需要处理该错误的调用方请改用 resolveFrameStarterOptsWithError。
 func (fh *FiberHouse) resolveFrameStarterOpts() []FrameStarterOption {
+	opts, err := fh.resolveFrameStarterOptsWithError()
+	if err != nil {
+		panic(err)
+	}
+	return opts
+}
+
+// resolveFrameStarterOptsWithError 与 resolveFrameStarterOpts 相同，但装配失败时
+// 返回错误而非 panic。
+func (fh *FiberHouse) resolveFrameStarterOptsWithError() ([]FrameStarterOption, error) {
 	_, cfg, logger := fh.resolveGlobalTools()
 	if len(fh.frameStarterOpts) == 0 {
 		logger.WarnWith(cfg.LogOriginFrame()).Msg("FiberHouse: frameStarterOpts not set, loading from FrameStarterOptionInit location point")
@@ -495,22 +545,34 @@ func (fh *FiberHouse) resolveFrameStarterOpts() []FrameStarterOption {
 			anyFrameOpts, err := ms[0].LoadProvider()
 			if err != nil {
 				logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg("FrameStarterOptionInit provider load failed")
-				panic(err)
+				return nil, fmt.Errorf("%w: FrameStarterOptionInit provider load failed: %w",
+					ErrBootAssemblyFailed, err)
 			}
 			opts, ok := anyFrameOpts.([]FrameStarterOption)
 			if !ok {
 				msg := "loaded FrameStarterOptionInit provider is not []FrameStarterOption type"
 				logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-				panic(errors.New(msg))
+				return nil, fmt.Errorf("%w: %s (got %T)", ErrBootAssemblyFailed, msg, anyFrameOpts)
 			}
 			fh.frameStarterOpts = opts
 		}
 	}
-	return fh.frameStarterOpts
+	return fh.frameStarterOpts, nil
 }
 
 // resolveCoreStarterOpts 创建并返回核心启动器选项参数
+// 装配失败时 panic。需要处理该错误的调用方请改用 resolveCoreStarterOptsWithError。
 func (fh *FiberHouse) resolveCoreStarterOpts() []CoreStarterOption {
+	opts, err := fh.resolveCoreStarterOptsWithError()
+	if err != nil {
+		panic(err)
+	}
+	return opts
+}
+
+// resolveCoreStarterOptsWithError 与 resolveCoreStarterOpts 相同，但装配失败时
+// 返回错误而非 panic。
+func (fh *FiberHouse) resolveCoreStarterOptsWithError() ([]CoreStarterOption, error) {
 	_, cfg, logger := fh.resolveGlobalTools()
 	if len(fh.coreStarterOpts) == 0 {
 		logger.WarnWith(cfg.LogOriginFrame()).Msg("FiberHouse: coreStarterOpts not set, loading from CoreStarterOptionInit location point")
@@ -521,30 +583,45 @@ func (fh *FiberHouse) resolveCoreStarterOpts() []CoreStarterOption {
 			if err != nil {
 				msg := "CoreStarterOptionInit provider load failed"
 				logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg(msg)
-				panic(errors.New(msg))
+				return nil, fmt.Errorf("%w: %s: %w", ErrBootAssemblyFailed, msg, err)
 			}
 			opts, ok := anyCoreOpts.([]CoreStarterOption)
 			if !ok {
 				msg := "loaded CoreStarterOptionInit provider is not []CoreStarterOption type"
 				logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-				panic(errors.New(msg))
+				return nil, fmt.Errorf("%w: %s (got %T)", ErrBootAssemblyFailed, msg, anyCoreOpts)
 			}
 			fh.coreStarterOpts = opts
 		}
 	}
-	return fh.coreStarterOpts
+	return fh.coreStarterOpts, nil
 }
 
 // resolveAndReturnFrameStarter 创建并返回框架启动器
+// 装配失败时 panic。需要处理该错误的调用方请改用
+// resolveAndReturnFrameStarterWithError。
 func (fh *FiberHouse) resolveAndReturnFrameStarter(fs []FrameStarterOption) FrameStarter {
+	starter, err := fh.resolveAndReturnFrameStarterWithError(fs)
+	if err != nil {
+		panic(err)
+	}
+	return starter
+}
+
+// resolveAndReturnFrameStarterWithError 与 resolveAndReturnFrameStarter 相同，
+// 但装配失败时返回错误而非 panic。
+//
+// 「位点无管理器」是最常见的装配遗漏：应用忘记把 FrameStarterCreate 管理器
+// 装配进默认集合时就会命中，旧实现在此直接 panic。
+func (fh *FiberHouse) resolveAndReturnFrameStarterWithError(fs []FrameStarterOption) (FrameStarter, error) {
 	_, cfg, logger := fh.resolveGlobalTools()
 
 	// 通过框架启动器创建位置点加载获取框架启动器对象
 	ms := ProviderLocationDefault().LocationFrameStarterCreate.GetManagers()
 	if len(ms) == 0 {
-		msg := "Location point:LocationFrameStarterCreate， no FrameStarterCreate provider manager found"
+		msg := "Location point: LocationFrameStarterCreate, no FrameStarterCreate provider manager found"
 		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-		panic(msg)
+		return nil, fmt.Errorf("%w: %s", ErrBootAssemblyFailed, msg)
 	}
 	// 通过提供者加载回调函数(ProviderLoadFunc)参数注入框架启动器选项
 	anyStarter, err := ms[0].LoadProvider(func(manager IProviderManager) (any, error) {
@@ -553,21 +630,33 @@ func (fh *FiberHouse) resolveAndReturnFrameStarter(fs []FrameStarterOption) Fram
 	if err != nil {
 		msg := "FrameStarterCreate provider load failed"
 		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg(msg)
-		panic(errors.New(msg))
+		return nil, fmt.Errorf("%w: %s: %w", ErrBootAssemblyFailed, msg, err)
 	}
 	// 初始化框架启动器
 	frameStarter, ok := anyStarter.(FrameStarter)
 	if !ok {
 		msg := "loaded FrameStarterCreate provider is not FrameStarter type"
 		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-		panic(errors.New(msg))
+		return nil, fmt.Errorf("%w: %s (got %T)", ErrBootAssemblyFailed, msg, anyStarter)
 	}
 
-	return frameStarter
+	return frameStarter, nil
 }
 
 // resolveAndReturnCoreStarter 创建并返回核心启动器
+// 装配失败时 panic。需要处理该错误的调用方请改用
+// resolveAndReturnCoreStarterWithError。
 func (fh *FiberHouse) resolveAndReturnCoreStarter(cs []CoreStarterOption) CoreStarter {
+	starter, err := fh.resolveAndReturnCoreStarterWithError(cs)
+	if err != nil {
+		panic(err)
+	}
+	return starter
+}
+
+// resolveAndReturnCoreStarterWithError 与 resolveAndReturnCoreStarter 相同，
+// 但装配失败时返回错误而非 panic。
+func (fh *FiberHouse) resolveAndReturnCoreStarterWithError(cs []CoreStarterOption) (CoreStarter, error) {
 	_, cfg, logger := fh.resolveGlobalTools()
 
 	// 通过核心启动器创建位置点加载获取核心启动器对象
@@ -575,7 +664,7 @@ func (fh *FiberHouse) resolveAndReturnCoreStarter(cs []CoreStarterOption) CoreSt
 	if len(ms) == 0 {
 		msg := "Location point: LocationCoreStarterCreate, no CoreStarterCreate provider manager found"
 		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-		panic(msg)
+		return nil, fmt.Errorf("%w: %s", ErrBootAssemblyFailed, msg)
 	}
 	// 通过提供者加载回调函数(ProviderLoadFunc)参数注入核心启动器选项
 	anyCoreStarter, err := ms[0].LoadProvider(func(manager IProviderManager) (any, error) {
@@ -583,16 +672,17 @@ func (fh *FiberHouse) resolveAndReturnCoreStarter(cs []CoreStarterOption) CoreSt
 	})
 	if err != nil {
 		logger.ErrorWith(cfg.LogOriginFrame()).Err(err).Msg("CoreStarterCreate provider load failed")
-		panic(err)
+		return nil, fmt.Errorf("%w: CoreStarterCreate provider load failed: %w",
+			ErrBootAssemblyFailed, err)
 	}
 	// 初始化核心启动器
 	coreStarter, ok := anyCoreStarter.(CoreStarter)
 	if !ok {
 		msg := "loaded CoreStarterCreate provider is not CoreStarter type"
 		logger.ErrorWith(cfg.LogOriginFrame()).Msg(msg)
-		panic(errors.New(msg))
+		return nil, fmt.Errorf("%w: %s (got %T)", ErrBootAssemblyFailed, msg, anyCoreStarter)
 	}
-	return coreStarter
+	return coreStarter, nil
 }
 
 // resolveManagerWithProviders 收集提供者并注册到同类型组的管理器中，加載 providers 執行 initialize 初始化
