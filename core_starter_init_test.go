@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -826,7 +827,13 @@ func TestCoreRun_GinLoggerReleasedOnListenerFailure(t *testing.T) {
 
 func TestCoreRun_GinLoggerReleasedOnNormalReturn(t *testing.T) {
 	preserveTask4GinMode(t)
-	ctx := newTask4InternalAppContext(t, nil)
+	// AppCoreRun 无条件执行 net.Listen，先行 Close 并不能跳过绑定，因此必须避开
+	// 默认的 0.0.0.0:8080——CI 的 smoke job 同时跑着占用该端口的示例应用，用默认
+	// 地址会以 EADDRINUSE 失败，与本用例要断言的日志器释放语义无关。
+	ctx := newTask4InternalAppContext(t, map[string]interface{}{
+		"application.plugins.engine.servers.gin.host": "127.0.0.1",
+		"application.plugins.engine.servers.gin.port": strconv.Itoa(freePort(t)),
+	})
 	core := NewCoreWithGin(ctx).(*CoreWithGin)
 	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
 	cleanupTask4GinCore(t, core)
