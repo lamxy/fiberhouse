@@ -97,7 +97,7 @@ func (a *AsyncDiodeWriter) consume(flushInterval time.Duration) {
 		default:
 			data, ok := a.diode.TryNext()
 			if !ok || data == nil {
-				time.Sleep(1000 * time.Microsecond) // 适当睡眠 100 ~ 1000 微秒
+				time.Sleep(10 * time.Millisecond) // 适当睡眠
 				continue
 			}
 			b := *(*[]byte)(data)
