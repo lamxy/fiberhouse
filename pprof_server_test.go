@@ -182,10 +182,19 @@ func TestPprofServerShutdownReleasesPort(t *testing.T) {
 
 	require.NoError(t, s.Shutdown(context.Background()))
 
-	// 关闭后应能重新监听同一端口，证明端口已释放
-	l, err := net.Listen("tcp", s.Addr())
-	require.NoError(t, err, "关闭后端口应已释放")
-	_ = l.Close()
+	// 关闭后应能重新监听同一端口，证明端口已释放。
+	//
+	// Shutdown 返回时监听套接字已关闭，但先前那条已 Close 的连接可能仍处于内核的
+	// TIME_WAIT/FIN_WAIT 拆除过程中，使 net.Listen 偶发 EADDRINUSE。这是断言与内核
+	// 时序的竞争，不是被测程序的缺陷，因此改为有限重试而非一次性断言。
+	require.Eventually(t, func() bool {
+		l, err := net.Listen("tcp", s.Addr())
+		if err != nil {
+			return false
+		}
+		_ = l.Close()
+		return true
+	}, time.Second, 50*time.Millisecond, "关闭后端口应已释放")
 }
 
 // TestPprofServerStartTwiceIsIdempotent 重复启动应幂等，不产生第二个监听

@@ -13,11 +13,7 @@
 
 当前工作树的 hermetic 基线是 `go test ./... -count=1`、`go vet ./...` 和 `go test -race ./... -count=1`。
 
-**已知 flaky 测试（不属任何能力的晋级缺口，但会让 CI 间歇性变红）**：
-`TestPprofServerShutdownReleasesPort`（`pprof_server_test.go:187`）在 `Shutdown` 后立即
-`net.Listen` 同一端口以证明端口已释放，该断言与 TCP 连接的内核态拆除存在竞争——实测连续
-5 次单独执行出现 2 次失败。它由 commit `1af9836` 引入，与本轮晋级改动无关（本轮未修改根
-package 的任何 `.go` 文件）。修复方向是对重新监听做有限重试而非一次性断言。CI 的 `smoke` job 还构建并启动示例、检查一条 HTTP 路径，并定向执行带 `liveintegration` build tag 的回归测试（`go test -tags=liveintegration ./... -run 'TestLive_' -v -count=1`），覆盖 Redis cache、asynq、MySQL、MongoDB 各自的创建-读写-关闭路径。
+CI 的 `smoke` job 还构建并启动示例、检查一条 HTTP 路径，并定向执行带 `liveintegration` build tag 的回归测试（`go test -tags=liveintegration ./... -run 'TestLive_' -v -count=1`），覆盖 Redis cache、asynq、MySQL、MongoDB 各自的创建-读写-关闭路径。
 
 live 测试现已覆盖：三个封装各自的并发读写与并发健康检查同时进行（N 个读写 goroutine 叠加持续 `IsHealthy`，断言无错误、无丢行/丢文档、健康检查确实执行且未误报）、MySQL 与 MongoDB 的 `Close` 幂等，以及就绪探针对真实依赖故障的端到端反应（依赖可达 200 → TCP 层切断 503 并点名不健康 key → 恢复后重新 200，全程框架不做任何重建）。上述用例均在 `-race` 下通过。
 
