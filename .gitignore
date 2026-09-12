@@ -57,3 +57,6 @@ node_modules/
 # Task files
 tasks.json
 tasks/ 
+
+# Task Master
+.taskmaster/
