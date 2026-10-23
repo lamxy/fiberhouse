@@ -41,6 +41,12 @@ var (
 	logOnce sync.Once
 )
 
+// callerSkip 让 caller 字段指向调用 LoggerWrap 方法的业务代码，而不是 LoggerWrap 方法本身。
+//
+// zerolog 的 Event.Caller 记录调用 Caller 的那一帧；这里的 Caller 在 LoggerWrap 方法内部调用，
+// 不跳过一帧时 caller 恒为 bootstrap.go。
+const callerSkip = 1
+
 // LoggerWrapper 定义日志记录器接口，提供了多种日志记录方法
 type LoggerWrapper interface {
 	GetLevel() zerolog.Level
@@ -122,14 +128,14 @@ func (lw *LoggerWrap) Close() error {
 // Debug 和 DebugWith 方法用于记录调试级别的日志
 func (lw *LoggerWrap) Debug(origin ...appconfig.LogOrigin) *zerolog.Event {
 	if len(origin) > 0 {
-		return lw.logger.Debug().Str("Origin", origin[0].String()).Caller()
+		return lw.logger.Debug().Str("Origin", origin[0].String()).Caller(callerSkip)
 	}
-	return lw.logger.Debug().Caller()
+	return lw.logger.Debug().Caller(callerSkip)
 }
 
 // DebugWith 方法用于记录调试级别的日志，并指定日志来源
 func (lw *LoggerWrap) DebugWith(origin appconfig.LogOrigin) *zerolog.Event {
-	return lw.logger.Debug().Str("Origin", origin.String()).Caller()
+	return lw.logger.Debug().Str("Origin", origin.String()).Caller(callerSkip)
 }
 
 // Info 和 InfoWith 方法用于记录信息级别的日志
@@ -161,45 +167,45 @@ func (lw *LoggerWrap) WarnWith(origin appconfig.LogOrigin) *zerolog.Event {
 // Error 和 ErrorWith 方法用于记录错误级别的日志
 func (lw *LoggerWrap) Error(origin ...appconfig.LogOrigin) *zerolog.Event {
 	if len(origin) > 0 {
-		return lw.logger.Error().Str("Origin", origin[0].String()).Caller()
+		return lw.logger.Error().Str("Origin", origin[0].String()).Caller(callerSkip)
 	}
-	return lw.logger.Error().Caller()
+	return lw.logger.Error().Caller(callerSkip)
 }
 
 // ErrorWith 方法用于记录错误级别的日志，并指定日志来源
 func (lw *LoggerWrap) ErrorWith(origin appconfig.LogOrigin) *zerolog.Event {
-	return lw.logger.Error().Str("Origin", origin.String()).Caller()
+	return lw.logger.Error().Str("Origin", origin.String()).Caller(callerSkip)
 }
 
 // Err 方法用于记录错误事件，通常用于捕获异常或错误信息
 func (lw *LoggerWrap) Err(err error) *zerolog.Event {
-	return lw.logger.Err(err).Caller()
+	return lw.logger.Err(err).Caller(callerSkip)
 }
 
 // Fatal 和 FatalWith 方法用于记录致命级别的日志
 func (lw *LoggerWrap) Fatal(origin ...appconfig.LogOrigin) *zerolog.Event {
 	if len(origin) > 0 {
-		return lw.logger.Fatal().Str("Origin", origin[0].String()).Caller()
+		return lw.logger.Fatal().Str("Origin", origin[0].String()).Caller(callerSkip)
 	}
-	return lw.logger.Fatal().Caller()
+	return lw.logger.Fatal().Caller(callerSkip)
 }
 
 // FatalWith 方法用来记录致命级别的日志，并指定日志来源
 func (lw *LoggerWrap) FatalWith(origin appconfig.LogOrigin) *zerolog.Event {
-	return lw.logger.Fatal().Str("Origin", origin.String()).Caller()
+	return lw.logger.Fatal().Str("Origin", origin.String()).Caller(callerSkip)
 }
 
 // Panic 和 PanicWith 方法用于记录恐慌级别的日志
 func (lw *LoggerWrap) Panic(origin ...appconfig.LogOrigin) *zerolog.Event {
 	if len(origin) > 0 {
-		return lw.logger.Panic().Str("Origin", origin[0].String()).Caller()
+		return lw.logger.Panic().Str("Origin", origin[0].String()).Caller(callerSkip)
 	}
-	return lw.logger.Panic().Caller()
+	return lw.logger.Panic().Caller(callerSkip)
 }
 
 // PanicWith 方法用于记录恐慌级别的日志，并指定日志来源
 func (lw *LoggerWrap) PanicWith(origin appconfig.LogOrigin) *zerolog.Event {
-	return lw.logger.Panic().Str("Origin", origin.String()).Caller()
+	return lw.logger.Panic().Str("Origin", origin.String()).Caller(callerSkip)
 }
 
 // With 方法用于创建一个新的日志上下文，可以在此上下文中添加更多字段
