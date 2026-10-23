@@ -90,7 +90,7 @@ application:
     debugFlagValue: f0dc4970-ed31-4598-acd8-b5c5fd66c12e
     enableDebugFlag: false                   # true，表示请求头部字段debugFlag配置生效，当其值等于debugFlagValue时，不论环境及enablePrintStack影响，都在服务端打印日志栈信息
     enablePrintStack: true                   # true，表示启动打印栈信息，对于当前环境为非调式模式的生产环境时，false可关闭生产环境服务端的日志栈信息打印，节省服务器资源
-    debugMode: false                          # true，表示更详细的接口异常响应信息、且不受限制地在服务端打印日志栈信息以及在接口响应中显示详细的错误信息，生产环境该配置务必设置为false
+    debugMode: true                          # true，表示更详细的接口异常响应信息、且不受限制地在服务端打印日志栈信息以及在接口响应中显示详细的错误信息，生产环境该配置务必设置为false
   trace:
     requestID: traceId                       # 请求ID头部字段
   task:
