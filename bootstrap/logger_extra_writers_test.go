@@ -133,3 +133,19 @@ func TestLoggerExtraWriters_IgnoredAfterNewLoggerOnce(t *testing.T) {
 		t.Fatalf("late extra writer was used: content=%q closed=%d", late.String(), late.closed)
 	}
 }
+
+func TestLoggerExtraWriters_SkipsTypedNil(t *testing.T) {
+	state := isolateBootstrapGlobals(t)
+	dir := t.TempDir()
+	writeConfig(t, dir, "application_dev.yml", devYAML)
+	t.Setenv("APP_ENV_application_env", "dev")
+
+	var failed *recordingWriter // 模拟构造失败返回的 (nil, err) 中被忽略的 nil 指针
+	logger := NewLoggerOnceWithWriters(NewConfigOnce(dir), []io.Writer{failed}, dir)
+	logger.Error().Msg("typed nil skipped")
+	state.closeLogger(t)
+
+	if file := readFile(t, filepath.Join(dir, "test.log")); !strings.Contains(file, "typed nil skipped") {
+		t.Fatalf("file output missing: %q", file)
+	}
+}

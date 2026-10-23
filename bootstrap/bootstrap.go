@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -304,7 +305,7 @@ func NewLoggerOnce(cfg appconfig.IAppConfig, path ...string) LoggerWrapper {
 // （sentry-go 的 sentryzerolog 会按级别把日志转成事件）。附加 writer 收到的是与其他
 // 目标相同的 JSON 行，排在 console、file 之后：io.MultiWriter 遇到写入错误会停止写后续
 // 目标，放在最后可避免附加 writer 的故障影响内置输出。console 与 file 都未启用时仍回退到
-// stdout，附加 writer 不替代这一回退。nil 元素会被忽略。
+// stdout，附加 writer 不替代这一回退。nil 元素（包括 typed nil）会被忽略。
 //
 // 实现了 io.Closer 的附加 writer 由 LoggerWrapper.Close 关闭，调用方不要再自行关闭。
 // 与 NewLoggerOnce 共用同一个 sync.Once：先调用的一方决定最终配置，之后传入的
@@ -358,7 +359,7 @@ func NewLoggerOnceWithWriters(cfg appconfig.IAppConfig, extraWriters []io.Writer
 
 		var extraClosers []io.Closer
 		for _, w := range extraWriters {
-			if w == nil {
+			if isNilWriter(w) {
 				continue
 			}
 			writers = append(writers, w)
@@ -376,6 +377,22 @@ func NewLoggerOnceWithWriters(cfg appconfig.IAppConfig, extraWriters []io.Writer
 		Logger = lw
 	})
 	return Logger
+}
+
+// isNilWriter 判断 writer 是否为 nil，包括装着 nil 指针的接口值（typed nil）。
+//
+// 构造函数失败时常返回 (nil, err)，调用方若忽略 err 直接传入，typed nil 不等于 nil，
+// 写入第一条日志时才会 panic；在这里跳过，避免日志器因此崩溃。
+func isNilWriter(w io.Writer) bool {
+	if w == nil {
+		return true
+	}
+	v := reflect.ValueOf(w)
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return v.IsNil()
+	}
+	return false
 }
 
 // NewWriterSync 同步写日志
