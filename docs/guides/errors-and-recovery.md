@@ -93,6 +93,8 @@ panic recovery 内部忽略统一响应发送的返回值。若编码或连接�
 
 starter 始终提供 stack handler，但是否真正生成 `ErrorStack()` 取决于 `debugMode || enablePrintStack || (enableDebugFlag && header == debugFlagValue)`。请求 debug flag 只扩大服务端详细堆栈日志条件，不会把本次响应切换成 debug 模式；对外数据隐藏仍只由 `debugMode` 控制。若启用 `enableDebugFlag` 却把 `debugFlagValue` 留空，缺少该 header 的请求也会因空字符串相等而打开详细堆栈日志。
 
+非 error 的 panic 值（如 `panic("...")`）先转成 `panic: <值>` 形式的 error，再按 error 分支记录日志，不会因为没有对应类型分支而不留日志。
+
 进入详细堆栈分支时，handler 会记录路由 params、query 和请求 headers；请求 body 当前没有启用。Fiber 与 Gin 分别从各自原生 Context 收集这些字段。header 在编码前统一脱敏：`authorization`、`cookie`、`proxy-authorization`、`x-auth-token`、`x-api-key`，以及名称包含 `token`、`secret`、`password` 的字段都会被遮盖。值的字节长度不超过 8 时替换为 `***`，更长时只保留前 4 个字节再加 `...***`。
 
 这套脱敏只覆盖 header 名启发式规则，不覆盖 query、route param 或业务 data 中的秘密；不要把凭据放入这些位置。序列化 headers/params/query 使用应用的“fast traffic codec”实例，取得或类型断言失败时 stack handler 会记录错误并提前返回。
