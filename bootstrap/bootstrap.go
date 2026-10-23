@@ -79,6 +79,8 @@ type LoggerWrap struct {
 	// 契约才对任意注入的 io.WriteCloser 成立。
 	closeOnce sync.Once
 	closeErr  error
+	// extraClosers 是附加 writer 中实现了 io.Closer 的部分，随日志器一起关闭。
+	extraClosers []io.Closer
 }
 
 // NewLoggerWrap 创建一个新的LoggerWrap实例
@@ -116,11 +118,19 @@ func (lw *LoggerWrap) GetZeroLogger() *zerolog.Logger {
 // 使用方注入的任意 io.WriteCloser 没有义务容忍重复 Close。
 //
 // 守卫放在这一层，契约才对所有注入的 writer 成立。
+//
+// 附加 writer（NewLoggerOnceWithWriters）中实现了 io.Closer 的，在 wCloser 之后依次关闭，
+// 错误用 errors.Join 合并返回。
 func (lw *LoggerWrap) Close() error {
 	lw.closeOnce.Do(func() {
+		var errs []error
 		if lw.wCloser != nil {
-			lw.closeErr = lw.wCloser.Close()
+			errs = append(errs, lw.wCloser.Close())
 		}
+		for _, c := range lw.extraClosers {
+			errs = append(errs, c.Close())
+		}
+		lw.closeErr = errors.Join(errs...)
 	})
 	return lw.closeErr
 }
@@ -285,6 +295,21 @@ func NewConfigOnce(path ...string) appconfig.IAppConfig {
 // NewLoggerOnce 初始化并注册全局日志对象
 // path 可选参数，指定日志目录，默认为当前工作目录下的./logs目录
 func NewLoggerOnce(cfg appconfig.IAppConfig, path ...string) LoggerWrapper {
+	return NewLoggerOnceWithWriters(cfg, nil, path...)
+}
+
+// NewLoggerOnceWithWriters 与 NewLoggerOnce 相同，并把 extraWriters 追加为日志输出目标。
+//
+// 用于把日志同时送到配置文件无法描述的目标，例如错误追踪平台的 zerolog writer
+// （sentry-go 的 sentryzerolog 会按级别把日志转成事件）。附加 writer 收到的是与其他
+// 目标相同的 JSON 行，排在 console、file 之后：io.MultiWriter 遇到写入错误会停止写后续
+// 目标，放在最后可避免附加 writer 的故障影响内置输出。console 与 file 都未启用时仍回退到
+// stdout，附加 writer 不替代这一回退。nil 元素会被忽略。
+//
+// 实现了 io.Closer 的附加 writer 由 LoggerWrapper.Close 关闭，调用方不要再自行关闭。
+// 与 NewLoggerOnce 共用同一个 sync.Once：先调用的一方决定最终配置，之后传入的
+// extraWriters 不生效。
+func NewLoggerOnceWithWriters(cfg appconfig.IAppConfig, extraWriters []io.Writer, path ...string) LoggerWrapper {
 	logOnce.Do(func() {
 		var (
 			writers      []io.Writer
@@ -331,11 +356,24 @@ func NewLoggerOnce(cfg appconfig.IAppConfig, path ...string) LoggerWrapper {
 			writers = append(writers, os.Stdout)
 		}
 
+		var extraClosers []io.Closer
+		for _, w := range extraWriters {
+			if w == nil {
+				continue
+			}
+			writers = append(writers, w)
+			if c, ok := w.(io.Closer); ok {
+				extraClosers = append(extraClosers, c)
+			}
+		}
+
 		//zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 
 		// 创建日志记录器，使用多写入器支持同时输出到多个目标
 		log := zerolog.New(io.MultiWriter(writers...)).With().Timestamp().Logger().Level(level)
-		Logger = NewLoggerWrap(&log, loggerWriter)
+		lw := NewLoggerWrap(&log, loggerWriter).(*LoggerWrap)
+		lw.extraClosers = extraClosers
+		Logger = lw
 	})
 	return Logger
 }
