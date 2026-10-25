@@ -43,3 +43,12 @@ FiberHouse 错误经 `BootConfig.LogWriters` 附加的 sentryzerolog writer 进�
 - 只验证了 Fiber 内核；Gin、Hertz 共用同一个 `DefaultStackTraceHandler`，`error` 字段行为相同，但 GlitchTip 端未逐一实测。
 - sentry-go 只验证了 v0.50.0；应用实际锁定的版本需自行核对（v0.50.0 的 `New` 签名已与 master 不同）。
 - 应用端 sentryzerolog 的 `Levels` 是否包含 Warn 仍需应用侧确认（决定 4xx 业务错误是否还会建 issue）。
+
+## 追加：traceId 为空的修正（待处理清单第 4 点）
+
+- 根因：`DefaultStackTraceHandler` 用 `GetHeader` 读**请求**头；requestid 中间件把 ID 存进上下文（Fiber 为 `Locals`），
+  只写到**响应**头，客户端不自带时日志里的 traceId 恒为空。
+- 修正：commit `71420fd`（`fix(recover): read the trace id from the requestid middleware`）改为先取
+  `recovery.TraceID(ctx)`，为空再退回同名请求头，保留无中间件应用的原有行为。
+- 验证：验证套件加上与示例应用相同的 `requestid.New(requestid.Config{ContextKey: "traceId"})` 后，
+  GlitchTip 事件（environment `traceid-fix`）的 traceId 为中间件生成的 UUID，panic 与返回 error 两条路径都有值。

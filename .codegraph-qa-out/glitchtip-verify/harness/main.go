@@ -16,6 +16,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	sentryzerolog "github.com/getsentry/sentry-go/zerolog"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/lamxy/fiberhouse"
 	adaptorerrorhandler "github.com/lamxy/fiberhouse/adaptor/errorhandler"
 	"github.com/lamxy/fiberhouse/appconfig"
@@ -103,6 +104,8 @@ func main() {
 		StackTraceHandler: eh.DefaultStackTraceHandler,
 		JsonCodec:         json.Marshal,
 	}).(fiber.Handler))
+	// 与示例应用相同的 requestid 配置：ID 存进 Locals("traceId") 并写到响应头
+	app.Use(requestid.New(requestid.Config{ContextKey: "traceId"}))
 	// scenario 头部用于在 BeforeSend 里给事件命名
 	app.Use(func(c *fiber.Ctx) error {
 		sentry.ConfigureScope(func(s *sentry.Scope) { s.SetTag("scenario", c.Path()[1:]) })
