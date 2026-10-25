@@ -8,8 +8,10 @@ package exception
 
 import "github.com/lamxy/fiberhouse/response"
 
+// Exception 定义业务异常，按20、40、50开头+系统+模块+功能点规范响应码
 type Exception response.RespInfo
 
+// ValidateException 定义接口参数校验异常
 type ValidateException response.RespInfo
 
 type ExceptionMap map[string]Exception
