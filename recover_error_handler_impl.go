@@ -22,6 +22,7 @@ import (
 	"github.com/lamxy/fiberhouse/exception"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog"
 )
 
 // defaultRequestIDKey 请求ID字段名称的兜底值，仅在上下文或配置缺失时使用
@@ -242,10 +243,16 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 		}
 	}
 
-	var (
-		linesJson []byte
-		logEvent  = logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId)
-	)
+	// 日志级别跟随 HTTP 状态：4xx 是可预期的失败记 WARN，5xx 是服务端故障记 ERROR
+	var logEvent *zerolog.Event
+	if httpStatusOf(e) < http.StatusInternalServerError {
+		logEvent = logger.Warn(cfg.LogOriginRecover())
+	} else {
+		logEvent = logger.Error(cfg.LogOriginRecover())
+	}
+	logEvent.Str(requestID, traceId)
+
+	var linesJson []byte
 
 	// 记录reqParams、reqQueries、reqBody、reqHeaders
 	var (
@@ -462,6 +469,26 @@ func (r *ErrorHandler) ErrorHandler(ctx adaptorctx.ICoreContext, err error) erro
 		return Response().From(exception.GetUnknownError().RespData(err.Error()), true).SendWithCtx(ctx, http.StatusInternalServerError)
 	}
 	return Response().From(exception.GetUnknownError(), true).SendWithCtx(ctx, http.StatusInternalServerError)
+}
+
+// httpStatusOf 返回错误对应的 HTTP 状态码，判定顺序与 ErrorHandler 一致：
+// fiber.Error 用自身状态码；ValidateException、Exception 是业务错误，恒为 400；其余为 500。
+//
+// 业务 Code（20/40/50 开头）只供客户端分类，不参与 HTTP 状态判定。
+func httpStatusOf(e interface{}) int {
+	err, ok := e.(error)
+	if !ok {
+		return http.StatusInternalServerError // 非 error 的 panic 值
+	}
+	if code, _, ok := fiberHTTPError(err); ok {
+		return code
+	}
+	var ve *exception.ValidateException
+	var ee *exception.Exception
+	if errors.As(err, &ve) || errors.As(err, &ee) {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
 }
 
 func fiberHTTPError(err error) (int, string, bool) {
