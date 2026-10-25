@@ -1,0 +1,35 @@
+# FiberHouse 改法 A 驗證用的本機 GlitchTip（DEBUG 模式，僅限本機，勿用於正式環境）
+name: fh-glitchtip-verify
+
+x-environment: &env
+  DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+  VALKEY_URL: redis://valkey:6379
+  SECRET_KEY: local-verify-only-not-a-secret
+  GLITCHTIP_DOMAIN: http://localhost:18000
+  DEBUG: "true"
+  GLITCHTIP_BOOTSTRAP_DEV: "true"
+  EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+  ENABLE_USER_REGISTRATION: "false"
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pg-data:/var/lib/postgresql
+    restart: unless-stopped
+  valkey:
+    image: valkey/valkey:9
+    restart: unless-stopped
+  web:
+    image: glitchtip/glitchtip:6.2.6
+    command: ./bin/run-all-in-one.sh
+    depends_on: [postgres, valkey]
+    environment: *env
+    ports:
+      - "127.0.0.1:18000:8000"
+    restart: unless-stopped
+
+volumes:
+  pg-data:
