@@ -270,6 +270,9 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 		e = fmt.Errorf("panic: %v", e)
 	}
 
+	// 错误写入 zerolog 标准的 error 字段，错误追踪平台（如 sentryzerolog）据此生成带堆栈的 Exception
+	logEvent.Err(errorFieldOf(e))
+
 	switch err := e.(type) {
 	case *exception.ValidateException:
 		dw := jsonconvert.NewDataWrap(err.Data)
@@ -497,6 +500,17 @@ func httpStatusOf(e interface{}) int {
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
+}
+
+// errorFieldOf 返回要写入日志 error 字段的错误，不是 error 时返回 nil（zerolog 的 Err(nil) 不写字段）。
+//
+// typed-nil *fiber.Error 调用 Error() 会 panic，同样返回 nil，交给下方的专门分支记录。
+func errorFieldOf(e interface{}) error {
+	if fiberErr, ok := e.(*fiber.Error); ok && fiberErr == nil {
+		return nil
+	}
+	err, _ := e.(error)
+	return err
 }
 
 func fiberHTTPError(err error) (int, string, bool) {
