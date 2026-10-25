@@ -274,6 +274,8 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 				logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).Str("PrintStack", "true")
 			}
 
+			logEvent.Str("stack", msg)
+
 			if len(reqParamsJson) > 0 {
 				logEvent.RawJSON("reqParams", reqParamsJson)
 			}
@@ -291,7 +293,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 					logEvent.RawJSON("DebugStackLines", linesJson)
 				}
 			}
-			logEvent.Msg(msg)
+			logEvent.Msg(err.Error())
 		} else {
 			if dw.CanJSONSerializable() {
 				data, errJson := dw.GetJson(jsonEnCoder)
@@ -323,6 +325,8 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 				logEvent.Int("Code", err.Code).Str("Msg", err.Msg).Str("Data", dw.GetString()).Str("PrintStack", "true")
 			}
 
+			logEvent.Str("stack", msg)
+
 			if len(reqParamsJson) > 0 {
 				logEvent.RawJSON("reqParams", reqParamsJson)
 			}
@@ -339,7 +343,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 					logEvent.RawJSON("DebugStackLines", linesJson)
 				}
 			}
-			logEvent.Msg(msg)
+			logEvent.Msg(err.Error())
 		} else {
 			if dw.CanJSONSerializable() {
 				data, errJson := dw.GetJson(jsonEnCoder)
@@ -373,6 +377,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 			msg := ErrorStack()
 
 			logEvent.Int("Code", fiberErr.Code).Str("Msg", fiberErr.Error()).Str("PrintStack", "true")
+			logEvent.Str("stack", msg)
 
 			if len(reqParamsJson) > 0 {
 				logEvent.RawJSON("reqParams", reqParamsJson)
@@ -390,7 +395,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 					logEvent.RawJSON("DebugStackLines", linesJson)
 				}
 			}
-			logEvent.Msg(msg)
+			logEvent.Msg(fiberErr.Error())
 		} else {
 			logEvent.Int("Code", fiberErr.Code).Msg(fiberErr.Error())
 		}
@@ -399,6 +404,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 			msg := ErrorStack()
 
 			logEvent.Str("Msg", err.Error()).Str("PrintStack", "true")
+			logEvent.Str("stack", msg)
 
 			if len(reqParamsJson) > 0 {
 				logEvent.RawJSON("reqParams", reqParamsJson)
@@ -416,7 +422,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 					logEvent.RawJSON("DebugStackLines", linesJson)
 				}
 			}
-			logEvent.Msg(msg)
+			logEvent.Msg(err.Error())
 		} else {
 			logEvent.Msg(err.Error())
 		}
