@@ -52,3 +52,13 @@ FiberHouse 错误经 `BootConfig.LogWriters` 附加的 sentryzerolog writer 进�
   `recovery.TraceID(ctx)`，为空再退回同名请求头，保留无中间件应用的原有行为。
 - 验证：验证套件加上与示例应用相同的 `requestid.New(requestid.Config{ContextKey: "traceId"})` 后，
   GlitchTip 事件（environment `traceid-fix`）的 traceId 为中间件生成的 UUID，panic 与返回 error 两条路径都有值。
+
+## 追加：同一错误上报两次（待处理清单第 3 点）
+
+- 核实：Fiber 访问日志用 fiberzerolog 默认级别（5xx ERROR、4xx WARN、其余 INFO）；Gin、Hertz 访问日志恒为 INFO。
+  Fiber 的 Recover 以 `EnableStackTrace: true` 安装，返回 error 与 panic 都必经 `DefaultStackTraceHandler`，5xx 已记一次 ERROR，
+  访问日志那条 ERROR 是重复上报，只发生在 Fiber。
+- 修正：commit `e499c2e`。访问日志改为 5xx、4xx 记 WARN，其余 INFO；配置抽成 `accessLogMiddleware`。
+- 验证：`TestCoreFiber_AccessLogLevels` 直接测框架真实中间件；sentryzerolog 默认 `Levels` 只收 Error/Fatal/Panic（源码核实），
+  WARN 不建 issue，因此 5xx 只剩 Recover 一条事件。验证套件的 Fiber 应用未挂框架访问日志中间件（未导出），未做 GlitchTip 端到端复现。
+- 取舍：应用自己 `c.SendStatus(500)` 而不返回 error 时，不经过 Recover，修正后只剩一条访问日志 WARN，不再进 GlitchTip。
