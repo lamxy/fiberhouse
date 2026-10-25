@@ -6,6 +6,7 @@ package recovery
 
 import (
 	ctxpkg "context"
+	"errors"
 	"net/http"
 	"runtime"
 	"strings"
@@ -177,6 +178,8 @@ func (h *HertzRecovery) RecoverPanic(config ...fiberhouse.RecoverConfig) any {
 // 分類規則對齊框架 recover_internal.go 的 recoverPanicInternal，
 // 確保 hertz 與 fiber/gin 對外的錯誤契約一致。
 func respondPanic(pCtx adaptorctx.ICoreContext, r interface{}, debugMode bool) {
+	// 從包裝鏈中取出業務錯誤，交給下面原有的分支處理
+	r = unwrapBusinessError(r)
 	switch re := r.(type) {
 	case *exception.ValidateException:
 		_ = fiberhouse.Response().From(re.RespData(), true).SendWithCtx(pCtx, http.StatusBadRequest)
@@ -210,6 +213,25 @@ func respondPanic(pCtx adaptorctx.ICoreContext, r interface{}, debugMode bool) {
 		_ = fiberhouse.Response().From(exception.New(constant.UnknownErrCode, constant.UnknownErrMsg), true).
 			SendWithCtx(pCtx, http.StatusInternalServerError)
 	}
+}
+
+// unwrapBusinessError 從包裝鏈中取出業務錯誤，使 panic 回應與框架 ErrorHandler 的 errors.As 判定一致
+//
+// 框架 recover_internal.go 的同名函式未匯出，此處複刻其規則以保持跨核心的一致行為。
+func unwrapBusinessError(r interface{}) interface{} {
+	err, ok := r.(error)
+	if !ok {
+		return r
+	}
+	var ve *exception.ValidateException
+	if errors.As(err, &ve) {
+		return ve
+	}
+	var ee *exception.Exception
+	if errors.As(err, &ee) {
+		return ee
+	}
+	return r
 }
 
 // warn 記錄編碼失敗的警告日誌，log 為 nil 時（單元測試場景）靜默跳過
