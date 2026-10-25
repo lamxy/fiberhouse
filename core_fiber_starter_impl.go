@@ -321,7 +321,22 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IPro
 	cf.coreApp.Use(MustRecoverMiddleware[fiber.Handler](recoverHandler))
 
 	// 注册核心应用(coreApp/fiber App)http请求日志中间件
-	cf.coreApp.Use(fiberzerolog.New(fiberzerolog.Config{
+	cf.coreApp.Use(cf.accessLogMiddleware())
+
+	if fs.GetApplication() != nil {
+		// 注册项目应用注册器全局中间件
+		fs.GetApplication().(ApplicationRegister).RegisterAppMiddleware(cf)
+	}
+}
+
+// accessLogMiddleware 返回 http 请求访问日志中间件，由 coreHttp 开关控制
+//
+// 访问日志只记录流量：5xx、4xx 记 WARN，其余记 INFO。错误本身由 Recover
+// （DefaultStackTraceHandler）按 HTTP 状态记录，5xx 在那里已是 ERROR；
+// 这里再记 ERROR 会让同一个错误向错误追踪平台上报两次。
+func (cf *CoreWithFiber) accessLogMiddleware() fiber.Handler {
+	return fiberzerolog.New(fiberzerolog.Config{
+		Levels: []zerolog.Level{zerolog.WarnLevel, zerolog.WarnLevel, zerolog.InfoLevel},
 		Logger: func() *zerolog.Logger {
 			log, err := cf.GetAppContext().GetContainer().Get(cf.GetAppContext().GetConfig().LogOriginCoreHttp().InstanceKey())
 			if err != nil {
@@ -335,12 +350,7 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IPro
 			ms := cf.GetAppContext().GetConfig().GetMiddlewareSwitch("coreHttp")
 			return !ms
 		},
-	}))
-
-	if fs.GetApplication() != nil {
-		// 注册项目应用注册器全局中间件
-		fs.GetApplication().(ApplicationRegister).RegisterAppMiddleware(cf)
-	}
+	})
 }
 
 // RegisterModuleInitialize 注册应用模块/子系统级的中间件、路由处理器、etc...
