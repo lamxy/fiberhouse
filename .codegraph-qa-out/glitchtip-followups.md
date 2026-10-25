@@ -19,14 +19,14 @@ git push origin main
 
 # 3. 打版本 tag。v1.x 的公共 API 有行为变更（日志级别跟随 HTTP 状态、panic 状态码统一、
 #    访问日志 5xx 降为 WARN），按 semver 取下一个 minor 版本
-git tag -a v1.<next-minor>.0 -m "error tracking: level by HTTP status, error field, traceId, single 5xx report"
-git push origin v1.<next-minor>.0
+git tag -a v1.2.0 -m "error tracking: level by HTTP status, error field, traceId, single 5xx report"
+git push origin v1.2.0
 
 # 4. 把 backend-dev 的 fiberhouse.md 从提交 39cba6c 改为引用该版本号（经 GOPROXY 可正常解析）
 ```
 
 - 远端 `feature/logger-extra-writers` 已完整并入 `main`，推送后可删除该远端分支（同样由用户决定）。
-- `<next-minor>` 需先查 `git tag --sort=-v:refname | head` 确认当前最新版本。
+- 2026-10-26 查得最新 tag 为 `v1.1.1`，下一个 minor 即 `v1.2.0`；执行前再查一次 `git tag --sort=-v:refname | head`。
 
 ## 第 8 点：前端错误是否也送 GlitchTip
 
