@@ -226,7 +226,11 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 	// http头部debug标记
 	debugFlagFromHeader := recovery.GetHeader(ctx, debugFlag)
 	// 请求requestId
-	traceId := recovery.GetHeader(ctx, requestID)
+	// 先取 requestid 中间件生成的 ID（存在上下文里，不在请求头）；没有中间件时退回同名请求头
+	traceId := recovery.TraceID(ctx)
+	if traceId == "" {
+		traceId = recovery.GetHeader(ctx, requestID)
+	}
 
 	var jsonEnCoder func(interface{}) ([]byte, error)
 	// json编码器
