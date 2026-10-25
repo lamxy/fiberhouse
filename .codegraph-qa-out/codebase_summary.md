@@ -113,9 +113,21 @@ fh.WithProviders(providers...).WithPManagers(managers...).RunServer()
 | `appconfig/` | 應用配置結構定義 |
 | `bootstrap/` | 配置加載、日誌初始化 |
 | `component/` | 內置可選組件命名空間，包含 container、cache、database、validate、codec 等能力 |
-| `middleware/` | 內置中間件 |
+| `component/middleware/` | 內置中間件（原頂層 `middleware/` 已移入 `component/`） |
 | `response/` | 統一響應結構；`pb/` 子目錄保存 Protobuf schema 與生成消息 |
 | `commandstarter/` | CLI 應用啟動器 |
 | `example_application/` | ⭐ 完整示例，理解用法的最佳入口 |
 | `example_main/main.go` | ⭐ 啟動示例，展示完整組裝方式 |
 | `plugins/` | 插件目錄（目前為佔位符，尚未實現） |
+
+---
+
+## 2026-10-25 核對補充（CodeGraph + ast-grep + gopls）
+
+- 規模：337 個 `.go` 檔，其中 119 個為測試；`go build ./...`、`go vet` 均通過。
+- 第三種內核範例：`example_application/hertzcore/` 以 Hertz 實作 `CoreStarter`（`CoreWithHertz`），透過 `NewCoreStarterHertzProvider`（`Target()=="hertz"`）在應用側接入，不改框架代碼。詳見 `hertz-core-integration.md`。
+- 生命週期狀態機：`AppPhase`（`context_impl.go:28`）`Created → Initializing → Serving → ShuttingDown → Terminated`，只允許正向遷移；`RegisterAppState/GetAppState` 已 Deprecated。
+- 裝配期 panic 均有 `*WithError` 對應入口（如 `RunServerWithError`、`NewFrameApplicationWithError`），錯誤以 `ErrBootAssemblyFailed` 包裝。
+- 新增位點：`LocationAdaptCoreCtxChoose`、`LocationFrameStarterOptionInit`、`LocationCoreStarterOptionInit`、`LocationCoreCodecInit`、`LocationServerShutdownBefore/After`、`LocationResponseInfoInit`（定義於 `provider_location.go:120-143`）。
+- 框架內建 Provider：Fiber/Gin core starter、JSON codec（std/sonic × fiber/gin）、recovery、pprof start/shutdown、Protobuf/MsgPack 響應。
+- `plugins/` 現為 v2.0.0 插件機制的設計文檔，非代碼。

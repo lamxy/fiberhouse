@@ -115,4 +115,4 @@
 
 ## 補充觀察
 
-CodeGraph 顯示 `core_starter_gin_provider.go:25` 的 Gin provider 在沒有 `initFunc` 時回傳 `NewCoreWithFiber(...)`。這看起來像 Gin/Fiber provider fallback 寫錯；後續若要整理入口或修 core 選擇邏輯，這裡值得檢查。
+~~CodeGraph 顯示 `core_starter_gin_provider.go:25` 的 Gin provider 在沒有 `initFunc` 時回傳 `NewCoreWithFiber(...)`。~~ 已修正（2026-10-25 核對）：`core_starter_gin_provider.go:27`、`:41` 兩個分支都回傳 `NewCoreWithGin(...)`。
