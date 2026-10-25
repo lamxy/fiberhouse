@@ -62,3 +62,13 @@ FiberHouse 错误经 `BootConfig.LogWriters` 附加的 sentryzerolog writer 进�
 - 验证：`TestCoreFiber_AccessLogLevels` 直接测框架真实中间件；sentryzerolog 默认 `Levels` 只收 Error/Fatal/Panic（源码核实），
   WARN 不建 issue，因此 5xx 只剩 Recover 一条事件。验证套件的 Fiber 应用未挂框架访问日志中间件（未导出），未做 GlitchTip 端到端复现。
 - 取舍：应用自己 `c.SendStatus(500)` 而不返回 error 时，不经过 Recover，修正后只剩一条访问日志 WARN，不再进 GlitchTip。
+
+## 追加：启动时两条 ERROR（待处理清单第 5 点）
+
+- 根因：示例应用把 `DefaultPManagers`（已含一个 `DefaultPManager`）传给 `WithPManagers`，`RunServer()` 不带参数时
+  `resolveManagerWithProviders` 又新建一个；「加载未绑定位点的管理器」的循环对两个空的 `DefaultPManager` 各调一次
+  `LoadProvider`，各返回 `ErrProviderNotFound` 并记 ERROR。同函数下方的默认管理器加载早已用 `len(List()) > 0` 跳过空管理器。
+- 修正：commit `32a820d`，循环同样跳过没有提供者的管理器。
+- 验证：`TestResolveManagerWithProviders_EmptyManagersAreNotErrors` 按示例应用的装配方式复现了两条 ERROR，修正后为零。
+  零位点上只有 `DefaultPManager`（其余管理器都绑定位点），空列表时它本来只会报错，跳过不损失功能。
+- 未处理（只记录）：非空的默认管理器既在循环里加载、又在下方单独加载一次，依赖提供者初始化的幂等保护。
