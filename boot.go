@@ -746,8 +746,10 @@ func (fh *FiberHouse) resolveManagerWithProviders(manager ...IProviderManager) {
 	// 加载所有管理器中的提供者，排除已绑定到特定位置点的管理器，这些管理器将在对应位置点被单独加载
 	if len(fh.managers) > 0 {
 		for _, mgr := range fh.managers {
-			// 排除已设置位点的管理器，未设置位点的管理器直接加载
-			if mgr.Location().GetLocationID() == ProviderLocationDefault().ZeroLocation.GetLocationID() {
+			// 排除已设置位点的管理器，未设置位点的管理器直接加载；
+			// 没有提供者的管理器无事可做，跳过（与下方默认管理器的处理一致），不当作错误
+			if mgr.Location().GetLocationID() == ProviderLocationDefault().ZeroLocation.GetLocationID() &&
+				len(mgr.List()) > 0 {
 				_, err := mgr.LoadProvider()
 				if err != nil {
 					logger.Error(cfg.LogOriginFrame()).Err(err).Msg("manager load provider failed")
