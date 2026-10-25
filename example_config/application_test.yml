@@ -113,7 +113,7 @@ application:
       username: ""
       password: ""
   middleware:
-    coreHttp: true                           # 开启fiber http请求日志
+    coreHttp: true                           # 开启核心引擎（fiber/gin 等）http请求日志
     swaggerRegister: true                    # 开启swagger路由注册
     basicAuth: true                          # 开启http请求基本认证
     requestId: true                          # 开启requestId链路追踪
