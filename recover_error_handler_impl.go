@@ -24,11 +24,22 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-var (
-	debugFlag      = "X-your-custom-debug-flag"             // 自定义debug标记key，由后端recover配置定义覆盖
-	debugFlagValue = "f0dc4970-ed31-4598-acd8-b5c5fd66c12e" // 自定义debug标记值，由后端recover配置定义覆盖
-	requestID      = "traceId"                              // 请求ID字段名称，由后端trace配置定义覆盖
-)
+// defaultRequestIDKey 请求ID字段名称的兜底值，仅在上下文或配置缺失时使用
+const defaultRequestIDKey = "traceId"
+
+// requestIDKey 从 trace 配置读取请求ID字段名称。
+//
+// 配置在 Initialize 时已快取为不可变值，每次直接读取即可；不要把它写回包级变量，
+// 错误处理器在并发请求上被调用，任何共享的可写状态都会形成数据竞争。
+func requestIDKey(appCtx IApplicationContext) string {
+	if appCtx == nil || appCtx.GetConfig() == nil {
+		return defaultRequestIDKey
+	}
+	if key := appCtx.GetConfig().GetTrace().RequestID; key != "" {
+		return key
+	}
+	return defaultRequestIDKey
+}
 
 // ErrorStack 获取当前的堆栈信息字符串
 func ErrorStack(debugStack ...bool) string {
@@ -49,7 +60,7 @@ func GetJsonIndent(appCtx IApplicationContext, s string, log bootstrap.LoggerWra
 	}
 	j, err := json.MarshalIndent(lines, "", "  ")
 	if err != nil {
-		log.Warn(appCtx.GetConfig().LogOriginRecover()).Str(requestID, traceId).Err(err).Msg("getJson from stack lines error")
+		log.Warn(appCtx.GetConfig().LogOriginRecover()).Str(requestIDKey(appCtx), traceId).Err(err).Msg("getJson from stack lines error")
 		return nil
 	}
 	return j
@@ -178,14 +189,11 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 	cfg := r.GetContext().GetConfig()
 	// 配置中的 recover 恢复 error 错误的配置段
 	recoverConfig := cfg.GetRecover()
-	// 配置中 trace 请求ID 配置段
-	traceConfig := cfg.GetTrace()
-
-	// 调试标记和调试标记值
-	debugFlag = recoverConfig.DebugFlag
-	debugFlagValue = recoverConfig.DebugFlagValue
+	// 调试标记和调试标记值（局部变量：本方法在并发请求上被调用，不得写共享状态）
+	debugFlag := recoverConfig.DebugFlag
+	debugFlagValue := recoverConfig.DebugFlagValue
 	// request id
-	requestID = traceConfig.RequestID
+	requestID := requestIDKey(r.GetContext())
 	// 是否打印堆栈信息
 	enablePrintStack := recoverConfig.EnablePrintStack
 	// 是否启动 debug 调试标记

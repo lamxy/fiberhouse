@@ -142,7 +142,7 @@ func (f *FiberRecovery) TraceID(ctx adaptorctx.ICoreContext, flag ...string) str
 	// 请求requestId
 	var (
 		traceId string
-		rID     = requestID
+		rID     = requestIDKey(f.AppCtx)
 	)
 	if len(flag) > 0 {
 		rID = flag[0]
