@@ -11,6 +11,7 @@ package fiberhouse
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"sync"
@@ -66,6 +67,9 @@ type BootConfig struct {
 	ConfigPath string
 	// LogPath 全局应用日志文件的路径
 	LogPath string
+	// LogWriters 附加的日志输出目标（如错误追踪平台的 zerolog writer），追加在 console、file 之后；
+	// 实现 io.Closer 的由全局日志器关闭时一并关闭，见 bootstrap.NewLoggerOnceWithWriters
+	LogWriters []io.Writer
 	// kvStorage 键值存储映射，用于存储额外自定义的属性
 	kvStorage map[string]any
 	// sealed 是否已封闭，封闭后不可再添加键值
@@ -153,7 +157,7 @@ func New(cfg *BootConfig) *FiberHouse {
 	// bootstrap 初始化启动配置(全局配置、全局日志器)，配置目录默认为当前工作目录"."下的`example_config/`
 	appCfg := bootstrap.NewConfigOnce(fh.bootCfg.ConfigPath)
 	// 日志目录默认为当前工作目录"."下的`example_main/logs`
-	logger := bootstrap.NewLoggerOnce(appCfg, fh.bootCfg.LogPath)
+	logger := bootstrap.NewLoggerOnceWithWriters(appCfg, fh.bootCfg.LogWriters, fh.bootCfg.LogPath)
 
 	// 初始化全局应用上下文
 	appContext := NewAppContextOnce(appCfg, logger)
@@ -264,6 +268,13 @@ func WithConfigPath(configPath string) BootConfigOption {
 func WithLogPath(logPath string) BootConfigOption {
 	return func(boot *BootConfig) {
 		boot.LogPath = logPath
+	}
+}
+
+// WithLogWriters 追加日志输出目标，可多次调用累加
+func WithLogWriters(writers ...io.Writer) BootConfigOption {
+	return func(boot *BootConfig) {
+		boot.LogWriters = append(boot.LogWriters, writers...)
 	}
 }
 

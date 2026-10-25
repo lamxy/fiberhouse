@@ -19,6 +19,22 @@ console 与 file 同时启用时，`io.MultiWriter` 按顺序写两个目标。`
 
 `NewLoggerOnce` 只执行一次。第一次调用决定输出目标、级别和底层 file writer，后续调用复用同一 `LoggerWrapper`。
 
+## 附加输出目标
+
+`BootConfig.LogWriters`（或 `fiberhouse.WithLogWriters(...)`）传入的 `io.Writer` 会追加为日志输出目标；不经过 `New` 的入口（如命令行应用）直接调用 `bootstrap.NewLoggerOnceWithWriters(cfg, writers, path)`。用途是把日志同时送到配置文件无法描述的目标，例如错误追踪平台的 zerolog writer（sentry-go 的 `sentryzerolog` 按级别把日志转成事件，兼容 Sentry 与 GlitchTip）。
+
+| 行为 | 说明 |
+|---|---|
+| 内容 | 与 console、file 收到相同的 JSON 行，同样受 `application.appLog.level` 过滤 |
+| 顺序 | 排在 console、file 之后；`io.MultiWriter` 遇到写入错误会停止写后续目标，放在最后可避免附加 writer 的故障影响内置输出 |
+| 回退 | console 与 file 都未启用时仍回退到 stdout，附加 writer 不替代这一回退 |
+| 关闭 | 实现 `io.Closer` 的附加 writer 由 `LoggerWrapper.Close` 在 file writer 之后关闭，错误以 `errors.Join` 合并；调用方不要再自行关闭 |
+| 单例 | 与 `NewLoggerOnce` 共用同一个 `sync.Once`，先调用的一方决定配置，之后传入的附加 writer 不生效 |
+
+## caller 字段
+
+`Debug`、`Error`、`Err`、`Fatal`、`Panic` 及其 `*With` 方法输出 `caller` 字段，指向调用这些方法的代码行（`Info`、`Warn` 不输出）。
+
 ## Origin 来源字段
 
 `LoggerWrapper.Debug/Info/Warn/Error/Fatal/Panic` 可接收一个 `appconfig.LogOrigin`，并写入大小写固定的 `Origin` 字段；对应的 `*With` 方法要求显式传入 Origin。`AppConfig` 内建 frame、web、task、cache、database 等 Origin，`application.appLog.logOriginEnum` 可在 `Initialize` 时覆盖或扩展其值。

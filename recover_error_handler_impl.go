@@ -262,6 +262,14 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 		//reqBodyJson, reqBodyStr = recovery.getBodyJson(c)
 	)
 
+	// 非 error 的 panic 值（如 panic("...")）没有对应分支，此前会被静默丢弃、不留日志；
+	// 统一转成 error 走 error 分支记录。
+	switch e.(type) {
+	case *exception.ValidateException, *exception.Exception, fiber.Error, *fiber.Error, error:
+	default:
+		e = fmt.Errorf("panic: %v", e)
+	}
+
 	switch err := e.(type) {
 	case *exception.ValidateException:
 		dw := jsonconvert.NewDataWrap(err.Data)

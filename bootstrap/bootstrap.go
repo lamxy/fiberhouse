@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,12 @@ var (
 	Logger  LoggerWrapper
 	logOnce sync.Once
 )
+
+// callerSkip 让 caller 字段指向调用 LoggerWrap 方法的业务代码，而不是 LoggerWrap 方法本身。
+//
+// zerolog 的 Event.Caller 记录调用 Caller 的那一帧；这里的 Caller 在 LoggerWrap 方法内部调用，
+// 不跳过一帧时 caller 恒为 bootstrap.go。
+const callerSkip = 1
 
 // LoggerWrapper 定义日志记录器接口，提供了多种日志记录方法
 type LoggerWrapper interface {
@@ -73,6 +80,8 @@ type LoggerWrap struct {
 	// 契约才对任意注入的 io.WriteCloser 成立。
 	closeOnce sync.Once
 	closeErr  error
+	// extraClosers 是附加 writer 中实现了 io.Closer 的部分，随日志器一起关闭。
+	extraClosers []io.Closer
 }
 
 // NewLoggerWrap 创建一个新的LoggerWrap实例
@@ -110,11 +119,19 @@ func (lw *LoggerWrap) GetZeroLogger() *zerolog.Logger {
 // 使用方注入的任意 io.WriteCloser 没有义务容忍重复 Close。
 //
 // 守卫放在这一层，契约才对所有注入的 writer 成立。
+//
+// 附加 writer（NewLoggerOnceWithWriters）中实现了 io.Closer 的，在 wCloser 之后依次关闭，
+// 错误用 errors.Join 合并返回。
 func (lw *LoggerWrap) Close() error {
 	lw.closeOnce.Do(func() {
+		var errs []error
 		if lw.wCloser != nil {
-			lw.closeErr = lw.wCloser.Close()
+			errs = append(errs, lw.wCloser.Close())
 		}
+		for _, c := range lw.extraClosers {
+			errs = append(errs, c.Close())
+		}
+		lw.closeErr = errors.Join(errs...)
 	})
 	return lw.closeErr
 }
@@ -122,14 +139,14 @@ func (lw *LoggerWrap) Close() error {
 // Debug 和 DebugWith 方法用于记录调试级别的日志
 func (lw *LoggerWrap) Debug(origin ...appconfig.LogOrigin) *zerolog.Event {
 	if len(origin) > 0 {
-		return lw.logger.Debug().Str("Origin", origin[0].String()).Caller()
+		return lw.logger.Debug().Str("Origin", origin[0].String()).Caller(callerSkip)
 	}
-	return lw.logger.Debug().Caller()
+	return lw.logger.Debug().Caller(callerSkip)
 }
 
 // DebugWith 方法用于记录调试级别的日志，并指定日志来源
 func (lw *LoggerWrap) DebugWith(origin appconfig.LogOrigin) *zerolog.Event {
-	return lw.logger.Debug().Str("Origin", origin.String()).Caller()
+	return lw.logger.Debug().Str("Origin", origin.String()).Caller(callerSkip)
 }
 
 // Info 和 InfoWith 方法用于记录信息级别的日志
@@ -161,45 +178,45 @@ func (lw *LoggerWrap) WarnWith(origin appconfig.LogOrigin) *zerolog.Event {
 // Error 和 ErrorWith 方法用于记录错误级别的日志
 func (lw *LoggerWrap) Error(origin ...appconfig.LogOrigin) *zerolog.Event {
 	if len(origin) > 0 {
-		return lw.logger.Error().Str("Origin", origin[0].String()).Caller()
+		return lw.logger.Error().Str("Origin", origin[0].String()).Caller(callerSkip)
 	}
-	return lw.logger.Error().Caller()
+	return lw.logger.Error().Caller(callerSkip)
 }
 
 // ErrorWith 方法用于记录错误级别的日志，并指定日志来源
 func (lw *LoggerWrap) ErrorWith(origin appconfig.LogOrigin) *zerolog.Event {
-	return lw.logger.Error().Str("Origin", origin.String()).Caller()
+	return lw.logger.Error().Str("Origin", origin.String()).Caller(callerSkip)
 }
 
 // Err 方法用于记录错误事件，通常用于捕获异常或错误信息
 func (lw *LoggerWrap) Err(err error) *zerolog.Event {
-	return lw.logger.Err(err).Caller()
+	return lw.logger.Err(err).Caller(callerSkip)
 }
 
 // Fatal 和 FatalWith 方法用于记录致命级别的日志
 func (lw *LoggerWrap) Fatal(origin ...appconfig.LogOrigin) *zerolog.Event {
 	if len(origin) > 0 {
-		return lw.logger.Fatal().Str("Origin", origin[0].String()).Caller()
+		return lw.logger.Fatal().Str("Origin", origin[0].String()).Caller(callerSkip)
 	}
-	return lw.logger.Fatal().Caller()
+	return lw.logger.Fatal().Caller(callerSkip)
 }
 
 // FatalWith 方法用来记录致命级别的日志，并指定日志来源
 func (lw *LoggerWrap) FatalWith(origin appconfig.LogOrigin) *zerolog.Event {
-	return lw.logger.Fatal().Str("Origin", origin.String()).Caller()
+	return lw.logger.Fatal().Str("Origin", origin.String()).Caller(callerSkip)
 }
 
 // Panic 和 PanicWith 方法用于记录恐慌级别的日志
 func (lw *LoggerWrap) Panic(origin ...appconfig.LogOrigin) *zerolog.Event {
 	if len(origin) > 0 {
-		return lw.logger.Panic().Str("Origin", origin[0].String()).Caller()
+		return lw.logger.Panic().Str("Origin", origin[0].String()).Caller(callerSkip)
 	}
-	return lw.logger.Panic().Caller()
+	return lw.logger.Panic().Caller(callerSkip)
 }
 
 // PanicWith 方法用于记录恐慌级别的日志，并指定日志来源
 func (lw *LoggerWrap) PanicWith(origin appconfig.LogOrigin) *zerolog.Event {
-	return lw.logger.Panic().Str("Origin", origin.String()).Caller()
+	return lw.logger.Panic().Str("Origin", origin.String()).Caller(callerSkip)
 }
 
 // With 方法用于创建一个新的日志上下文，可以在此上下文中添加更多字段
@@ -279,6 +296,21 @@ func NewConfigOnce(path ...string) appconfig.IAppConfig {
 // NewLoggerOnce 初始化并注册全局日志对象
 // path 可选参数，指定日志目录，默认为当前工作目录下的./logs目录
 func NewLoggerOnce(cfg appconfig.IAppConfig, path ...string) LoggerWrapper {
+	return NewLoggerOnceWithWriters(cfg, nil, path...)
+}
+
+// NewLoggerOnceWithWriters 与 NewLoggerOnce 相同，并把 extraWriters 追加为日志输出目标。
+//
+// 用于把日志同时送到配置文件无法描述的目标，例如错误追踪平台的 zerolog writer
+// （sentry-go 的 sentryzerolog 会按级别把日志转成事件）。附加 writer 收到的是与其他
+// 目标相同的 JSON 行，排在 console、file 之后：io.MultiWriter 遇到写入错误会停止写后续
+// 目标，放在最后可避免附加 writer 的故障影响内置输出。console 与 file 都未启用时仍回退到
+// stdout，附加 writer 不替代这一回退。nil 元素（包括 typed nil）会被忽略。
+//
+// 实现了 io.Closer 的附加 writer 由 LoggerWrapper.Close 关闭，调用方不要再自行关闭。
+// 与 NewLoggerOnce 共用同一个 sync.Once：先调用的一方决定最终配置，之后传入的
+// extraWriters 不生效。
+func NewLoggerOnceWithWriters(cfg appconfig.IAppConfig, extraWriters []io.Writer, path ...string) LoggerWrapper {
 	logOnce.Do(func() {
 		var (
 			writers      []io.Writer
@@ -325,13 +357,42 @@ func NewLoggerOnce(cfg appconfig.IAppConfig, path ...string) LoggerWrapper {
 			writers = append(writers, os.Stdout)
 		}
 
+		var extraClosers []io.Closer
+		for _, w := range extraWriters {
+			if isNilWriter(w) {
+				continue
+			}
+			writers = append(writers, w)
+			if c, ok := w.(io.Closer); ok {
+				extraClosers = append(extraClosers, c)
+			}
+		}
+
 		//zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 
 		// 创建日志记录器，使用多写入器支持同时输出到多个目标
 		log := zerolog.New(io.MultiWriter(writers...)).With().Timestamp().Logger().Level(level)
-		Logger = NewLoggerWrap(&log, loggerWriter)
+		lw := NewLoggerWrap(&log, loggerWriter).(*LoggerWrap)
+		lw.extraClosers = extraClosers
+		Logger = lw
 	})
 	return Logger
+}
+
+// isNilWriter 判断 writer 是否为 nil，包括装着 nil 指针的接口值（typed nil）。
+//
+// 构造函数失败时常返回 (nil, err)，调用方若忽略 err 直接传入，typed nil 不等于 nil，
+// 写入第一条日志时才会 panic；在这里跳过，避免日志器因此崩溃。
+func isNilWriter(w io.Writer) bool {
+	if w == nil {
+		return true
+	}
+	v := reflect.ValueOf(w)
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return v.IsNil()
+	}
+	return false
 }
 
 // NewWriterSync 同步写日志
