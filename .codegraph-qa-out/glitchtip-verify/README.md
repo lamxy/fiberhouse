@@ -11,6 +11,7 @@
 |---|---|
 | `compose.yml` | postgres:18 + valkey:9 + glitchtip:6.2.6，监听 `127.0.0.1:18000` |
 | `harness/main.go` | Fiber 应用：`/panic`（nil 指针 panic）与 `/error`（handler 返回 error），走框架的恢复中间件与 ErrorHandler |
+| `harness/accesslog.go` | `MODE=accesslog`：走公开的 Gin 启动路径（`NewCoreWithGin` → `InitCoreApp` → `RegisterAppMiddleware`），请求 200/404/500 与 `/panic`；`LEVELS=warn` 时 sentryzerolog `Levels` 含 Warn，否则用默认值。结论见 `../glitchtip-followups.md` |
 | `harness/appside.go` | 应用端 `BeforeSend` 方案（`APPSIDE=1` 时启用），说明见 `../glitchtip-app-side-before-send.md` |
 | `harness/go.mod` | 独立模块，`replace` 指向仓库根目录（`../../..`），即验证当前工作区的框架代码 |
 

@@ -53,3 +53,17 @@ git push origin v1.2.0
   `Levels` 留空 → 只发 error；`Levels` 含 Warn → 404/500 的 WARN 访问日志各建一个 warning 事件。
 - 未验证：应用端实际设置的 `Levels` 与锁定的 sentry-go 版本。本机没有应用端代码（`~/workspace` 下无其他 `sentry-go/zerolog` 引用）。
 - 结论：应用端保持默认 Levels 时，Gin/Hertz 对齐成 4xx/5xx WARN 不会新增 GlitchTip 事件；若应用端 Levels 含 Warn，Fiber 现在就已会建 warning 事件，对齐后 Gin/Hertz 也会。
+
+### 对齐后的端到端验证（2026-10-27）
+
+Gin/Hertz 已对齐（`5da9096`：4xx/5xx 记 WARN）。用 harness `MODE=accesslog` 走公开 Gin 启动路径，经 sentryzerolog 送本机 GlitchTip 6.2.6，按 environment 查 API：
+
+| Levels | 200 | 404 | 500（返回状态） | `/panic` | 新增 issue |
+|---|---|---|---|---|---|
+| 默认（Error/Fatal/Panic） | 不送 | 不送 | 不送 | ERROR 事件（Recover） | 无（只有 panic 的既有 issue） |
+| 含 Warn | 不送 | warning | warning | ERROR 事件 | 1 个 `warning HTTP Request`，404 与 500 因 message 相同归并，count 随每个 4xx/5xx 请求增长 |
+
+- 结论：应用端 Levels 保持默认时，对齐不会新增 GlitchTip issue；含 Warn 时会出现一个持续累计的 `HTTP Request` warning issue。
+- 附带发现（既有行为，未改）：Gin 的 panic 请求**没有访问日志**——访问日志中间件注册在 Recover 内层，panic 越过它 `c.Next()` 之后的代码。Fiber/Hertz 中间件顺序相同，推测同样如此，未验证。
+- 本机 GlitchTip 多了一个 `entry 'verify-json-codec' not found` 的 error issue，是 harness 初版漏注册 codec 所致，已修正，与框架无关。
+

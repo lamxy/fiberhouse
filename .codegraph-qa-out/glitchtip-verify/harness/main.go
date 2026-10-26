@@ -50,6 +50,10 @@ func (m *recoverManager) LoadProvider(...fiberhouse.ProviderLoadFunc) (any, erro
 }
 
 func main() {
+	if os.Getenv("MODE") == "accesslog" {
+		runAccessLog()
+		return
+	}
 	variant := os.Getenv("VARIANT")
 	dumpDir := os.Getenv("DUMP_DIR")
 
