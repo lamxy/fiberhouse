@@ -20,8 +20,20 @@ import (
 	hertzadaptor "github.com/lamxy/fiberhouse/example_application/hertzcore/adaptor"
 )
 
-// traceIDKey 請求追蹤 ID 在 hertz 上下文中的鍵名，與框架 recover_error_handler_impl.go 的預設值一致
-const traceIDKey = "traceId"
+// defaultRequestIDKey 請求 ID 在 hertz 上下文中的預設鍵名，與框架 recover_error_handler_impl.go 的預設值一致；
+// 僅在 trace 配置缺失時使用
+const defaultRequestIDKey = "requestId"
+
+// requestIDKey 從 trace 配置讀取請求 ID 欄位名，作為上下文鍵與日誌欄位名
+func (h *HertzRecovery) requestIDKey() string {
+	if h.AppCtx == nil || h.AppCtx.GetConfig() == nil {
+		return defaultRequestIDKey
+	}
+	if key := h.AppCtx.GetConfig().GetTrace().RequestID; key != "" {
+		return key
+	}
+	return defaultRequestIDKey
+}
 
 // HertzRecovery hertz 框架的請求資料與恢復中間件實作
 type HertzRecovery struct {
@@ -49,7 +61,7 @@ func nativeCtx(ctx adaptorctx.ICoreContext) *app.RequestContext {
 }
 
 // GetParamsJson 獲取路由參數的 JSON 編碼位元組切片
-func (h *HertzRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (h *HertzRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), rid string) []byte {
 	c := nativeCtx(ctx)
 	if c == nil {
 		return nil
@@ -60,14 +72,14 @@ func (h *HertzRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap
 	}
 	j, err := jsonEncoder(params)
 	if err != nil {
-		h.warn(log, traceId, "reqParamsErr", err, "getParamsJson error")
+		h.warn(log, rid, "reqParamsErr", err, "getParamsJson error")
 		return nil
 	}
 	return j
 }
 
 // GetQueriesJson 獲取查詢參數的 JSON 編碼位元組切片
-func (h *HertzRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (h *HertzRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), rid string) []byte {
 	c := nativeCtx(ctx)
 	if c == nil {
 		return nil
@@ -79,14 +91,14 @@ func (h *HertzRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstra
 	})
 	j, err := jsonEncoder(queries)
 	if err != nil {
-		h.warn(log, traceId, "reqQueriesErr", err, "getQueriesJson error")
+		h.warn(log, rid, "reqQueriesErr", err, "getQueriesJson error")
 		return nil
 	}
 	return j
 }
 
 // GetHeadersJson 獲取請求頭的 JSON 編碼位元組切片（敏感資訊脫敏）
-func (h *HertzRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (h *HertzRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), rid string) []byte {
 	c := nativeCtx(ctx)
 	if c == nil {
 		return nil
@@ -98,7 +110,7 @@ func (h *HertzRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstra
 	})
 	j, err := jsonEncoder(sanitizeHeaders(headers))
 	if err != nil {
-		h.warn(log, traceId, "reqHeadersErr", err, "getHeadersJson error")
+		h.warn(log, rid, "reqHeadersErr", err, "getHeadersJson error")
 		return nil
 	}
 	return j
@@ -113,7 +125,7 @@ func (h *HertzRecovery) GetHeader(ctx adaptorctx.ICoreContext, key string) strin
 	return string(c.GetHeader(key))
 }
 
-// TraceID 獲取請求追蹤 ID
+// TraceID 獲取請求 ID（方法名沿用框架 IRecover 介面）
 //
 // 與 Fiber/Gin 實作不同，此處對非 hertz 上下文或缺失鍵回傳空字串而不 panic，
 // 因恢復流程本身不應成為新的故障點。
@@ -122,7 +134,7 @@ func (h *HertzRecovery) TraceID(ctx adaptorctx.ICoreContext, flag ...string) str
 	if c == nil {
 		return ""
 	}
-	key := traceIDKey
+	key := h.requestIDKey()
 	if len(flag) > 0 && flag[0] != "" {
 		key = flag[0]
 	}
@@ -235,12 +247,12 @@ func unwrapBusinessError(r interface{}) interface{} {
 }
 
 // warn 記錄編碼失敗的警告日誌，log 為 nil 時（單元測試場景）靜默跳過
-func (h *HertzRecovery) warn(log bootstrap.LoggerWrapper, traceId, field string, err error, msg string) {
+func (h *HertzRecovery) warn(log bootstrap.LoggerWrapper, rid, field string, err error, msg string) {
 	if log == nil || h.AppCtx == nil {
 		return
 	}
 	log.Warn(h.AppCtx.GetConfig().LogOriginRecover()).
-		Str("traceId", traceId).
+		Str(h.requestIDKey(), rid).
 		Str(field, err.Error()).
 		Msg(msg)
 }

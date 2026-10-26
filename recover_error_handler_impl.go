@@ -26,7 +26,10 @@ import (
 )
 
 // defaultRequestIDKey 请求ID字段名称的兜底值，仅在上下文或配置缺失时使用
-const defaultRequestIDKey = "traceId"
+const defaultRequestIDKey = "requestId"
+
+// requestIDHeader requestid 中间件（Fiber、Gin 官方实现）回写请求ID的响应头
+const requestIDHeader = "X-Request-ID"
 
 // requestIDKey 从 trace 配置读取请求ID字段名称。
 //
@@ -51,7 +54,7 @@ func ErrorStack(debugStack ...bool) string {
 }
 
 // GetJsonIndent 从堆栈字符串获取堆栈行并转换为JSON缩进格式字节切片
-func GetJsonIndent(appCtx IApplicationContext, s string, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), traceId string) []byte {
+func GetJsonIndent(appCtx IApplicationContext, s string, log bootstrap.LoggerWrapper, jsonEnCoder func(interface{}) ([]byte, error), rid string) []byte {
 	if len(s) == 0 {
 		return nil
 	}
@@ -61,7 +64,7 @@ func GetJsonIndent(appCtx IApplicationContext, s string, log bootstrap.LoggerWra
 	}
 	j, err := json.MarshalIndent(lines, "", "  ")
 	if err != nil {
-		log.Warn(appCtx.GetConfig().LogOriginRecover()).Str(requestIDKey(appCtx), traceId).Err(err).Msg("getJson from stack lines error")
+		log.Warn(appCtx.GetConfig().LogOriginRecover()).Str(requestIDKey(appCtx), rid).Err(err).Msg("getJson from stack lines error")
 		return nil
 	}
 	return j
@@ -227,22 +230,22 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 	debugFlagFromHeader := recovery.GetHeader(ctx, debugFlag)
 	// 请求requestId
 	// 先取 requestid 中间件生成的 ID（存在上下文里，不在请求头）；没有中间件时退回同名请求头
-	traceId := recovery.TraceID(ctx)
-	if traceId == "" {
-		traceId = recovery.GetHeader(ctx, requestID)
+	rid := recovery.TraceID(ctx)
+	if rid == "" {
+		rid = recovery.GetHeader(ctx, requestID)
 	}
 
 	var jsonEnCoder func(interface{}) ([]byte, error)
 	// json编码器
 	jsonEnc, errJec := r.GetContext().GetContainer().Get(r.GetContext().GetStarter().GetApplication().GetFastTrafficCodecKey())
 	if errJec != nil {
-		logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Err(errJec).Msg("GetFastTrafficCodecKey get json encoder from container failed")
+		logger.Error(cfg.LogOriginRecover()).Str(requestID, rid).Err(errJec).Msg("GetFastTrafficCodecKey get json encoder from container failed")
 		return
 	} else {
 		if jsonTmp, ok := jsonEnc.(JsonWrapper); ok {
 			jsonEnCoder = jsonTmp.Marshal
 		} else {
-			logger.Error(cfg.LogOriginRecover()).Str(requestID, traceId).Msg("GetFastTrafficCodecKey json encoder from container type assert to JsonWrapper failed")
+			logger.Error(cfg.LogOriginRecover()).Str(requestID, rid).Msg("GetFastTrafficCodecKey json encoder from container type assert to JsonWrapper failed")
 			return
 		}
 	}
@@ -254,15 +257,15 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 	} else {
 		logEvent = logger.Error(cfg.LogOriginRecover())
 	}
-	logEvent.Str(requestID, traceId)
+	logEvent.Str(requestID, rid)
 
 	var linesJson []byte
 
 	// 记录reqParams、reqQueries、reqBody、reqHeaders
 	var (
-		reqParamsJson  = recovery.GetParamsJson(ctx, logger, jsonEnCoder, traceId)
-		reqQueriesJson = recovery.GetQueriesJson(ctx, logger, jsonEnCoder, traceId)
-		reqHeadersJson = recovery.GetHeadersJson(ctx, logger, jsonEnCoder, traceId)
+		reqParamsJson  = recovery.GetParamsJson(ctx, logger, jsonEnCoder, rid)
+		reqQueriesJson = recovery.GetQueriesJson(ctx, logger, jsonEnCoder, rid)
+		reqHeadersJson = recovery.GetHeadersJson(ctx, logger, jsonEnCoder, rid)
 		//reqBodyJson, reqBodyStr = recovery.getBodyJson(c)
 	)
 
@@ -310,7 +313,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 
 			// debug模式，增加DebugStackLines字段输出格式化的堆栈信息，方便开发环境下直接阅读
 			if debugMode {
-				linesJson = GetJsonIndent(r.GetContext(), msg, logger, jsonEnCoder, traceId)
+				linesJson = GetJsonIndent(r.GetContext(), msg, logger, jsonEnCoder, rid)
 				if linesJson != nil {
 					logEvent.RawJSON("DebugStackLines", linesJson)
 				}
@@ -360,7 +363,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 			}
 
 			if debugMode {
-				linesJson = GetJsonIndent(r.GetContext(), msg, logger, jsonEnCoder, traceId)
+				linesJson = GetJsonIndent(r.GetContext(), msg, logger, jsonEnCoder, rid)
 				if linesJson != nil {
 					logEvent.RawJSON("DebugStackLines", linesJson)
 				}
@@ -412,7 +415,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 			}
 
 			if debugMode {
-				linesJson = GetJsonIndent(r.GetContext(), msg, logger, jsonEnCoder, traceId)
+				linesJson = GetJsonIndent(r.GetContext(), msg, logger, jsonEnCoder, rid)
 				if linesJson != nil {
 					logEvent.RawJSON("DebugStackLines", linesJson)
 				}
@@ -439,7 +442,7 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 			}
 
 			if debugMode {
-				linesJson = GetJsonIndent(r.GetContext(), msg, logger, jsonEnCoder, traceId)
+				linesJson = GetJsonIndent(r.GetContext(), msg, logger, jsonEnCoder, rid)
 				if linesJson != nil {
 					logEvent.RawJSON("DebugStackLines", linesJson)
 				}

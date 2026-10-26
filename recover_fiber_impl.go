@@ -26,7 +26,7 @@ func NewFiberRecovery(ctx IApplicationContext) *FiberRecovery {
 	}
 }
 
-func (f *FiberRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (f *FiberRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), rid string) []byte {
 	c, ok := ctx.GetCtx().(*fiber.Ctx)
 	if !ok {
 		return nil
@@ -41,13 +41,13 @@ func (f *FiberRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap
 	}
 	j, err := jsonEncoder(params)
 	if err != nil {
-		log.Warn(f.AppCtx.GetConfig().LogOriginRecover()).Str("traceId", traceId).Str("reqParamsErr", err.Error()).Msg("getParamsJson error")
+		log.Warn(f.AppCtx.GetConfig().LogOriginRecover()).Str(requestIDKey(f.AppCtx), rid).Str("reqParamsErr", err.Error()).Msg("getParamsJson error")
 		return nil
 	}
 	return j
 }
 
-func (f *FiberRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (f *FiberRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), rid string) []byte {
 	c, ok := ctx.GetCtx().(*fiber.Ctx)
 	if !ok {
 		return nil
@@ -55,13 +55,13 @@ func (f *FiberRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstra
 	queries := c.Queries()
 	j, err := jsonEncoder(queries)
 	if err != nil {
-		log.Warn(f.AppCtx.GetConfig().LogOriginRecover()).Str("traceId", traceId).Str("reqQueriesErr", err.Error()).Msg("getQueriesJson error")
+		log.Warn(f.AppCtx.GetConfig().LogOriginRecover()).Str(requestIDKey(f.AppCtx), rid).Str("reqQueriesErr", err.Error()).Msg("getQueriesJson error")
 		return nil
 	}
 	return j
 }
 
-func (f *FiberRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (f *FiberRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), rid string) []byte {
 	c, ok := ctx.GetCtx().(*fiber.Ctx)
 	if !ok {
 		return nil
@@ -70,7 +70,7 @@ func (f *FiberRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstra
 	sanitizedHeaders := sanitizeHeaders(headers)
 	j, err := jsonEncoder(sanitizedHeaders)
 	if err != nil {
-		log.Warn(f.AppCtx.GetConfig().LogOriginRecover()).Str("traceId", traceId).Str("reqHeadersErr", err.Error()).Msg("getHeadersJson error")
+		log.Warn(f.AppCtx.GetConfig().LogOriginRecover()).Str(requestIDKey(f.AppCtx), rid).Str("reqHeadersErr", err.Error()).Msg("getHeadersJson error")
 		return nil
 	}
 	return j
@@ -141,18 +141,18 @@ func (f *FiberRecovery) TraceID(ctx adaptorctx.ICoreContext, flag ...string) str
 	}
 	// 请求requestId
 	var (
-		traceId string
-		rID     = requestIDKey(f.AppCtx)
+		rid string
+		rID = requestIDKey(f.AppCtx)
 	)
 	if len(flag) > 0 {
 		rID = flag[0]
 	}
 	if c.Locals(rID) != nil {
-		traceId = c.Locals(rID).(string) // 请求类错误，从本地变量获取请求ID
+		rid = c.Locals(rID).(string) // 请求类错误，从本地变量获取请求ID
 	} else {
-		traceId = "" // 非请求接口出现的错误，请求ID空值
+		rid = "" // 非请求接口出现的错误，请求ID空值
 	}
-	return traceId
+	return rid
 }
 
 // sanitizeHeaders 对敏感头部信息进行脱敏处理

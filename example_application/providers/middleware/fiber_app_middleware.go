@@ -14,12 +14,13 @@ func RegisterAppMiddleware(ctx fiberhouse.IApplicationContext, cs fiberhouse.Cor
 	// 获取 fiber.App 实例
 	app := cs.GetCoreApp().(*fiber.App)
 	// 全局 requestId中间件(uuid追查一个链路的日志)
+	// 请求ID写入响应头 X-Request-ID，并以 trace 配置的字段名存入 Locals，供 Recover 日志读取
 	app.Use(requestid.New(requestid.Config{
 		Next: func(c *fiber.Ctx) bool {
 			ms := ctx.GetConfig().GetMiddlewareSwitch("requestId")
 			return !ms
 		},
-		ContextKey: "traceId",
+		ContextKey: ctx.GetConfig().GetTrace().RequestID,
 	}))
 
 	app.Use("/uuid", basicauth.New(basicauth.Config{

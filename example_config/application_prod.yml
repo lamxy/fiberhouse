@@ -92,7 +92,7 @@ application:
     enablePrintStack: false                  # true，表示启动打印栈信息，对于当前环境为非调式模式的生产环境时，false可关闭生产环境服务端的日志栈信息打印，节省服务器资源
     debugMode: false                         # true，表示更详细的接口异常响应信息、且不受限制地在服务端打印日志栈信息以及在接口响应中显示详细的错误信息，生产环境该配置务必设置为false
   trace:
-    requestID: traceId                       # 请求ID头部字段
+    requestID: requestId                     # 请求ID字段名：日志字段名、requestid 中间件的上下文键，以及无中间件时兜底读取的请求头
   task:
     enableServer: true                       # 是否启用任务调度服务
   swagger:

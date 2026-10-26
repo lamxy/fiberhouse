@@ -25,7 +25,7 @@ func NewGinRecovery(ctx IApplicationContext) *GinRecovery {
 	}
 }
 
-func (g *GinRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (g *GinRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), rid string) []byte {
 	c, ok := ctx.GetCtx().(*gin.Context)
 	if !ok {
 		return nil
@@ -36,13 +36,13 @@ func (g *GinRecovery) GetParamsJson(ctx adaptorctx.ICoreContext, log bootstrap.L
 	}
 	j, err := jsonEncoder(params)
 	if err != nil {
-		log.Warn(g.AppCtx.GetConfig().LogOriginRecover()).Str("traceId", traceId).Str("reqParamsErr", err.Error()).Msg("getParamsJson error")
+		log.Warn(g.AppCtx.GetConfig().LogOriginRecover()).Str(requestIDKey(g.AppCtx), rid).Str("reqParamsErr", err.Error()).Msg("getParamsJson error")
 		return nil
 	}
 	return j
 }
 
-func (g *GinRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (g *GinRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), rid string) []byte {
 	c, ok := ctx.GetCtx().(*gin.Context)
 	if !ok {
 		return nil
@@ -53,13 +53,13 @@ func (g *GinRecovery) GetQueriesJson(ctx adaptorctx.ICoreContext, log bootstrap.
 	}
 	j, err := jsonEncoder(queries)
 	if err != nil {
-		log.Warn(g.AppCtx.GetConfig().LogOriginRecover()).Str("traceId", traceId).Str("reqQueriesErr", err.Error()).Msg("getQueriesJson error")
+		log.Warn(g.AppCtx.GetConfig().LogOriginRecover()).Str(requestIDKey(g.AppCtx), rid).Str("reqQueriesErr", err.Error()).Msg("getQueriesJson error")
 		return nil
 	}
 	return j
 }
 
-func (g *GinRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), traceId string) []byte {
+func (g *GinRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstrap.LoggerWrapper, jsonEncoder func(interface{}) ([]byte, error), rid string) []byte {
 	c, ok := ctx.GetCtx().(*gin.Context)
 	if !ok {
 		return nil
@@ -71,7 +71,7 @@ func (g *GinRecovery) GetHeadersJson(ctx adaptorctx.ICoreContext, log bootstrap.
 	sanitizedHeaders := sanitizeHeaders(headers)
 	j, err := jsonEncoder(sanitizedHeaders)
 	if err != nil {
-		log.Warn(g.AppCtx.GetConfig().LogOriginRecover()).Str("traceId", traceId).Str("reqHeadersErr", err.Error()).Msg("getHeadersJson error")
+		log.Warn(g.AppCtx.GetConfig().LogOriginRecover()).Str(requestIDKey(g.AppCtx), rid).Str("reqHeadersErr", err.Error()).Msg("getHeadersJson error")
 		return nil
 	}
 	return j

@@ -289,6 +289,12 @@ func (ch *CoreWithHertz) loggerMiddleware() app.HandlerFunc {
 		if query := string(reqCtx.QueryArgs().QueryString()); query != "" {
 			event.Str("query", query)
 		}
+		// requestId 中間件把請求 ID 寫到回應頭；欄位名跟隨 trace 配置，與恢復日誌一致
+		if rid := string(reqCtx.Response.Header.Peek("X-Request-Id")); rid != "" {
+			if key := appCtx.GetConfig().GetTrace().RequestID; key != "" {
+				event.Str(key, rid)
+			}
+		}
 		event.Msg("HTTP Request")
 	}
 }

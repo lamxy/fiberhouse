@@ -8,15 +8,12 @@ import (
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/google/uuid"
 	"github.com/lamxy/fiberhouse"
+	hertzadaptor "github.com/lamxy/fiberhouse/example_application/hertzcore/adaptor"
 	hertzconst "github.com/lamxy/fiberhouse/example_application/hertzcore/constant"
 )
 
-// traceIDKey 追蹤 ID 在 hertz 上下文與回應頭中的鍵名，
-// 與 hertzcore/recovery 的取值鍵保持一致
-const (
-	traceIDKey    = "traceId"
-	traceIDHeader = "X-Request-Id"
-)
+// requestIDHeader 請求 ID 的請求頭與回應頭名稱，與 Fiber/Gin 官方 requestid 中間件一致
+const requestIDHeader = "X-Request-Id"
 
 // HertzAppMiddlewareProvider 基於 hertz 的應用級中間件提供者
 type HertzAppMiddlewareProvider struct {
@@ -56,8 +53,8 @@ func (p *HertzAppMiddlewareProvider) Initialize(ctx fiberhouse.IContext, initFun
 		return nil, fmt.Errorf("provider '%s': core app must be *server.Hertz, got %T", p.Name(), cs.GetCoreApp())
 	}
 
-	// 註冊 TraceId 中間件：hertz 無內建 requestid，此處以 uuid 產生並回寫回應頭
-	h.Use(requestIDMiddleware())
+	// 註冊 requestId 中間件：hertz 無內建 requestid，此處以 uuid 產生並回寫回應頭
+	h.Use(requestIDMiddleware(ctx.GetConfig().GetTrace().RequestID))
 
 	// 其他中間件...
 
@@ -65,17 +62,19 @@ func (p *HertzAppMiddlewareProvider) Initialize(ctx fiberhouse.IContext, initFun
 	return h, nil
 }
 
-// requestIDMiddleware 為每個請求產生追蹤 ID，供恢復中間件與日誌鏈路取用。
+// requestIDMiddleware 為每個請求產生請求 ID，供恢復中間件與日誌鏈路取用。
 //
 // 已帶入 X-Request-Id 請求頭時沿用該值，以支援跨服務的鏈路串接。
-func requestIDMiddleware() app.HandlerFunc {
+// key 為 trace 配置的請求 ID 欄位名，作為 hertz 上下文鍵，與 hertzcore/recovery 的取值鍵一致；
+// 同時寫入標準 context，供 hertz 引擎的 Ctx* 日誌帶上請求 ID。
+func requestIDMiddleware(key string) app.HandlerFunc {
 	return func(c ctxpkg.Context, reqCtx *app.RequestContext) {
-		traceID := string(reqCtx.GetHeader(traceIDHeader))
-		if traceID == "" {
-			traceID = uuid.NewString()
+		rid := string(reqCtx.GetHeader(requestIDHeader))
+		if rid == "" {
+			rid = uuid.NewString()
 		}
-		reqCtx.Set(traceIDKey, traceID)
-		reqCtx.Response.Header.Set(traceIDHeader, traceID)
-		reqCtx.Next(c)
+		reqCtx.Set(key, rid)
+		reqCtx.Response.Header.Set(requestIDHeader, rid)
+		reqCtx.Next(ctxpkg.WithValue(c, hertzadaptor.RequestIDContextKey, rid))
 	}
 }

@@ -89,9 +89,11 @@ panic recovery 内部忽略统一响应发送的返回值。若编码或连接�
 | `enablePrintStack` | 即使非 debug 也记录堆栈 | `false` |
 | `enableDebugFlag` | 允许请求 header 打开本次详细堆栈日志 | `false` |
 | `debugFlag` / `debugFlagValue` | header 名和值的精确比较 | 空字符串 |
-| `application.trace.requestID` | 从请求 header 读取 trace 值并作为日志字段名 | `requestId` |
+| `application.trace.requestID` | 请求ID的日志字段名（Recover 日志与 `coreHttp` 访问日志共用）；Fiber 下也是 requestid 中间件的 `Locals` 键；无中间件时兜底读取的同名请求 header | `requestId` |
 
 starter 始终提供 stack handler，但是否真正生成 `ErrorStack()` 取决于 `debugMode || enablePrintStack || (enableDebugFlag && header == debugFlagValue)`。请求 debug flag 只扩大服务端详细堆栈日志条件，不会把本次响应切换成 debug 模式；对外数据隐藏仍只由 `debugMode` 控制。若启用 `enableDebugFlag` 却把 `debugFlagValue` 留空，缺少该 header 的请求也会因空字符串相等而打开详细堆栈日志。
+
+请求ID的来源：Fiber 取 requestid 中间件存入 `Locals` 的值；Gin 取 `gin-contrib/requestid` 的 `X-Request-ID`。两者都会把 ID 回写到响应头 `X-Request-ID`，客户端可据此回报问题。`coreHttp` 访问日志从响应头读取这个 ID，没有 requestid 中间件时不写该字段。
 
 非 error 的 panic 值（如 `panic("...")`）先转成 `panic: <值>` 形式的 error，再按 error 分支记录日志，不会因为没有对应类型分支而不留日志。
 

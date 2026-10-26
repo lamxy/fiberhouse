@@ -334,18 +334,30 @@ func (cf *CoreWithFiber) RegisterAppMiddleware(fs FrameStarter, managers ...IPro
 // 访问日志只记录流量：5xx、4xx 记 WARN，其余记 INFO。错误本身由 Recover
 // （DefaultStackTraceHandler）按 HTTP 状态记录，5xx 在那里已是 ERROR；
 // 这里再记 ERROR 会让同一个错误向错误追踪平台上报两次。
+//
+// 请求ID取自响应头 X-Request-ID（requestid 中间件写入），字段名跟随 trace 配置，
+// 与 Recover 日志一致，便于按同一个 ID 串联访问日志和错误日志。
 func (cf *CoreWithFiber) accessLogMiddleware() fiber.Handler {
+	base := func() *zerolog.Logger {
+		log, err := cf.GetAppContext().GetContainer().Get(cf.GetAppContext().GetConfig().LogOriginCoreHttp().InstanceKey())
+		if err != nil {
+			// 获取http类子日志器错误
+			cf.GetAppContext().GetLogger().Error(cf.GetAppContext().GetConfig().LogOriginFrame()).Err(err).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware register fiberzerolog middleware to get http logger error")
+			return fiberzerolog.ConfigDefault.Logger // 使用默认日志器
+		}
+		return log.(*zerolog.Logger)
+	}()
+	ridKey := requestIDKey(cf.GetAppContext())
+
 	return fiberzerolog.New(fiberzerolog.Config{
 		Levels: []zerolog.Level{zerolog.WarnLevel, zerolog.WarnLevel, zerolog.InfoLevel},
-		Logger: func() *zerolog.Logger {
-			log, err := cf.GetAppContext().GetContainer().Get(cf.GetAppContext().GetConfig().LogOriginCoreHttp().InstanceKey())
-			if err != nil {
-				// 获取http类子日志器错误
-				cf.GetAppContext().GetLogger().Error(cf.GetAppContext().GetConfig().LogOriginFrame()).Err(err).Str("applicationStarter", "FrameApplication").Msg("RegisterAppMiddleware register fiberzerolog middleware to get http logger error")
-				return nil // 使用默认日志器
+		// GetLogger 在 c.Next() 之后调用，此时 requestid 中间件已写入响应头
+		GetLogger: func(c *fiber.Ctx) zerolog.Logger {
+			if rid := c.GetRespHeader(fiber.HeaderXRequestID); rid != "" {
+				return base.With().Str(ridKey, rid).Logger()
 			}
-			return log.(*zerolog.Logger)
-		}(),
+			return *base
+		},
 		Next: func(c *fiber.Ctx) bool {
 			ms := cf.GetAppContext().GetConfig().GetMiddlewareSwitch("coreHttp")
 			return !ms

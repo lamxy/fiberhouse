@@ -113,30 +113,30 @@ func TestHertzLoggerAdapter_SkipsEmptyMessage(t *testing.T) {
 	require.Empty(t, decodeHertzRecords(t, output))
 }
 
-// TestHertzLoggerAdapter_CtxVariantsAttachTraceID 验证 Ctx* 系列能从请求上下文
-// 提取 traceId，使引擎日志可与业务请求链路关联。
-func TestHertzLoggerAdapter_CtxVariantsAttachTraceID(t *testing.T) {
+// TestHertzLoggerAdapter_CtxVariantsAttachRequestID 验证 Ctx* 系列能从请求上下文
+// 提取 requestId，使引擎日志可与业务请求链路关联。
+func TestHertzLoggerAdapter_CtxVariantsAttachRequestID(t *testing.T) {
 	adapter, output := newTestHertzLogAdapter(t)
-	ctx := ctxpkg.WithValue(ctxpkg.Background(), TraceIDContextKey, "trace-xyz")
+	ctx := ctxpkg.WithValue(ctxpkg.Background(), RequestIDContextKey, "rid-xyz")
 
 	adapter.CtxInfof(ctx, "handling request")
 
 	records := decodeHertzRecords(t, output)
 	require.Len(t, records, 1)
 	require.Equal(t, "info", records[0]["level"])
-	require.Equal(t, "trace-xyz", records[0]["traceId"])
+	require.Equal(t, "rid-xyz", records[0]["requestId"])
 	require.Equal(t, "handling request", records[0]["message"])
 }
 
-// TestHertzLoggerAdapter_CtxWithoutTraceIDOmitsField 验证无 traceId 时不写入空字段
-func TestHertzLoggerAdapter_CtxWithoutTraceIDOmitsField(t *testing.T) {
+// TestHertzLoggerAdapter_CtxWithoutRequestIDOmitsField 验证无 requestId 时不写入空字段
+func TestHertzLoggerAdapter_CtxWithoutRequestIDOmitsField(t *testing.T) {
 	adapter, output := newTestHertzLogAdapter(t)
 
-	adapter.CtxInfof(ctxpkg.Background(), "no trace")
+	adapter.CtxInfof(ctxpkg.Background(), "no request id")
 
 	records := decodeHertzRecords(t, output)
 	require.Len(t, records, 1)
-	require.NotContains(t, records[0], "traceId")
+	require.NotContains(t, records[0], "requestId")
 }
 
 // TestHertzLoggerAdapter_SetOutputIsNoop 验证 SetOutput/SetLevel 不影响框架日志器。

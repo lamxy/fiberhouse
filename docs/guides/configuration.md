@@ -93,7 +93,7 @@ APP_CONF_application_appLog_level=debug
 | `application.appLog` | console/file、level、`logOriginEnum`、轮转与异步 writer；详见[《日志》](logging.md) |
 | `application.plugins.engine.servers.gin` | Gin mode、监听地址、timeout、header 限制与 TLS；详见[《Web 运行时》](web-runtime.md) |
 | `application.recover` | debug、堆栈打印和请求调试标识 |
-| `application.trace.requestID` | trace 请求 ID 键；`Initialize` 的源码 fallback 为 `requestId` |
+| `application.trace.requestID` | 请求ID字段名（日志字段与 requestid 上下文键）；`Initialize` 的源码 fallback 为 `requestId` |
 | `application.middleware` | 初始化时复制到中间件开关 map |
 | `application.globalManage` | `healthCheck` 与健康检查 `interval`；详见[《GlobalManager》](global-manager.md) |
 | `application.task.enableServer` | 是否在 Web 启动链中启动任务 worker |

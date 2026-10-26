@@ -21,13 +21,16 @@ const (
 	hertzSystemLogPrefix = "HERTZ: "
 )
 
-// TraceIDContextKey 请求追踪 ID 在标准 context 中的键。
+// requestIDContextKey 请求 ID 在标准 context 中的键。
 //
 // 使用具名类型而非裸字符串，避免与其他包的 context 键冲突。
-type traceIDContextKey struct{}
+type requestIDContextKey struct{}
 
-// TraceIDContextKey 供中间件写入、日志适配器读取请求追踪 ID
-var TraceIDContextKey = traceIDContextKey{}
+// RequestIDContextKey 供中间件写入、日志适配器读取请求 ID
+var RequestIDContextKey = requestIDContextKey{}
+
+// requestIDField 日志中的请求 ID 字段名，与框架 trace 配置的默认值一致
+const requestIDField = "requestId"
 
 // HertzLoggerAdapter 将 hertz 引擎的日志与调试输出映射到框架统一日志器。
 //
@@ -106,7 +109,7 @@ func (a *HertzLoggerAdapter) emit(lv hlog.Level, message string) {
 	a.event(lv).Msg(message)
 }
 
-// emitCtx 输出一条带请求追踪信息的日志
+// emitCtx 输出一条带请求 ID 的日志
 func (a *HertzLoggerAdapter) emitCtx(
 	ctx ctxpkg.Context,
 	lv hlog.Level,
@@ -117,18 +120,18 @@ func (a *HertzLoggerAdapter) emitCtx(
 	}
 
 	event := a.event(lv)
-	if traceID := traceIDFrom(ctx); traceID != "" {
-		event = event.Str("traceId", traceID)
+	if rid := requestIDFrom(ctx); rid != "" {
+		event = event.Str(requestIDField, rid)
 	}
 	event.Msg(message)
 }
 
-// traceIDFrom 从标准 context 提取请求追踪 ID；缺失时返回空字符串
-func traceIDFrom(ctx ctxpkg.Context) string {
+// requestIDFrom 从标准 context 提取请求 ID；缺失时返回空字符串
+func requestIDFrom(ctx ctxpkg.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	if v, ok := ctx.Value(TraceIDContextKey).(string); ok {
+	if v, ok := ctx.Value(RequestIDContextKey).(string); ok {
 		return v
 	}
 	return ""

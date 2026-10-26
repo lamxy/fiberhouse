@@ -367,6 +367,11 @@ func (cg *CoreWithGin) loggerMiddleware() gin.HandlerFunc {
 			logEvent.Str("query", query)
 		}
 
+		// requestid 中间件把请求ID写到响应头；字段名跟随 trace 配置，与 Recover 日志一致
+		if rid := c.Writer.Header().Get(requestIDHeader); rid != "" {
+			logEvent.Str(requestIDKey(cg.GetAppContext()), rid)
+		}
+
 		if len(c.Errors) > 0 {
 			logEvent.Str("errors", c.Errors.String())
 		}

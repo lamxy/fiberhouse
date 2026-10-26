@@ -72,14 +72,14 @@ func TestHertzRecovery_GetHeader(t *testing.T) {
 	assert.Equal(t, "", r.GetHeader(hertzadaptor.WithHertzContext(reqCtx), "X-Absent"))
 }
 
-// TestHertzRecovery_TraceIDReadsFromContextKey 驗證 traceId 從 hertz 上下文鍵讀取，
-// 且缺失時回傳空字串而非 panic。
+// TestHertzRecovery_TraceIDReadsFromContextKey 驗證請求 ID 從 hertz 上下文鍵讀取
+// （無配置時鍵名為預設的 requestId），且缺失時回傳空字串而非 panic。
 func TestHertzRecovery_TraceIDReadsFromContextKey(t *testing.T) {
 	reqCtx := app.NewContext(0)
-	reqCtx.Set("traceId", "trace-abc")
+	reqCtx.Set("requestId", "rid-abc")
 
 	r := New(nil)
-	assert.Equal(t, "trace-abc", r.TraceID(hertzadaptor.WithHertzContext(reqCtx)))
+	assert.Equal(t, "rid-abc", r.TraceID(hertzadaptor.WithHertzContext(reqCtx)))
 
 	empty := app.NewContext(0)
 	assert.Equal(t, "", r.TraceID(hertzadaptor.WithHertzContext(empty)))
