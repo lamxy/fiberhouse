@@ -45,6 +45,23 @@ func requestIDKey(appCtx IApplicationContext) string {
 	return defaultRequestIDKey
 }
 
+// resolveRequestID 按优先级确定请求ID，Recover 日志与访问日志共用，保证两边取到同一个值：
+//  1. 中间件给出的值（Locals/上下文，或访问日志读到的响应头）
+//  2. 标准请求头 X-Request-ID（上游网关或客户端带入）
+//  3. 与 trace 配置同名的请求头（旧行为，保持向后兼容）
+func resolveRequestID(fromMiddleware string, reqHeader func(string) string, key string) string {
+	if fromMiddleware != "" {
+		return fromMiddleware
+	}
+	if rid := reqHeader(requestIDHeader); rid != "" {
+		return rid
+	}
+	if strings.EqualFold(key, requestIDHeader) {
+		return ""
+	}
+	return reqHeader(key)
+}
+
 // ErrorStack 获取当前的堆栈信息字符串
 func ErrorStack(debugStack ...bool) string {
 	//if len(debugStack) > 0 && debugStack[0] {
@@ -229,11 +246,8 @@ func (r *ErrorHandler) DefaultStackTraceHandler(ctx adaptorctx.ICoreContext, e i
 	// http头部debug标记
 	debugFlagFromHeader := recovery.GetHeader(ctx, debugFlag)
 	// 请求requestId
-	// 先取 requestid 中间件生成的 ID（存在上下文里，不在请求头）；没有中间件时退回同名请求头
-	rid := recovery.TraceID(ctx)
-	if rid == "" {
-		rid = recovery.GetHeader(ctx, requestID)
-	}
+	// 先取 requestid 中间件生成的 ID（存在上下文里）；没有中间件时退回请求头，顺序见 resolveRequestID
+	rid := resolveRequestID(recovery.TraceID(ctx), func(k string) string { return recovery.GetHeader(ctx, k) }, requestID)
 
 	var jsonEnCoder func(interface{}) ([]byte, error)
 	// json编码器
