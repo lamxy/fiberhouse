@@ -28,8 +28,12 @@ console 与 file 同时启用时，`io.MultiWriter` 按顺序写两个目标。`
 | 内容 | 与 console、file 收到相同的 JSON 行，同样受 `application.appLog.level` 过滤 |
 | 顺序 | 排在 console、file 之后；`io.MultiWriter` 遇到写入错误会停止写后续目标，放在最后可避免附加 writer 的故障影响内置输出 |
 | 回退 | console 与 file 都未启用时仍回退到 stdout，附加 writer 不替代这一回退 |
+| 关闭 | 实现 `io.Closer` 的附加 writer 由 `LoggerWrapper.Close` 在 file writer 之后关闭，错误以 `errors.Join` 合并；调用方不要再自行关闭 |
+| 单例 | 与 `NewLoggerOnce` 共用同一个 `sync.Once`，先调用的一方决定配置，之后传入的附加 writer 不生效 |
 
-### 访问日志级别
+## 访问日志
+
+### 级别
 
 `coreHttp` 访问日志按响应状态码定级，Fiber、Gin 与 Hertz 示例一致：
 
@@ -39,8 +43,22 @@ console 与 file 同时启用时，`io.MultiWriter` 按顺序写两个目标。`
 | 其余 | INFO |
 
 5xx 不记 ERROR：同一请求已由 Recover（`DefaultStackTraceHandler`）记过一次 ERROR，访问日志再记会重复上报。接错误追踪平台时，`sentryzerolog` 的 `Options.Levels` 保持默认（Error、Fatal、Panic）即不会为访问日志建事件；若把 Warn 加入 `Levels`，每个 4xx、5xx 请求都会多建一个 warning 事件。
-| 关闭 | 实现 `io.Closer` 的附加 writer 由 `LoggerWrapper.Close` 在 file writer 之后关闭，错误以 `errors.Join` 合并；调用方不要再自行关闭 |
-| 单例 | 与 `NewLoggerOnce` 共用同一个 `sync.Once`，先调用的一方决定配置，之后传入的附加 writer 不生效 |
+
+panic 请求没有访问日志：内建顺序是 recover 在外、访问日志在内，panic 向外传播时越过了访问日志中间件 `c.Next()` 之后的代码，Fiber、Gin 与 Hertz 示例都一样。这类请求只留下 Recover 的 ERROR（含请求ID、error，按配置附堆栈，不含 method、path、status、latency），因此按访问日志统计的 5xx 比例与流量会漏掉 panic。内建顺序刻意保持不变：把访问日志移到 recover 外层后，访问日志中间件自身（Fiber 下还包括 fiberzerolog 内部调用的 ErrorHandler）的 panic 将无人兜底，而 fasthttp 不会 recover，会导致 Fiber 进程退出。
+
+### 是否开启访问日志
+
+`application.middleware.coreHttp` 控制三个引擎的访问日志；配置缺失时为关闭，示例的 dev、test、prod 配置均为开启。关闭后，正常请求不留任何框架日志，出错请求仍由 Recover 按状态码记录。
+
+| 场景 | 建议 |
+|---|---|
+| 服务前有反向代理、Ingress、API 网关、LB 或 service mesh，且已记录访问日志 | 生产环境关闭，以上游访问日志为准；上游会记录包括 panic 在内的全部响应状态。上游生成并转发 `X-Request-ID` 时，requestid 中间件沿用该值，上游访问日志与框架 Recover 日志可按同一 ID 关联 |
+| 服务直接暴露、上游没有访问日志 | 开启，它是唯一的逐请求记录 |
+| 开发、测试环境 | 开启，便于按请求ID排查 |
+| 需要逐条请求审计，或尚无指标系统而依赖日志统计流量、延迟 | 开启 |
+| 高 QPS、对日志量或日志平台计费敏感 | 关闭，流量与延迟交给上游日志或指标系统 |
+
+开启的代价主要是日志量（每请求一行），而非 CPU：Fiber 压测中访问日志中间件自身约占 2%。开关目前只有全开或全关，不支持按路径跳过（如健康检查）或采样。
 
 ## caller 字段
 
@@ -70,7 +88,7 @@ Debug 事件仍由 `application.appLog.level` 决定是否输出。Gin 的 debug
 
 桥接第一次有效安装时，在 Gin 活动开始前捕获四个 package 全局诊断变量的原值，并把这些变量固定为进程生命周期内稳定的转发入口。lease 只原子切换当前 owner；初始化失败或未协调的 server 退出会停用自己的 owner。协调式 shutdown 在关闭 listener 前标记生命周期，`AppCoreRun` 返回时不会提前停用 owner；`http.Server.Shutdown` 等待活动 handler 排空后，shutdown 路径才停用 owner。之后转发入口按行为回退到首次捕获的 Gin 函数和 writer，而不会在运行期写回全局变量。这样设计是因为 Gin 读取这些变量时没有同步，运行期写回会与并发诊断输出产生数据竞争。lease 不关闭框架日志器；后续 owner 复用同一组稳定入口。lease 活跃期间的多个 Gin engine 共享同一个框架日志器，逐 engine 的原生 debug 隔离不受支持；第二个 FiberHouse core 会收到安装冲突，而不是覆盖现有 owner。桥接安装后由外部代码改写这些全局变量仍不受支持。
 
-桥接不改变 FiberHouse 既有请求访问日志、recovery 或尾部错误处理的所有权，也不安装 Gin 原生 Logger/Recovery 中间件。访问日志仍由 `CoreWithGin.loggerMiddleware` 产生一条记录（级别见下文“访问日志级别”），recovery 仍由 FiberHouse recovery provider 处理；桥接只承接 Gin 自身的诊断出口和 server error logger。
+桥接不改变 FiberHouse 既有请求访问日志、recovery 或尾部错误处理的所有权，也不安装 Gin 原生 Logger/Recovery 中间件。访问日志仍由 `CoreWithGin.loggerMiddleware` 产生一条记录（级别见上文“访问日志”一节），recovery 仍由 FiberHouse recovery provider 处理；桥接只承接 Gin 自身的诊断出口和 server error logger。
 
 ## 文件轮转
 
