@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -48,6 +49,39 @@ func TestCoreFiber_AccessLogLevels(t *testing.T) {
 		require.NoError(t, err)
 		resp.Body.Close()
 		records := decodeTask4LogRecords(t, output)
+		require.Len(t, records, 1, "status %d", tc.code)
+		assert.Equal(t, tc.level.String(), records[0]["level"], "status %d", tc.code)
+	}
+}
+
+// Gin 访问日志与 Fiber 同一规则：5xx、4xx 记 WARN，其余记 INFO。
+func TestCoreGin_AccessLogLevels(t *testing.T) {
+	preserveTask4GinMode(t)
+	ctx, output := newTask4LoggingAppContext(t, map[string]interface{}{
+		"application.middleware.coreHttp": true,
+	})
+	core := NewCoreWithGin(ctx).(*CoreWithGin)
+	core.InitCoreApp(&task4Frame{}, task4GoodCodecManager())
+	cleanupTask4GinCore(t, core)
+
+	core.coreApp.Use(core.loggerMiddleware())
+	core.coreApp.GET("/status/:code", func(c *gin.Context) {
+		code, _ := strconv.Atoi(c.Param("code"))
+		c.Status(code)
+	})
+
+	for _, tc := range []struct {
+		code  int
+		level zerolog.Level
+	}{
+		{http.StatusInternalServerError, zerolog.WarnLevel},
+		{http.StatusServiceUnavailable, zerolog.WarnLevel},
+		{http.StatusNotFound, zerolog.WarnLevel},
+		{http.StatusOK, zerolog.InfoLevel},
+	} {
+		output.Reset()
+		core.coreApp.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/status/"+strconv.Itoa(tc.code), nil))
+		records := task4LogRecordsWithMessage(t, output, "HTTP Request")
 		require.Len(t, records, 1, "status %d", tc.code)
 		assert.Equal(t, tc.level.String(), records[0]["level"], "status %d", tc.code)
 	}

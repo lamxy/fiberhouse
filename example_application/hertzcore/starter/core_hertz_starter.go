@@ -21,6 +21,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/config"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	"github.com/lamxy/fiberhouse"
 	"github.com/lamxy/fiberhouse/appconfig"
 	hertzadaptor "github.com/lamxy/fiberhouse/example_application/hertzcore/adaptor"
@@ -277,11 +278,18 @@ func (ch *CoreWithHertz) loggerMiddleware() app.HandlerFunc {
 		reqCtx.Next(c)
 
 		appCtx := ch.GetAppContext()
-		event := appCtx.GetLogger().InfoWith(appCtx.GetConfig().LogOriginCoreHttp()).
+		status := reqCtx.Response.StatusCode()
+		// 5xx、4xx 記 WARN，其餘記 INFO，與框架 Fiber/Gin 存取日誌一致；5xx 已由恢復日誌記 ERROR，這裡不重複
+		logger := appCtx.GetLogger()
+		eventWith := logger.InfoWith
+		if status >= consts.StatusBadRequest {
+			eventWith = logger.WarnWith
+		}
+		event := eventWith(appCtx.GetConfig().LogOriginCoreHttp()).
 			Str("Component", "Hertz").
 			Str("method", string(reqCtx.Method())).
 			Str("path", string(reqCtx.Path())).
-			Int("status", reqCtx.Response.StatusCode()).
+			Int("status", status).
 			Dur("latency", time.Since(start)).
 			Str("ip", reqCtx.ClientIP()).
 			Int("bodySize", len(reqCtx.Response.Body()))

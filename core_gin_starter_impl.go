@@ -354,7 +354,13 @@ func (cg *CoreWithGin) loggerMiddleware() gin.HandlerFunc {
 		method := c.Request.Method
 		clientIP := c.ClientIP()
 
-		logEvent := cg.GetAppContext().GetLogger().InfoWith(cg.GetAppContext().GetConfig().LogOriginCoreHttp()).
+		// 5xx、4xx 记 WARN，其余记 INFO，与 Fiber 访问日志一致；5xx 已由 Recover 记 ERROR，这里不重复
+		logger := cg.GetAppContext().GetLogger()
+		eventWith := logger.InfoWith
+		if statusCode >= http.StatusBadRequest {
+			eventWith = logger.WarnWith
+		}
+		logEvent := eventWith(cg.GetAppContext().GetConfig().LogOriginCoreHttp()).
 			Str("Component", "Gin").
 			Str("method", method).
 			Str("path", path).
