@@ -101,6 +101,12 @@ starter 始终提供 stack handler，但是否真正生成 `ErrorStack()` 取决
 
 三者都没有时不写该字段。
 
+信任边界：第 2、3 步的值直接来自请求，任何客户端都能伪造或复用；第 1 步也不例外——Fiber 的 requestid 中间件、Gin 的 `gin-contrib/requestid` 和 Hertz 示例中间件，在请求已带 `X-Request-ID` 时都直接沿用该值，只在缺失时才生成新 ID。框架不校验它的格式、长度或唯一性，只把它当作串联日志的关联标识：
+
+- 不要用它做鉴权、幂等去重、限流或审计主键；
+- 日志检索时，同一个 ID 可能对应多个请求，不能据此断定是同一次调用；
+- 服务直接暴露给公网时，应在网关或最外层中间件覆写或清除外部传入的 `X-Request-ID`（及与 `application.trace.requestID` 同名的 header），只保留可信上游生成的值。
+
 非 error 的 panic 值（如 `panic("...")`）先转成 `panic: <值>` 形式的 error，再按 error 分支记录日志，不会因为没有对应类型分支而不留日志。
 
 进入详细堆栈分支时，handler 会记录路由 params、query 和请求 headers；请求 body 当前没有启用。Fiber 与 Gin 分别从各自原生 Context 收集这些字段。header 在编码前统一脱敏：`authorization`、`cookie`、`proxy-authorization`、`x-auth-token`、`x-api-key`，以及名称包含 `token`、`secret`、`password` 的字段都会被遮盖。值的字节长度不超过 8 时替换为 `***`，更长时只保留前 4 个字节再加 `...***`。
