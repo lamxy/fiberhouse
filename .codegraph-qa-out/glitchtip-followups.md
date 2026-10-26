@@ -44,3 +44,12 @@ git push origin v1.2.0
 
 建议：值得接，但作为独立任务：为前端单独建 GlitchTip project（与后端分开告警），先只上报未捕获异常并设置采样率，
 验证 source map 和 traceId 串联后再扩大范围。这属于 frontend-dev、fullstack-dev 的工作，不在本仓库实施。
+
+## 访问日志级别对齐的前提（2026-10-26 验证）
+
+问题：Gin / Hertz 访问日志不分状态码一律 INFO，Fiber 是 4xx/5xx WARN（`e499c2e`）。对齐成 WARN 是否会让 GlitchTip 多建 issue？
+
+- 已验证（sentry-go/zerolog v0.50.0，源码 `Options.SetDefaults` + 离线测试，BeforeSend 计数、未真正发送）：
+  `Levels` 留空 → 只发 error；`Levels` 含 Warn → 404/500 的 WARN 访问日志各建一个 warning 事件。
+- 未验证：应用端实际设置的 `Levels` 与锁定的 sentry-go 版本。本机没有应用端代码（`~/workspace` 下无其他 `sentry-go/zerolog` 引用）。
+- 结论：应用端保持默认 Levels 时，Gin/Hertz 对齐成 4xx/5xx WARN 不会新增 GlitchTip 事件；若应用端 Levels 含 Warn，Fiber 现在就已会建 warning 事件，对齐后 Gin/Hertz 也会。
