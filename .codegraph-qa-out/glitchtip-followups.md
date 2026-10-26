@@ -1,14 +1,18 @@
 # GlitchTip 接入的后续事项（第 6、8 点）
 
-日期：2026-10-26。框架侧的第 1–5、7 点已在本地 `main` 完成，见 `glitchtip-error-field-verification.md`。
-以下两点不涉及框架代码，记录评估与建议，均**未执行**。
+日期：2026-10-26。框架侧的第 1–5、7 点已在 `main` 完成，见 `glitchtip-error-field-verification.md`。
+以下两点不涉及框架代码。第 6 点的推送与打 tag 已于 2026-10-26 执行；第 8 点仅记录评估，**未执行**。
 
 ## 第 6 点：分支合并与版本引用
 
-现状：`feature/logger-extra-writers` 已合并进本地 `main`（`99b68ac`），之后的修正都在 `main` 上；用户指示「暂不推送」，
-因此 `origin` 仍停在合并前，backend-dev 的 fiberhouse.md 规则还在引用提交 `39cba6c`。
+状态（2026-10-26 更新）：用户授权后已按下列步骤 1–3 执行。
+推送前 `go test -race ./...` 共 1121 个测试通过；`main` 已推送至 `origin`（`8446be8..2038bac`，未 force）；
+附注 tag `v1.2.0` 已推送。
 
-建议（用户决定推送时按序执行）：
+- 步骤 4 **未执行**：backend-dev 的 fiberhouse.md 不在本仓库，仍引用提交 `39cba6c`，需在其所在仓库改为 `v1.2.0`。
+- 远端 `feature/logger-extra-writers` 按用户决定**保留**，不删除。
+
+原建议步骤（留作记录）：
 
 ```sh
 # 1. 推送前在本地再跑一遍
@@ -25,8 +29,7 @@ git push origin v1.2.0
 # 4. 把 backend-dev 的 fiberhouse.md 从提交 39cba6c 改为引用该版本号（经 GOPROXY 可正常解析）
 ```
 
-- 远端 `feature/logger-extra-writers` 已完整并入 `main`，推送后可删除该远端分支（同样由用户决定）。
-- 2026-10-26 查得最新 tag 为 `v1.1.1`，下一个 minor 即 `v1.2.0`；执行前再查一次 `git tag --sort=-v:refname | head`。
+- 打 tag 前查得最新 tag 为 `v1.1.1`，远端无 `v1.2.0`，故取下一个 minor `v1.2.0`。
 
 ## 第 8 点：前端错误是否也送 GlitchTip
 
