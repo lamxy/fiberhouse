@@ -64,6 +64,8 @@ Gin/Hertz 已对齐（`5da9096`：4xx/5xx 记 WARN）。用 harness `MODE=access
 | 含 Warn | 不送 | warning | warning | ERROR 事件 | 1 个 `warning HTTP Request`，404 与 500 因 message 相同归并，count 随每个 4xx/5xx 请求增长 |
 
 - 结论：应用端 Levels 保持默认时，对齐不会新增 GlitchTip issue；含 Warn 时会出现一个持续累计的 `HTTP Request` warning issue。
-- 附带发现（既有行为，未改）：Gin 的 panic 请求**没有访问日志**——访问日志中间件注册在 Recover 内层，panic 越过它 `c.Next()` 之后的代码。Fiber/Hertz 中间件顺序相同，推测同样如此，未验证。
+- 附带发现（既有行为，未改）：panic 请求**没有访问日志**——访问日志中间件注册在 Recover 内层，panic 越过它 `c.Next()` 之后的代码。
+  2026-10-27 已用临时探测测试在 Fiber、Gin、Hertz 示例上证实；把访问日志移到外层后三者都会补记 WARN 500。
+  决定采用方案 C（不改顺序，只写文档，见 `docs/guides/logging.md`「访问日志」一节，`1011241`）：移到外层会让访问日志中间件与 Fiber 下 fiberzerolog 内部调用的 ErrorHandler 失去兜底，fasthttp v1.65.0 不 recover，Fiber 进程会退出；生产环境前有代理记录访问日志，panic 的 500 由上游补齐。
 - 本机 GlitchTip 多了一个 `entry 'verify-json-codec' not found` 的 error issue，是 harness 初版漏注册 codec 所致，已修正，与框架无关。
 
